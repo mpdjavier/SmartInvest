@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartInvest</string>
+    <string name="widget_name">SmartInvest · Patrimonio</string>
+    <string name="widget_description">Patrimonio, interés diario, cuentas del hogar y cuotas del mes.</string>
+    <string name="widget_refresh">Actualizar</string>
+    <string name="widget_loading">Actualizando…</string>
+    <string name="notification_channel_alerts">Alertas financieras</string>
+    <string name="notification_channel_alerts_desc">Tasas, vencimientos y rebalanceo de cartera.</string>
+</resources>
