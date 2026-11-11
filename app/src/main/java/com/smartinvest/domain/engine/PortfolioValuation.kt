@@ -6,11 +6,14 @@ import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HoldingValuation
 import com.smartinvest.domain.model.InstrumentQuote
+import com.smartinvest.domain.model.MarketSource
 import com.smartinvest.domain.model.PortfolioValuation
 import com.smartinvest.domain.model.Wallet
 import com.smartinvest.domain.model.WalletValuation
 import com.smartinvest.domain.model.effectiveTnaPercent
+import java.time.temporal.ChronoUnit
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToLong
 
 object InterestCalculator {
@@ -91,7 +94,10 @@ object PortfolioValuationEngine {
             )
         }
 
-        val linkedHoldingIds = activeWallets.mapNotNull { it.linkedHoldingId }.toSet()
+        val linkedHoldingIds = activeWallets
+            .filter { it.balanceCents > 0L }
+            .mapNotNull { it.linkedHoldingId }
+            .toSet()
 
         val holdingValuations = holdings.map { holding ->
             val valueArs = if (holding.currency == CurrencyCode.ARS) {
@@ -176,12 +182,21 @@ object PortfolioValuationEngine {
         if (series.size < 2) return null
         val previous = series[series.size - 2]
         val latest = series.last()
-        if (previous.price <= 0.0) return null
+        if (previous.price <= 0.0 || latest.price <= 0.0) return null
+        val isFci = holding.assetType == AssetType.FCI || holding.source == MarketSource.CAFCI
+        val spanDays = ChronoUnit.DAYS.between(previous.date, latest.date).coerceAtLeast(1L)
+        val prevPrice = if (isFci && spanDays > 1L) {
+            val dailyFactor = (latest.price / previous.price).pow(1.0 / spanDays.toDouble())
+            if (dailyFactor > 0.0) latest.price / dailyFactor else previous.price
+        } else {
+            previous.price
+        }
         return if (holding.quantity > 0.0) {
-            holding.valueCentsFor(latest.price) - holding.valueCentsFor(previous.price)
+            holding.valueCentsFor(latest.price) - holding.valueCentsFor(prevPrice)
         } else {
             if (holding.currentValueCents <= 0L) return null
-            (holding.currentValueCents * (latest.price / previous.price - 1.0)).roundToLong()
+            val prevValueCents = (holding.currentValueCents * (prevPrice / latest.price)).roundToLong()
+            holding.currentValueCents - prevValueCents
         }
     }
 

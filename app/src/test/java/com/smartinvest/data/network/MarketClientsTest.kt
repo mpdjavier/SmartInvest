@@ -113,7 +113,48 @@ class MarketClientsTest {
         assertEquals("Adcap Balanceado III - Clase A", result.name)
         assertEquals(5.473196, result.latestPrice, 0.000001)
         assertEquals(LocalDate.of(2026, 11, 5), result.latestDate)
-        assertTrue(result.history.size >= 3)
+        assertTrue(result.history.size >= 30)
         assertEquals(5.473196, result.history.last().price, 0.000001)
+    }
+
+    @Test
+    fun `merges 3-decimal rava historico json prices over 2-decimal rounded html table`() {
+        val html = """
+            <html>
+              <head>
+                <meta property="og:title" content="S30N6 Letra del Tesoro | Cotizaciones | Rava Bursátil" />
+              </head>
+              <body>
+                <div class="p2-quote">
+                  <div class="p2-price">128,30</div>
+                  <div class="p2-time"><span>11/11 12:14</span></div>
+                </div>
+                <dl class="p2-stats">
+                  <div class="p2-stat"><dt>Anterior</dt><dd>128,42</dd></div>
+                </dl>
+                <table>
+                  <thead>
+                    <tr><th>Fecha</th><th>Cierre</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>06/11/2026</td><td>128,42</td></tr>
+                  </tbody>
+                </table>
+              </body>
+            </html>
+        """.trimIndent()
+        val json = """
+            {"simbolo":"S30N6","datos":[
+              {"precio":128.415,"fecha":"2026-11-06T00:00:00.000Z"},
+              {"precio":128.303,"fecha":"2026-11-11T00:00:00.000Z"}
+            ]}
+        """.trimIndent()
+
+        val result = RavaClient.parseHtml("S30N6", html, LocalDate.of(2026, 11, 11), json)
+
+        assertEquals(128.303, result.latestPrice, 0.0001)
+        assertEquals(2, result.history.size)
+        assertEquals(128.415, result.history.first().price, 0.0001)
+        assertEquals(128.303, result.history.last().price, 0.0001)
     }
 }

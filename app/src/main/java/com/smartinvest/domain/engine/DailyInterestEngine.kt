@@ -12,13 +12,16 @@ import com.smartinvest.domain.model.InterestLine
 import com.smartinvest.domain.model.InterestReconciliation
 import com.smartinvest.domain.model.InterestSourceKind
 import com.smartinvest.domain.model.InterestSourceSummary
+import com.smartinvest.domain.model.MarketSource
 import com.smartinvest.domain.model.QuoteUnit
 import com.smartinvest.domain.model.Wallet
 import com.smartinvest.domain.model.WalletType
 import com.smartinvest.domain.model.effectiveTnaPercent
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.math.pow
 import kotlin.math.roundToLong
 
 object DailyInterestEngine {
@@ -38,7 +41,15 @@ object DailyInterestEngine {
         val activeWallets = wallets.filter {
             it.isActive && it.balanceCents > 0 && it.effectiveTnaPercent(holdings) > 0.0
         }
-        val linkedHoldingIds = wallets.filter { it.isActive }.mapNotNull { it.linkedHoldingId }.toSet()
+        val linkedHoldingIds = wallets
+            .filter { it.isActive && it.balanceCents > 0L }
+            .mapNotNull { it.linkedHoldingId }
+            .toSet()
+        val duplicateSymbols = holdings
+            .groupingBy { it.symbol.trim().uppercase() }
+            .eachCount()
+            .filter { it.key.isNotBlank() && it.value > 1 }
+            .keys
         val missingMarketSources = linkedSetOf<String>()
         val marketOverridesTna = linkedSetOf<String>()
 
@@ -86,44 +97,49 @@ object DailyInterestEngine {
             }
 
             holdings.forEach { holding ->
+                val label = holdingLabel(holding, duplicateSymbols)
+                val isFci = holding.assetType == AssetType.FCI || holding.source == MarketSource.CAFCI
                 val series = if (holding.marketKey.isNotBlank()) {
                     PortfolioValuationEngine.quotesFor(holding, quotes)
                 } else {
                     emptyList()
                 }
-                val idx = series.indexOfFirst { it.date == date }
-                val prev = if (idx > 0) series[idx - 1] else null
-                val curr = if (idx > 0) series[idx] else null
-                val deltaNative = if (prev != null && curr != null) {
-                    holdingDailyDeltaCents(holding, prev.price, curr.price)
+                val latestPrice = series.lastOrNull()?.price ?: 0.0
+                val quotePair = resolveQuotePairForDate(
+                    holding = holding,
+                    isFci = isFci,
+                    linkedHoldingIds = linkedHoldingIds,
+                    series = series,
+                    date = date,
+                )
+                val prevPrice = quotePair?.first
+                val currPrice = quotePair?.second
+                val deltaNative = if (prevPrice != null && currPrice != null) {
+                    holdingDailyDeltaCents(holding, prevPrice, currPrice, latestPrice)
                 } else {
                     null
                 }
 
-                if (prev != null && curr != null && deltaNative != null) {
+                if (prevPrice != null && currPrice != null && deltaNative != null) {
                     if ((holding.tnaPercent ?: 0.0) > 0.0) {
-                        marketOverridesTna += holding.symbol.ifBlank { holding.name }
+                        marketOverridesTna += label
                     }
-                    val basisNative = if (holding.quantity > 0.0) {
-                        holding.valueCentsFor(prev.price)
-                    } else {
-                        holding.currentValueCents
-                    }
+                    val basisNative = holdingBasisCents(holding, prevPrice, currPrice, latestPrice)
                     val basisArs = toArs(basisNative, holding.currency, mep)
                     val deltaArs = toArs(deltaNative, holding.currency, mep)
                     lines += InterestLine(
                         sourceId = "holding:${holding.id}",
-                        sourceName = holding.symbol.ifBlank { holding.name },
+                        sourceName = label,
                         kind = holdingKind(holding.assetType),
                         currency = holding.currency,
                         basisCents = basisArs,
-                        priceStart = prev.price,
-                        priceEnd = curr.price,
+                        priceStart = prevPrice,
+                        priceEnd = currPrice,
                         quantity = holding.quantity,
                         quoteUnit = holding.quoteUnit,
                         dailyNativeCents = deltaNative,
                         dailyArsCents = deltaArs,
-                        explanation = quoteFormula(holding, prev.price, curr.price, mep),
+                        explanation = quoteFormula(holding, prevPrice, currPrice, mep),
                     )
                 } else if (
                     holding.id !in linkedHoldingIds &&
@@ -137,7 +153,7 @@ object DailyInterestEngine {
                         val basisArs = toArs(holding.currentValueCents, holding.currency, mep)
                         lines += InterestLine(
                             sourceId = "holding:${holding.id}",
-                            sourceName = holding.symbol.ifBlank { holding.name },
+                            sourceName = label,
                             kind = holdingKind(holding.assetType),
                             currency = holding.currency,
                             basisCents = basisArs,
@@ -152,7 +168,7 @@ object DailyInterestEngine {
                     holding.id !in linkedHoldingIds &&
                     holding.currentValueCents > 0L
                 ) {
-                    missingMarketSources += holding.symbol.ifBlank { holding.name }
+                    missingMarketSources += label
                 }
             }
 
@@ -307,17 +323,110 @@ object DailyInterestEngine {
         if (currency == CurrencyCode.ARS) cents else (cents * mep).roundToLong()
 
     /**
-     * Native-cent variation between two prices. With a quantity it uses the full position;
-     * without one it applies the percentage move to the stored valuation, so holdings
-     * loaded from a preset with only a value still contribute to the daily interest.
+     * Resolves the `(prevPrice, currPrice)` pair for [holding] on [date].
+     *
+     * For regular market instruments (CEDEARs, LECAPs, bonds), a variation line is
+     * emitted on dates that have a stored close (`idx > 0`).
+     *
+     * For FCIs (`AssetType.FCI` / `MarketSource.CAFCI`), cuotaparte yields accrue daily
+     * even when CAFCI publishes with a lag or only provides window anchors: multi-day
+     * jumps between stored quotes are normalized to a 1-day factor, and dates after the
+     * first stored quote that lack an explicit row use the daily factor of the surrounding
+     * (or latest) CAFCI interval.
      */
-    private fun holdingDailyDeltaCents(holding: Holding, prevPrice: Double, currPrice: Double): Long? {
-        if (prevPrice <= 0.0) return null
+    private fun resolveQuotePairForDate(
+        holding: Holding,
+        isFci: Boolean,
+        linkedHoldingIds: Set<Long>,
+        series: List<InstrumentQuote>,
+        date: LocalDate,
+    ): Pair<Double, Double>? {
+        val idx = series.indexOfFirst { it.date == date }
+        if (idx > 0) {
+            val prev = series[idx - 1]
+            val curr = series[idx]
+            if (prev.price <= 0.0 || curr.price <= 0.0) return null
+            val spanDays = ChronoUnit.DAYS.between(prev.date, curr.date).coerceAtLeast(1L)
+            return if (isFci && spanDays > 1L) {
+                val dailyFactor = (curr.price / prev.price).pow(1.0 / spanDays.toDouble())
+                val effectivePrev = if (dailyFactor > 0.0) curr.price / dailyFactor else prev.price
+                effectivePrev to curr.price
+            } else {
+                prev.price to curr.price
+            }
+        }
+        if (
+            isFci &&
+            holding.id !in linkedHoldingIds &&
+            series.size >= 2 &&
+            date.isAfter(series.first().date) &&
+            (holding.tnaPercent ?: 0.0) <= 0.0
+        ) {
+            val nextIdx = series.indexOfFirst { it.date.isAfter(date) }
+            val (refPrev, refCurr) = if (nextIdx > 0) {
+                series[nextIdx - 1] to series[nextIdx]
+            } else {
+                series[series.size - 2] to series.last()
+            }
+            if (refPrev.price <= 0.0 || refCurr.price <= 0.0) return null
+            val spanDays = ChronoUnit.DAYS.between(refPrev.date, refCurr.date).coerceAtLeast(1L)
+            val dailyFactor = (refCurr.price / refPrev.price).pow(1.0 / spanDays.toDouble())
+            if (dailyFactor <= 0.0) return null
+            return (refCurr.price / dailyFactor) to refCurr.price
+        }
+        return null
+    }
+
+    private fun holdingLabel(holding: Holding, duplicateSymbols: Set<String>): String {
+        val base = holding.symbol.ifBlank { holding.name }
+        if (holding.symbol.trim().uppercase() !in duplicateSymbols) return base
+        val detail = holding.notes.trim().ifBlank {
+            holding.name.trim().takeIf {
+                it.isNotBlank() &&
+                    !it.equals(holding.symbol.trim(), ignoreCase = true) &&
+                    !it.equals("Letra del Tesoro ${holding.symbol.trim()}", ignoreCase = true)
+            }.orEmpty()
+        }
+        return if (detail.isNotBlank()) "$base ($detail)" else base
+    }
+
+    /**
+     * Native-cent variation between two prices. With a quantity it uses the full position;
+     * without one it scales the stored current valuation (`V_hoy`, at [latestPrice]) to
+     * `currPrice` and `prevPrice` (`V_curr - V_prev`), avoiding inflating the variation by
+     * applying `currPrice / prevPrice - 1` on top of an already-updated end-of-day balance.
+     */
+    private fun holdingDailyDeltaCents(
+        holding: Holding,
+        prevPrice: Double,
+        currPrice: Double,
+        latestPrice: Double = currPrice,
+    ): Long? {
+        if (prevPrice <= 0.0 || currPrice <= 0.0) return null
         return if (holding.quantity > 0.0) {
             holding.valueCentsFor(currPrice) - holding.valueCentsFor(prevPrice)
         } else {
             if (holding.currentValueCents <= 0L) return null
-            (holding.currentValueCents * (currPrice / prevPrice - 1.0)).roundToLong()
+            val refPrice = if (latestPrice > 0.0) latestPrice else currPrice
+            val currValueCents = (holding.currentValueCents * (currPrice / refPrice)).roundToLong()
+            val prevValueCents = (holding.currentValueCents * (prevPrice / refPrice)).roundToLong()
+            currValueCents - prevValueCents
+        }
+    }
+
+    private fun holdingBasisCents(
+        holding: Holding,
+        prevPrice: Double,
+        currPrice: Double,
+        latestPrice: Double = currPrice,
+    ): Long = if (holding.quantity > 0.0) {
+        holding.valueCentsFor(prevPrice)
+    } else {
+        val refPrice = if (latestPrice > 0.0) latestPrice else currPrice
+        if (refPrice > 0.0 && prevPrice > 0.0) {
+            (holding.currentValueCents * (prevPrice / refPrice)).roundToLong()
+        } else {
+            holding.currentValueCents
         }
     }
 
@@ -329,7 +438,11 @@ object DailyInterestEngine {
 
     private fun formatPrice(price: Double, currency: CurrencyCode): String {
         val prefix = if (currency == CurrencyCode.USD) "US$" else "$"
-        val decimals = if (price < 20.0) 4 else 2
+        val decimals = when {
+            price < 20.0 -> 4
+            kotlin.math.abs(price * 100.0 - kotlin.math.round(price * 100.0)) > 1e-4 -> 3
+            else -> 2
+        }
         return "$prefix " + String.format(localeAr, "%.${decimals}f", price)
     }
 
@@ -371,17 +484,23 @@ object DailyInterestEngine {
     }
 
     private fun quoteFormula(holding: Holding, prevPrice: Double, currPrice: Double, mep: Double): String = buildString {
+        val pct = if (prevPrice > 0.0) (currPrice / prevPrice - 1.0) * 100.0 else 0.0
+        val pctSign = if (pct >= 0.0) "+" else ""
+        val pctText = pctSign + String.format(localeAr, "%.2f%%", pct)
         if (holding.quantity > 0.0) {
             append(formatQty(holding.quantity))
             append(if (holding.quoteUnit == QuoteUnit.PER_100_NOMINAL) " VN (c/100) × (" else " u. × (")
             append(formatPrice(currPrice, holding.currency))
             append(" − ")
             append(formatPrice(prevPrice, holding.currency))
-            append(")")
+            append(") · ")
+            append(pctText)
         } else {
             append("Valuación ")
             append(formatNative(holding.currentValueCents, holding.currency))
-            append(" × (")
+            append(" · ")
+            append(pctText)
+            append(" (")
             append(formatPrice(currPrice, holding.currency))
             append(" ÷ ")
             append(formatPrice(prevPrice, holding.currency))

@@ -143,7 +143,7 @@ class DailyInterestEngineTest {
             name = "Adcap Balanceado III",
             assetType = AssetType.FCI,
             currency = CurrencyCode.ARS,
-            currentValueCents = 1_000_000_00L,
+            currentValueCents = 1_010_000_00L,
             costCents = 900_000_00L,
             tnaPercent = null,
             maturityDate = null,
@@ -186,10 +186,121 @@ class DailyInterestEngineTest {
             today = today,
         )
 
-        // 1% over ARS 1.000.000 = ARS 10.000 = 1.000.000 cents.
+        // End value ARS 1.010.000 at 101 vs 100 → start value ARS 1.000.000 → delta ARS 10.000 = 1.000.000 cents.
         assertEquals(1, breakdown.days.size)
         assertEquals(1_000_000L, breakdown.totalArsCents)
         assertTrue(breakdown.days.first().lines.first().explanation.contains("Valuación"))
+    }
+
+    @Test
+    fun `matches broker daily result for value-only SPY and accrues Adcap Balanceado III on every day`() {
+        val month = YearMonth.of(2026, 11)
+        val today = LocalDate.of(2026, 11, 11)
+        val spy = Holding(
+            id = 20,
+            symbol = "SPY",
+            name = "SPDR S&P 500 CEDEAR",
+            assetType = AssetType.CEDEAR,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 14_185_920_00L,
+            costCents = 13_991_040_00L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "",
+            marketKey = "rava:SPY",
+            source = MarketSource.RAVA,
+            quantity = 0.0,
+            quoteUnit = QuoteUnit.PER_UNIT,
+        )
+        val adcap = Holding(
+            id = 21,
+            symbol = "ADCAP-BAL3",
+            name = "Adcap Balanceado III - Clase A",
+            assetType = AssetType.FCI,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 5_000_000_00L,
+            costCents = 4_800_000_00L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "",
+            marketKey = "cafci:1402:4070",
+            source = MarketSource.CAFCI,
+            quantity = 0.0,
+            quoteUnit = QuoteUnit.PER_UNIT,
+        )
+        val quotes = listOf(
+            InstrumentQuote(
+                marketKey = "rava:SPY",
+                symbol = "SPY",
+                source = MarketSource.RAVA,
+                price = 20820.0,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                date = LocalDate.of(2026, 11, 10),
+                fetchedAt = 1L,
+            ),
+            InstrumentQuote(
+                marketKey = "rava:SPY",
+                symbol = "SPY",
+                source = MarketSource.RAVA,
+                price = 21110.0,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                date = LocalDate.of(2026, 11, 11),
+                fetchedAt = 2L,
+            ),
+            // CAFCI published up to 05/11, but Adcap must still accrue on 01/11..11/11.
+            InstrumentQuote(
+                marketKey = "cafci:1402:4070",
+                symbol = "FCI-1402",
+                source = MarketSource.CAFCI,
+                price = 5.435000,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                date = LocalDate.of(2026, 10, 29),
+                fetchedAt = 1L,
+            ),
+            InstrumentQuote(
+                marketKey = "cafci:1402:4070",
+                symbol = "FCI-1402",
+                source = MarketSource.CAFCI,
+                price = 5.467710,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                date = LocalDate.of(2026, 11, 4),
+                fetchedAt = 1L,
+            ),
+            InstrumentQuote(
+                marketKey = "cafci:1402:4070",
+                symbol = "FCI-1402",
+                source = MarketSource.CAFCI,
+                price = 5.473196,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                date = LocalDate.of(2026, 11, 5),
+                fetchedAt = 1L,
+            ),
+        )
+
+        val breakdown = DailyInterestEngine.build(
+            month = month,
+            wallets = emptyList(),
+            holdings = listOf(spy, adcap),
+            fxRates = emptyList(),
+            quotes = quotes,
+            fallbackMepRate = 1_587.9,
+            today = today,
+        )
+
+        val nov11 = breakdown.days.first { it.date == LocalDate.of(2026, 11, 11) }
+        val spyLine = nov11.lines.first { it.sourceName == "SPY" }
+        val adcapLine = nov11.lines.first { it.sourceName == "ADCAP-BAL3" }
+
+        // 672 CEDEARs * ($21.110 - $20.820) = $194.880,00 exactos.
+        assertEquals(194_880_00L, spyLine.dailyArsCents)
+        assertTrue(adcapLine.dailyArsCents > 0L)
+        // Adcap Balanceado III appears on all 11 days of November.
+        assertEquals(11, breakdown.days.count { day -> day.lines.any { it.sourceName == "ADCAP-BAL3" } })
     }
 
     @Test

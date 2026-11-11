@@ -238,15 +238,16 @@ class PortfolioValuationTest {
             quote("rava:AO27D", "AO27D", 101.0, LocalDate.of(2026, 11, 10)),
         )
 
+        // currentValueCents = US$ 1.010 at price 101 → prevValueCents = US$ 1.000 at price 100 → delta = US$ 10 = $ 10.000 at MEP 1.000.
+        val holdingWithEndValue = holding.copy(currentValueCents = 1_010_00)
         val valuation = PortfolioValuationEngine.calculate(
             wallets = emptyList(),
-            holdings = listOf(holding),
+            holdings = listOf(holdingWithEndValue),
             fxRates = emptyList(),
             fallbackMepRate = 1_000.0,
             quotes = quotes,
         )
 
-        // 1% over US$ 1.000 = US$ 10 = $ 10.000 at MEP 1.000.
         assertEquals(1_000_000L, valuation.holdings.first().dailyInterestCents)
     }
 

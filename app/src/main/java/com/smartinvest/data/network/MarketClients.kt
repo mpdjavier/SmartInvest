@@ -170,7 +170,21 @@ class RavaClient @Inject constructor(
             if (!response.isSuccessful) error("Rava respondió HTTP ${response.code} para $cleanSymbol")
             response.body?.string().orEmpty()
         }
-        parseHtml(cleanSymbol, html, today)
+        val histJson = runCatching { fetchHistoricoJson(cleanSymbol) }.getOrNull()
+        parseHtml(cleanSymbol, html, today, histJson)
+    }
+
+    private fun fetchHistoricoJson(symbol: String): String? {
+        val histUrl = "https://mercado.rava.com/api/prices/historico/arg/$symbol?dias=90"
+        val request = Request.Builder()
+            .url(histUrl)
+            .header("User-Agent", BROWSER_UA)
+            .header("Accept", "application/json")
+            .header("Referer", "https://mercado.rava.com/")
+            .build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) null else response.body?.string()
+        }
     }
 
     companion object {
@@ -179,8 +193,16 @@ class RavaClient @Inject constructor(
         private val DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy")
         private val META_PRICE = Regex("""\$\s*([\d.]+(?:,\d+)?)""")
         private val QUOTE_TIME = Regex("""(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?""")
+        private val JSON_OBJECT_REGEX = Regex("""\{[^{}]+\}""")
+        private val JSON_PRICE_REGEX = Regex(""""precio"\s*:\s*([\d.]+)""")
+        private val JSON_DATE_REGEX = Regex(""""fecha"\s*:\s*"(\d{4}-\d{2}-\d{2})""")
 
-        fun parseHtml(symbol: String, html: String, fallbackDate: LocalDate = LocalDate.now()): MarketFetch {
+        fun parseHtml(
+            symbol: String,
+            html: String,
+            fallbackDate: LocalDate = LocalDate.now(),
+            historicoJson: String? = null,
+        ): MarketFetch {
             require(html.isNotBlank()) { "Respuesta vacía de Rava para $symbol" }
             val doc = Jsoup.parse(html)
 
@@ -214,6 +236,19 @@ class RavaClient @Inject constructor(
                 }
             }
 
+            val jsonPoints = parseHistoricoJson(historicoJson.orEmpty()).associateBy { it.date }
+            if (jsonPoints.isNotEmpty()) {
+                for (i in history.indices) {
+                    val existing = history[i]
+                    val jsonPoint = jsonPoints[existing.date] ?: continue
+                    if (hasMoreDecimalPrecision(jsonPoint.price, existing.price)) {
+                        history[i] = jsonPoint
+                    }
+                }
+                val existingDates = history.map { it.date }.toSet()
+                jsonPoints.values.filter { it.date !in existingDates }.forEach { history += it }
+            }
+
             val ogDesc = doc.selectFirst("meta[property=og:description]")?.attr("content")
                 ?: doc.selectFirst("meta[name=description]")?.attr("content")
                 .orEmpty()
@@ -229,12 +264,26 @@ class RavaClient @Inject constructor(
                 val value = stat.selectFirst("dd")?.text()?.trim()?.let(::parseArNumber) ?: return@mapNotNull null
                 label to value
             }.toMap()
-            val previousPrice = stats["anterior"]?.takeIf { it > 0.0 }
-
-            val latestPrice = heroPrice?.takeIf { it > 0.0 }
+            val rawPreviousPrice = stats["anterior"]?.takeIf { it > 0.0 }
+            val rawLatestPrice = heroPrice?.takeIf { it > 0.0 }
                 ?: metaPrice?.takeIf { it > 0.0 }
                 ?: history.maxByOrNull { it.date }?.price
-            require(latestPrice != null) { "No se encontró cotización en Rava para $symbol" }
+            require(rawLatestPrice != null) { "No se encontró cotización en Rava para $symbol" }
+
+            val jsonLatest = jsonPoints[quoteDate]?.price
+            val latestPrice = if (jsonLatest != null && hasMoreDecimalPrecision(jsonLatest, rawLatestPrice)) {
+                jsonLatest
+            } else {
+                rawLatestPrice
+            }
+            val previousPrice = rawPreviousPrice?.let { prev ->
+                val priorJson = jsonPoints.entries
+                    .filter { it.key.isBefore(quoteDate) }
+                    .maxByOrNull { it.key }
+                    ?.value
+                    ?.price
+                if (priorJson != null && hasMoreDecimalPrecision(priorJson, prev)) priorJson else prev
+            }
 
             val points = history.toMutableList()
             val sameDateIdx = points.indexOfFirst { it.date == quoteDate }
@@ -261,6 +310,31 @@ class RavaClient @Inject constructor(
                 latestDate = latest.date,
                 history = sortedHistory,
             )
+        }
+
+        internal fun parseHistoricoJson(json: String): List<MarketQuotePoint> {
+            if (json.isBlank()) return emptyList()
+            val list = mutableListOf<MarketQuotePoint>()
+            for (match in JSON_OBJECT_REGEX.findAll(json)) {
+                val block = match.value
+                val price = JSON_PRICE_REGEX.find(block)?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: continue
+                val dateStr = JSON_DATE_REGEX.find(block)?.groupValues?.getOrNull(1) ?: continue
+                val date = runCatching { LocalDate.parse(dateStr) }.getOrNull() ?: continue
+                if (price > 0.0) {
+                    list += MarketQuotePoint(date = date, price = price)
+                }
+            }
+            return list
+        }
+
+        /**
+         * Rava's HTML table formats prices with 2 decimals (e.g. 128,42 for 128.415 on S30N6).
+         * Prefer the JSON price when it is the unrounded 3+ decimal version of the same quote.
+         */
+        private fun hasMoreDecimalPrecision(jsonPrice: Double, htmlPrice: Double): Boolean {
+            if (kotlin.math.abs(jsonPrice - htmlPrice) > 0.015) return false
+            val twoDecRounded = kotlin.math.round(jsonPrice * 100.0) / 100.0
+            return kotlin.math.abs(jsonPrice - twoDecRounded) > 1e-5
         }
 
         /** Parses "06/11 18:45" (or "06/11/2026") into a date, rolling over the year if needed. */
@@ -402,12 +476,40 @@ class CafciClient @Inject constructor(
                     points += MarketQuotePoint(date = quoteDate.minusDays(days.toLong()), price = pastPrice)
                 }
             }
-            // Derive previous day VCP from 7-day direct return when available so daily variation works immediately.
-            returnWindows[7]?.let { pct7d ->
-                val dailyPct = (pct7d / 100.0) / 7.0
-                val denom = 1.0 + dailyPct
-                if (denom > 0.0) {
-                    points += MarketQuotePoint(date = quoteDate.minusDays(1), price = latestVcp / denom)
+            // Populate daily VCP points across the 30-day and 7-day windows so FCI daily
+            // yields are accrued smoothly day by day instead of lumping multi-day jumps.
+            val priceAt7 = returnWindows[7]?.let { pct ->
+                val denom = 1.0 + (pct / 100.0)
+                if (denom > 0.0) latestVcp / denom else null
+            }
+            val priceAt30 = returnWindows[30]?.let { pct ->
+                val denom = 1.0 + (pct / 100.0)
+                if (denom > 0.0) latestVcp / denom else null
+            }
+            if (priceAt30 != null && priceAt7 != null && priceAt30 > 0.0 && priceAt7 > 0.0) {
+                val dailyFactor = Math.pow(priceAt7 / priceAt30, 1.0 / 23.0)
+                for (step in 1..22) {
+                    points += MarketQuotePoint(
+                        date = quoteDate.minusDays((30 - step).toLong()),
+                        price = priceAt30 * Math.pow(dailyFactor, step.toDouble()),
+                    )
+                }
+            }
+            if (priceAt7 != null && priceAt7 > 0.0) {
+                val dailyFactor = Math.pow(latestVcp / priceAt7, 1.0 / 7.0)
+                for (step in 1..6) {
+                    points += MarketQuotePoint(
+                        date = quoteDate.minusDays((7 - step).toLong()),
+                        price = priceAt7 * Math.pow(dailyFactor, step.toDouble()),
+                    )
+                }
+            } else if (priceAt30 != null && priceAt30 > 0.0) {
+                val dailyFactor = Math.pow(latestVcp / priceAt30, 1.0 / 30.0)
+                for (step in 1..29) {
+                    points += MarketQuotePoint(
+                        date = quoteDate.minusDays((30 - step).toLong()),
+                        price = priceAt30 * Math.pow(dailyFactor, step.toDouble()),
+                    )
                 }
             }
             points += MarketQuotePoint(date = quoteDate, price = latestVcp)
