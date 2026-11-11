@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, billeteras remuneradas, FCI, LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **compilación verificada** en este entorno: `:app:assembleDebug`, `:app:assembleRelease` (con R8 + lint vital) y los **61 tests unitarios** pasan con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **compilación verificada** en este entorno: `:app:assembleDebug`, `:app:assembleRelease` (con R8 + lint vital) y los **64 tests unitarios** pasan con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -104,6 +104,14 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - Total y cantidad de cuotas del mes.
 - Estado del hogar (quién transfiere a quién o cuentas equilibradas).
 - Botón de actualización manual.
+- Se actualiza al abrir la app y mediante WorkManager; respeta el modo de privacidad (asteriscos) igual que la app.
+
+### Privacidad de cifras
+
+- **Ajustes → Ocultar cifras** reemplaza todos los montos por `$ ****` / `US$ ****` en Inicio, Hogar, Cartera, analítica y widget.
+- El estado es global y se guarda en DataStore (`hide_amounts`), así que se mantiene al reiniciar la app.
+- Porcentajes, fechas, cantidades y precios de mercado siguen visibles para no perder contexto.
+- El detalle de las fórmulas del interés diario se oculta cuando el modo está activo.
 
 ---
 
@@ -240,7 +248,8 @@ Sea para cada integrante participante:
 neto = gastos_directos_pagados + aportes_al_fondo − extracciones_del_fondo
 total_neto = Σ neto
 objetivo = reparto exacto de total_neto en partes iguales
-diferencia = neto − objetivo
+ajuste_saldado = +pagos_registrados (pagador) − pagos_registrados (receptor)
+diferencia_pendiente = neto − objetivo + ajuste_saldado
 ```
 
 Reglas:
@@ -250,7 +259,8 @@ Reglas:
 3. El **saldo preexistente** del fondo es una reserva compartida y no altera la igualación del mes.
 4. Los centavos sobrantes del reparto se asignan a los mayores aportantes.
 5. La suma de los objetivos siempre coincide con el total neto, incluso cuando es negativo (división con piso).
-6. Con las diferencias se generan transferencias **deudor → acreedor** de forma greedy, minimizando la cantidad de operaciones.
+6. Con las diferencias pendientes se generan transferencias **deudor → acreedor** de forma greedy, minimizando la cantidad de operaciones.
+7. Cada **saldado manual** registrado en el mes resta la deuda del pagador y el crédito del receptor. Si el pago cubre todo, la diferencia queda en cero y el mes figura como **Mes saldado**; si es parcial, la app muestra **Saldo pendiente** con el remanente exacto y conserva los pagos ya registrados.
 
 **Ejemplo**
 
@@ -550,7 +560,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** en este entorno se ejecutaron `:app:testDebugUnitTest` (**61 tests, 0 fallos**), `:app:assembleDebug` y `:app:assembleRelease` con JDK 17 (Temurin) y Android SDK 35. El APK de debug queda en `app/build/outputs/apk/debug/app-debug.apk` (~28,0 MB) y el release sin firmar en `app/build/outputs/apk/release/app-release-unsigned.apk` (~8,0 MB). `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** en este entorno se ejecutaron `:app:testDebugUnitTest` (**64 tests, 0 fallos**), `:app:assembleDebug` y `:app:assembleRelease` con JDK 17 (Temurin) y Android SDK 35. El APK de debug queda en `app/build/outputs/apk/debug/app-debug.apk` (~28,2 MB) y el release sin firmar en `app/build/outputs/apk/release/app-release-unsigned.apk` (~8,0 MB). `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -570,7 +580,7 @@ Tests unitarios JVM (sin emulador):
 | --- | --- |
 | `MoneyParserTest` | parseo de importes en formato argentino |
 | `InstallmentEngineTest` | reparto de cuotas y ciclo de tarjeta |
-| `SettlementCalculatorTest` | liquidación, aportes, extracciones, transferencias y saldado manual |
+| `SettlementCalculatorTest` | liquidación, aportes, extracciones, transferencias y saldado manual total/parcial (saldo pendiente) |
 | `PortfolioValuationTest` | valoración ARS/USD, CEDEAR en exposición USD, MEP, topes, interés, variación diaria de un bono USD y tenencias sin cantidad (variación aplicada sobre la valuación) |
 | `DailyInterestEngineTest` | desglose diario por TNA/tope, variación real de cotizaciones (con y sin cantidad), conciliación y TNA tomada del FCI vinculado |
 | `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago) y pago de servicio (Galicia), etiqueta de importe en línea aparte, concepto `Pago de …`, fechas con mes en texto y comprobantes sin datos |
@@ -579,6 +589,7 @@ Tests unitarios JVM (sin emulador):
 | `PlanningTest` | sueldo, rebalanceo y rescate de emergencia |
 | `XlsxReaderTest` | lectura de `.xlsx`: shared strings, inline strings, números y celdas salteadas |
 | `SplitHomeParserTest` | hojas Gastos/Fondo, pagadores, cuotas, fechas y totales |
+| `FormattersTest` | enmascarado de montos en modo privacidad (ARS/USD/compactos/firmados) y restauración al desactivarlo |
 
 ---
 

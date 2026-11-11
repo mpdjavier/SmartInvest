@@ -127,7 +127,14 @@ data class MemberSettlement(
     val fundWithdrawalsCents: Long,
     val netContributionCents: Long,
     val targetCents: Long,
+    /**
+     * Pending difference after subtracting the manual settlements already registered
+     * for the month: positive means the member still receives, negative means they
+     * still owe. Before any settlement it is exactly `netContributionCents - targetCents`.
+     */
     val differenceCents: Long,
+    /** Signed adjustment applied by registered settlements (+ for the payer, - for the receiver). */
+    val settledAdjustmentCents: Long = 0L,
 ) {
     val role: SettlementRole
         get() = when {

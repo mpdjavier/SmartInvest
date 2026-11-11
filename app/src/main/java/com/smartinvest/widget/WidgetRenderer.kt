@@ -9,6 +9,7 @@ import android.widget.RemoteViews
 import com.smartinvest.MainActivity
 import com.smartinvest.R
 import com.smartinvest.core.money.MoneyFormatter
+import com.smartinvest.ui.util.MoneyVisibility
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -26,17 +27,18 @@ object WidgetRenderer {
         if (ids.isEmpty()) return
 
         val views = RemoteViews(context.packageName, R.layout.widget_smart_invest).apply {
-            setTextViewText(R.id.widget_total, MoneyFormatter.ars(data.totalArsCents))
-            val mep = MoneyFormatter.ars((data.mepRate * 100).roundToLong())
+            val hidden = data.hideAmounts
+            setTextViewText(R.id.widget_total, money(data.totalArsCents, hidden, Currency.ARS))
+            val mep = money((data.mepRate * 100).roundToLong(), hidden, Currency.ARS)
             val estimated = if (data.mepEstimated) " (est.)" else ""
             setTextViewText(
                 R.id.widget_total_usd,
-                "${MoneyFormatter.usd(data.totalUsdCents)} · MEP $mep$estimated",
+                "${money(data.totalUsdCents, hidden, Currency.USD)} · MEP $mep$estimated",
             )
-            setTextViewText(R.id.widget_interest, "+ ${MoneyFormatter.ars(data.dailyInterestCents)}")
+            setTextViewText(R.id.widget_interest, "+ ${money(data.dailyInterestCents, hidden, Currency.ARS)}")
             setTextViewText(
                 R.id.widget_installments,
-                "${MoneyFormatter.ars(data.installmentsCents)} · ${data.installmentsCount} cuotas",
+                "${money(data.installmentsCents, hidden, Currency.ARS)} · ${data.installmentsCount} cuotas",
             )
             setTextViewText(R.id.widget_household, data.householdStatus)
 
@@ -51,6 +53,14 @@ object WidgetRenderer {
         }
 
         manager.updateAppWidget(ids, views)
+    }
+
+    private enum class Currency { ARS, USD }
+
+    private fun money(cents: Long, hidden: Boolean, currency: Currency): String = when {
+        hidden -> if (currency == Currency.USD) "US$ ${MoneyVisibility.MASK}" else "$ ${MoneyVisibility.MASK}"
+        currency == Currency.USD -> MoneyFormatter.usd(cents)
+        else -> MoneyFormatter.ars(cents)
     }
 
     private fun refreshIntent(context: Context): PendingIntent {

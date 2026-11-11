@@ -18,6 +18,8 @@ data class AppSettings(
     /** 0 = automatic weighted TNA of ARS wallets and peso holdings. */
     val pesoReferenceTnaPercent: Double = 0.0,
     val notificationsEnabled: Boolean = true,
+    /** Privacy mode: monetary amounts are shown as asterisks on every screen. */
+    val hideAmounts: Boolean = false,
 ) {
     val salaryWeights: List<Int>
         get() = listOf(salaryFciPercent, salaryLecapPercent, salaryMepPercent)

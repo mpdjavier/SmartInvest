@@ -43,6 +43,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val monthlyDevaluation = doublePreferencesKey("monthly_devaluation_percent")
         val pesoReferenceTna = doublePreferencesKey("peso_reference_tna_percent")
         val lastSync = stringPreferencesKey("last_sync_at")
+        val hideAmounts = booleanPreferencesKey("hide_amounts")
     }
 
     override val settings: Flow<AppSettings> = context.settingsDataStore.data
@@ -67,6 +68,7 @@ class SettingsRepositoryImpl @Inject constructor(
             prefs[Keys.monthlyDevaluation] = settings.monthlyDevaluationPercent
             prefs[Keys.pesoReferenceTna] = settings.pesoReferenceTnaPercent
             prefs[Keys.notifications] = settings.notificationsEnabled
+            prefs[Keys.hideAmounts] = settings.hideAmounts
             prefs[Keys.initialized] = true
         }
     }
@@ -95,5 +97,6 @@ class SettingsRepositoryImpl @Inject constructor(
         monthlyDevaluationPercent = this[Keys.monthlyDevaluation] ?: 2.0,
         pesoReferenceTnaPercent = this[Keys.pesoReferenceTna] ?: 0.0,
         notificationsEnabled = this[Keys.notifications] ?: true,
+        hideAmounts = this[Keys.hideAmounts] ?: false,
     )
 }

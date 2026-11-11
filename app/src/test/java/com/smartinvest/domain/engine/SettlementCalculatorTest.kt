@@ -151,5 +151,45 @@ class SettlementCalculatorTest {
         assertTrue(summary.isMonthClosed)
         assertEquals(20_000_00L, summary.registeredSettlementCents)
         assertEquals(paidDate, summary.settlementDate)
+        assertTrue(summary.isBalanced)
+        assertTrue(summary.transfers.isEmpty())
+        assertEquals(0L, summary.members.sumOf { it.differenceCents })
+        assertEquals(20_000_00L, summary.members.first { it.memberId == mom.id }.settledAdjustmentCents)
+        assertEquals(-20_000_00L, summary.members.first { it.memberId == me.id }.settledAdjustmentCents)
+    }
+
+    @Test
+    fun `partial settlement leaves only the pending difference`() {
+        val expenses = listOf(
+            expense(1, me.id, 60_000_00),
+            expense(2, mom.id, 20_000_00),
+        )
+        val registered = listOf(
+            RegisteredSettlement(
+                id = 100,
+                month = month,
+                fromMemberId = mom.id,
+                fromName = mom.name,
+                toMemberId = me.id,
+                toName = me.name,
+                amountCents = 5_000_00L,
+                date = LocalDate.of(2025, 5, 20),
+                note = "Pago parcial",
+                createdAt = 2_000L,
+            ),
+        )
+        val summary = SettlementCalculator.calculate(
+            month = month,
+            members = listOf(me, mom),
+            expenses = expenses,
+            fundMovements = emptyList(),
+            fundBalanceCents = 0,
+            settlements = registered,
+        )
+
+        assertEquals(1, summary.transfers.size)
+        assertEquals(15_000_00L, summary.transfers.first().amountCents)
+        assertEquals(-15_000_00L, summary.members.first { it.memberId == mom.id }.differenceCents)
+        assertEquals(15_000_00L, summary.members.first { it.memberId == me.id }.differenceCents)
     }
 }

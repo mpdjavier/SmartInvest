@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -291,6 +293,8 @@ private fun SettlementCard(
                 )
             }
             val (pillText, pillColor) = when {
+                // A registered close does not hide a still-pending balance (partial payment).
+                summary.mainTransfer != null -> "Saldo pendiente" to Amber
                 summary.isMonthClosed -> "Mes saldado" to Emerald
                 summary.isBalanced -> "Equilibrado" to Emerald
                 else -> "A transferir" to Amber
@@ -334,6 +338,43 @@ private fun SettlementCard(
         Spacer(Modifier.height(14.dp))
         val transfer = summary.mainTransfer
         when {
+            // Pending transfers win over the registered close: a partial payment must
+            // still show what is left to transfer.
+            transfer != null -> {
+                val alreadyPaid = summary.settlements
+                    .filter { !it.isClosingMarker && it.amountCents > 0L }
+                    .sumOf { it.amountCents }
+                val prefix = if (alreadyPaid > 0L) {
+                    "Ya se saldaron ${Fmt.ars(alreadyPaid)}. Queda pendiente: "
+                } else {
+                    ""
+                }
+                InfoBanner(
+                    "${prefix}${transfer.fromName} debe transferir ${Fmt.ars(transfer.amountCents)} a " +
+                        "${transfer.toName} para empatar a partes iguales.",
+                    color = Amber,
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = { onOpenSettleDialog(transfer) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Saldar deuda (${Fmt.ars(transfer.amountCents)})")
+                }
+                if (summary.settlements.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Pagos registrados este mes",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    summary.settlements.forEach { record ->
+                        RegisteredSettlementRow(record = record, onReopen = { onReopenSettlement(record.id) })
+                    }
+                }
+            }
             summary.isMonthClosed -> {
                 val closedDate = summary.settlementDate?.let(Fmt::shortDate) ?: "hoy"
                 InfoBanner(
@@ -350,22 +391,6 @@ private fun SettlementCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Arrancar mes siguiente")
-                }
-            }
-            transfer != null -> {
-                InfoBanner(
-                    "${transfer.fromName} debe transferir ${Fmt.ars(transfer.amountCents)} a ${transfer.toName} " +
-                        "para empatar a partes iguales.",
-                    color = Amber,
-                )
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = { onOpenSettleDialog(transfer) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Saldar deuda (${Fmt.ars(transfer.amountCents)})")
                 }
             }
             summary.hasActivity -> {
@@ -532,11 +557,16 @@ private fun SettlementMemberRow(member: MemberSettlement, maxNet: Long) {
         Spacer(Modifier.width(7.dp))
         Text(member.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         Column(horizontalAlignment = Alignment.End) {
-            Text(Fmt.ars(member.netContributionCents), style = MaterialTheme.typography.titleSmall)
+            Text(
+                Fmt.ars(member.netContributionCents),
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+            )
             Text(
                 when {
                     member.differenceCents < 0 -> "Debe transferir ${Fmt.ars(-member.differenceCents)}"
                     member.differenceCents > 0 -> "Debe recibir ${Fmt.ars(member.differenceCents)}"
+                    member.settledAdjustmentCents != 0L -> "Saldo saldado"
                     else -> "En equilibrio"
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -556,6 +586,7 @@ private fun SettlementMemberRow(member: MemberSettlement, maxNet: Long) {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExpenseCard(
     expense: MonthlyExpenseItem,
@@ -596,19 +627,26 @@ private fun ExpenseCard(
                     Text(
                         "$payerName · ${expense.paymentMethod.shortLabel} · ${Fmt.shortDate(expense.date)}",
                         style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         Fmt.ars(expense.monthlyCents),
                         style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (expense.isInstallment) {
                         Text(
                             "Total ${Fmt.ars(expense.totalCents)}",
                             style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -633,10 +671,10 @@ private fun ExpenseCard(
                 }
                 add(categoryName to categoryColor)
             }
-            Row(
+            FlowRow(
                 modifier = Modifier.padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 tags.forEach { (label, color) -> TagPill(label, color) }
             }
@@ -707,12 +745,16 @@ private fun FundMovementCard(
                 Text(
                     "${movement.type.label} · $memberName · ${Fmt.shortDate(movement.date)}",
                     style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Spacer(Modifier.width(8.dp))
             Text(
                 "$sign ${Fmt.ars(movement.amountCents)}",
                 style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
                 color = color,
             )
             if (movement.expenseId == null) {

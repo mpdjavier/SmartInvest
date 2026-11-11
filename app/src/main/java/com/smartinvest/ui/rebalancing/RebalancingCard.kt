@@ -56,6 +56,7 @@ import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.theme.Violet
 import com.smartinvest.ui.util.Fmt
+import com.smartinvest.ui.util.MoneyVisibility
 import kotlin.math.roundToLong
 
 @Composable
@@ -434,7 +435,7 @@ private fun NextIncomeCard(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                plan.detail,
+                if (MoneyVisibility.hidden) "Detalle oculto por privacidad" else plan.detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

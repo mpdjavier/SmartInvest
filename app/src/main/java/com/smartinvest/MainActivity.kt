@@ -18,16 +18,29 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.smartinvest.data.importer.ReceiptInbox
+import com.smartinvest.data.widget.WidgetRefresher
+import com.smartinvest.domain.repository.SettingsRepository
 import com.smartinvest.notification.NotificationHelper
 import com.smartinvest.ui.navigation.SmartInvestNavHost
 import com.smartinvest.ui.theme.SmartInvestTheme
+import com.smartinvest.ui.util.MoneyVisibility
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var widgetRefresher: WidgetRefresher
+
+    private var lastHideAmounts: Boolean? = null
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -40,6 +53,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         NotificationHelper.ensureChannel(this)
         requestNotificationPermissionIfNeeded()
+        observePrivacyMode()
         handleSharedIntent(intent)
 
         setContent {
@@ -58,6 +72,21 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleSharedIntent(intent)
+    }
+
+    /** Keeps the global amount mask in sync with the saved preference. */
+    private fun observePrivacyMode() {
+        lifecycleScope.launch {
+            settingsRepository.settings.collect { settings ->
+                MoneyVisibility.update(settings.hideAmounts)
+                val previous = lastHideAmounts
+                if (previous != null && previous != settings.hideAmounts) {
+                    // The widget is a RemoteViews surface, so refresh it to apply the mask.
+                    widgetRefresher.refresh()
+                }
+                lastHideAmounts = settings.hideAmounts
+            }
+        }
     }
 
     private fun handleSharedIntent(intent: Intent?) {

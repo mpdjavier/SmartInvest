@@ -34,7 +34,7 @@ object NotificationHelper {
         manager.createNotificationChannel(channel)
     }
 
-    fun notifyAlerts(context: Context, alerts: List<AppAlert>) {
+    fun notifyAlerts(context: Context, alerts: List<AppAlert>, hideAmounts: Boolean = false) {
         if (alerts.isEmpty()) return
         if (!notificationsAllowed(context)) return
 
@@ -50,10 +50,10 @@ object NotificationHelper {
 
         val critical = alerts.any { it.severity == AlertSeverity.CRITICAL }
         val title = if (alerts.size == 1) alerts.first().title else "${alerts.size} alertas financieras"
-        val summary = if (alerts.size == 1) {
-            alerts.first().message
-        } else {
-            alerts.joinToString(" · ") { it.title }
+        val summary = when {
+            alerts.size > 1 -> alerts.joinToString(" · ") { it.title }
+            hideAmounts -> "Abrí SmartInvest para ver el detalle"
+            else -> alerts.first().message
         }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)

@@ -5,6 +5,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,7 +48,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.smartinvest.core.money.MoneyFormatter
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.model.AlertSeverity
 import com.smartinvest.domain.model.AppAlert
@@ -70,10 +71,12 @@ import com.smartinvest.ui.theme.EmeraldSoft
 import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.util.Fmt
+import com.smartinvest.ui.util.MoneyVisibility
 import com.smartinvest.ui.util.colorFromHex
 import com.smartinvest.ui.util.severityColor
 import kotlin.math.roundToLong
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DashboardScreen(
     onNewExpense: () -> Unit,
@@ -148,27 +151,29 @@ fun DashboardScreen(
 
         item {
             state.overview?.let { overview ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // FlowRow keeps every figure complete: when the three tiles do not fit on
+                // one line they wrap instead of ellipsizing "Interés / día".
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     StatTile(
                         label = "Interés / día",
                         value = Fmt.ars(overview.analytics.dailyInterestCents),
                         caption = "TNA ponderada",
                         accent = EmeraldSoft,
-                        modifier = Modifier.weight(1f),
                     )
                     StatTile(
                         label = "Proyección mes",
                         value = Fmt.ars(overview.analytics.monthlyInterestCents),
                         caption = "30 días",
                         accent = Sky,
-                        modifier = Modifier.weight(1f),
                     )
                     StatTile(
                         label = "Ganancia 30d",
                         value = Fmt.signedArs(overview.analytics.trailing30dGainCents),
                         caption = "${Fmt.signedArs(overview.analytics.trailing30dGainPerDayCents)} / día",
                         accent = if (overview.analytics.trailing30dGainCents >= 0) Emerald else Rose,
-                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -277,7 +282,7 @@ private fun HeroCard(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            "${Fmt.usd(valuation?.totalUsdCents ?: 0)} · MEP ${MoneyFormatter.ars(((valuation?.mepRate ?: 0.0) * 100).roundToLong())}",
+            "${Fmt.usd(valuation?.totalUsdCents ?: 0)} · MEP ${Fmt.ars(((valuation?.mepRate ?: 0.0) * 100).roundToLong())}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -475,11 +480,19 @@ private fun MemberBar(member: MemberSettlement, maxNet: Long) {
                 .background(color),
         )
         Spacer(Modifier.width(7.dp))
-        Text(member.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(
+            member.name,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(8.dp))
         Text(
             Fmt.ars(member.netContributionCents),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
         )
     }
     Spacer(Modifier.height(5.dp))
@@ -520,7 +533,7 @@ private fun DollarCard(rates: List<FxRate>) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                MoneyFormatter.ars((rate.sell * 100).roundToLong()),
+                                Fmt.ars((rate.sell * 100).roundToLong()),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = if (rate.house == "bolsa") Emerald else MaterialTheme.colorScheme.onSurface,
                             )
@@ -567,7 +580,7 @@ private fun AlertRow(alert: AppAlert) {
         Column(Modifier.weight(1f)) {
             Text(alert.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                alert.message,
+                if (MoneyVisibility.hidden) "Detalle oculto por privacidad" else alert.message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,

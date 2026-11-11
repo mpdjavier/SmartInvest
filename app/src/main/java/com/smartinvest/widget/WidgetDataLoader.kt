@@ -14,6 +14,7 @@ import com.smartinvest.data.mapper.toMonthlyItem
 import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.engine.SettlementCalculator
 import com.smartinvest.domain.repository.SettingsRepository
+import com.smartinvest.ui.util.MoneyVisibility
 import kotlinx.coroutines.flow.first
 import java.time.YearMonth
 import javax.inject.Inject
@@ -29,6 +30,7 @@ data class WidgetData(
     val installmentsCount: Int,
     val householdStatus: String,
     val updatedAtMillis: Long,
+    val hideAmounts: Boolean = false,
 )
 
 @Singleton
@@ -75,12 +77,12 @@ class WidgetDataLoader @Inject constructor(
         )
 
         val household = when {
-            !summary.hasActivity -> "Hogar: sin movimientos este mes · Fondo ${MoneyFormatter.ars(balance)}"
+            !summary.hasActivity -> "Hogar: sin movimientos este mes · Fondo ${money(balance, currentSettings.hideAmounts)}"
             summary.mainTransfer != null -> {
                 val transfer = summary.mainTransfer!!
-                "${transfer.fromName} → ${transfer.toName}: ${MoneyFormatter.ars(transfer.amountCents)} para empatar"
+                "${transfer.fromName} → ${transfer.toName}: ${money(transfer.amountCents, currentSettings.hideAmounts)} para empatar"
             }
-            else -> "Hogar: cuentas equilibradas · Fondo ${MoneyFormatter.ars(balance)}"
+            else -> "Hogar: cuentas equilibradas · Fondo ${money(balance, currentSettings.hideAmounts)}"
         }
 
         return WidgetData(
@@ -93,6 +95,10 @@ class WidgetDataLoader @Inject constructor(
             installmentsCount = summary.installmentCount,
             householdStatus = household,
             updatedAtMillis = System.currentTimeMillis(),
+            hideAmounts = currentSettings.hideAmounts,
         )
     }
+
+    private fun money(cents: Long, hidden: Boolean): String =
+        if (hidden) "$ ${MoneyVisibility.MASK}" else MoneyFormatter.ars(cents)
 }

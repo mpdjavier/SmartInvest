@@ -377,6 +377,27 @@ fun SettingsScreen(
             SmartCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
+                        Text("Ocultar cifras", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Muestra asteriscos en lugar de montos para usar la app en público",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.settings.hideAmounts,
+                        onCheckedChange = { value ->
+                            viewModel.updateSettings { it.copy(hideAmounts = value) }
+                        },
+                    )
+                }
+            }
+        }
+
+        item {
+            SmartCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
                         Text("Notificaciones push", style = MaterialTheme.typography.titleMedium)
                         Text(
                             "Alertas de tasas, vencimientos y rebalanceo",

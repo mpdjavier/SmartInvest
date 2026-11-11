@@ -73,12 +73,25 @@ object SettlementCalculator {
         val targets = targetShares(totalNet, participants, netByMember)
         val fairShare = if (participants.isEmpty()) 0L else Math.floorDiv(totalNet, participants.size.toLong())
 
+        // Manual settlements already paid this month reduce the pending balance:
+        // the payer's debt goes down (+ amount) and the receiver's credit too (- amount).
+        val settledAdjustment = mutableMapOf<Long, Long>()
+        settlements
+            .filter { it.month == month && !it.isClosingMarker && it.amountCents > 0L }
+            .forEach { record ->
+                settledAdjustment[record.fromMemberId] =
+                    (settledAdjustment[record.fromMemberId] ?: 0L) + record.amountCents
+                settledAdjustment[record.toMemberId] =
+                    (settledAdjustment[record.toMemberId] ?: 0L) - record.amountCents
+            }
+
         val memberSettlements = participants.map { member ->
             val direct = directByMember[member.id] ?: 0L
             val contributions = contributionsByMember[member.id] ?: 0L
             val withdrawals = withdrawalsByMember[member.id] ?: 0L
             val net = netByMember[member.id] ?: 0L
             val target = targets[member.id] ?: 0L
+            val adjustment = settledAdjustment[member.id] ?: 0L
             MemberSettlement(
                 memberId = member.id,
                 name = member.name,
@@ -88,7 +101,8 @@ object SettlementCalculator {
                 fundWithdrawalsCents = withdrawals,
                 netContributionCents = net,
                 targetCents = target,
-                differenceCents = net - target,
+                differenceCents = net - target + adjustment,
+                settledAdjustmentCents = adjustment,
             )
         }.sortedByDescending { it.netContributionCents }
 

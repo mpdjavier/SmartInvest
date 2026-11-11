@@ -66,6 +66,7 @@ import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.theme.Violet
 import com.smartinvest.ui.util.Fmt
+import com.smartinvest.ui.util.MoneyVisibility
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -352,13 +353,21 @@ private fun InterestReconciliationCard(reconciliation: InterestReconciliation) {
         )
         if (reconciliation.notes.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            reconciliation.notes.forEach { note ->
+            if (MoneyVisibility.hidden) {
                 Text(
-                    "· $note",
+                    "· Detalle oculto por privacidad",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(4.dp))
+            } else {
+                reconciliation.notes.forEach { note ->
+                    Text(
+                        "· $note",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
             }
         }
     }
@@ -461,7 +470,7 @@ private fun InterestLineRow(line: InterestLine) {
         }
         Spacer(Modifier.height(2.dp))
         Text(
-            line.explanation,
+            if (MoneyVisibility.hidden) "Detalle oculto por privacidad" else line.explanation,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

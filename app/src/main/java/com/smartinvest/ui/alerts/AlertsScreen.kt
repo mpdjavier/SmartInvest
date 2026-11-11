@@ -46,6 +46,7 @@ import com.smartinvest.ui.components.EmptyState
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.theme.Emerald
 import com.smartinvest.ui.theme.Sky
+import com.smartinvest.ui.util.MoneyVisibility
 import com.smartinvest.ui.util.severityColor
 import java.time.Instant
 import java.time.ZoneId
@@ -196,7 +197,7 @@ private fun AlertCard(alert: AppAlert, onRead: () -> Unit) {
                 }
             }
             Text(
-                alert.message,
+                if (MoneyVisibility.hidden) "Detalle oculto por privacidad" else alert.message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp),

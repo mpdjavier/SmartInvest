@@ -3,13 +3,13 @@ package com.smartinvest.ui.household
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.smartinvest.core.money.MoneyFormatter
 import com.smartinvest.core.money.MoneyParser
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.model.FundMovementType
 import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.repository.HouseholdRepository
 import com.smartinvest.domain.repository.NewFundMovement
+import com.smartinvest.ui.util.Fmt
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -113,7 +113,7 @@ class FundMovementViewModel @Inject constructor(
         if (current.type == FundMovementType.WITHDRAWAL && amount > latestData.fundBalanceCents) {
             form.update {
                 it.copy(
-                    error = "Saldo insuficiente. Disponible: ${MoneyFormatter.ars(latestData.fundBalanceCents)}",
+                    error = "Saldo insuficiente. Disponible: ${Fmt.ars(latestData.fundBalanceCents)}",
                 )
             }
             return

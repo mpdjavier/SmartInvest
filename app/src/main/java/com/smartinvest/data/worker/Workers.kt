@@ -53,7 +53,7 @@ class AlertScanWorker @AssistedInject constructor(
         val created = alerts.scanAlerts()
         val current = settings.currentSettings()
         if (current.notificationsEnabled) {
-            NotificationHelper.notifyAlerts(applicationContext, created)
+            NotificationHelper.notifyAlerts(applicationContext, created, current.hideAmounts)
         }
         Result.success()
     }.getOrElse { Result.retry() }
