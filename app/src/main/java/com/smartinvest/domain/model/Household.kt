@@ -37,7 +37,8 @@ enum class ExpensePaymentMethod(val label: String, val shortLabel: String) {
     DEBIT("Débito", "Débito"),
     TRANSFER("Transferencia", "Transfer."),
     CREDIT("Tarjeta de crédito", "Crédito"),
-    COMMON_FUND("Fondo común", "Fondo");
+    COMMON_FUND("Fondo común", "Fondo"),
+    WALLET_FCI("FCI billetera", "FCI billetera");
 
     companion object {
         fun fromDb(value: String): ExpensePaymentMethod =
@@ -58,6 +59,7 @@ data class HouseholdExpense(
     val installments: Int,
     val notes: String,
     val createdAt: Long,
+    val walletHoldingId: Long? = null,
 )
 
 data class Installment(

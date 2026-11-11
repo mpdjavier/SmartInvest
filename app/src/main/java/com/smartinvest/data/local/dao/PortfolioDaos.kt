@@ -62,6 +62,15 @@ interface HoldingDao {
     @Query("SELECT * FROM holdings WHERE id = :id")
     suspend fun getById(id: Long): HoldingEntity?
 
+    @Query("SELECT * FROM holdings WHERE isWallet = 1 ORDER BY id ASC")
+    fun observeWallets(): Flow<List<HoldingEntity>>
+
+    @Query("SELECT * FROM holdings WHERE isWallet = 1 ORDER BY id ASC")
+    suspend fun getWallets(): List<HoldingEntity>
+
+    @Query("UPDATE holdings SET isWallet = 0 WHERE id != :id")
+    suspend fun clearWalletFlags(id: Long)
+
     @Query("SELECT * FROM holdings WHERE UPPER(symbol) LIKE UPPER(:symbol)")
     suspend fun getBySymbol(symbol: String): List<HoldingEntity>
 

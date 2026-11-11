@@ -35,6 +35,8 @@ data class HoldingForm(
     val marketKey: String = "",
     val quantityText: String = "",
     val quoteUnit: QuoteUnit = QuoteUnit.PER_UNIT,
+    val isWallet: Boolean = false,
+    val settlementDays: Int = 1,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val error: String? = null,
@@ -74,7 +76,14 @@ class HoldingEditorViewModel @Inject constructor(
 
     fun setSymbol(value: String) = form.update { it.copy(symbol = value.uppercase(), error = null) }
     fun setName(value: String) = form.update { it.copy(name = value, error = null) }
-    fun setType(value: AssetType) = form.update { it.copy(assetType = value, error = null) }
+    fun setType(value: AssetType) = form.update {
+        it.copy(
+            assetType = value,
+            isWallet = if (value == AssetType.FCI) it.isWallet else false,
+            settlementDays = if (value == AssetType.FCI) it.settlementDays else 1,
+            error = null,
+        )
+    }
     fun setCurrency(value: CurrencyCode) = form.update { it.copy(currency = value, error = null) }
     fun setValue(value: String) = form.update { it.copy(valueText = value, error = null) }
     fun setCost(value: String) = form.update { it.copy(costText = value, error = null) }
@@ -84,6 +93,16 @@ class HoldingEditorViewModel @Inject constructor(
     fun setMarketKey(value: String) = form.update { it.copy(marketKey = value, error = null) }
     fun setQuantity(value: String) = form.update { it.copy(quantityText = value, error = null) }
     fun setQuoteUnit(value: QuoteUnit) = form.update { it.copy(quoteUnit = value, error = null) }
+    fun setWallet(value: Boolean) = form.update {
+        it.copy(
+            isWallet = value,
+            settlementDays = if (value) 0 else it.settlementDays,
+            error = null,
+        )
+    }
+    fun setSettlementDays(value: Int) = form.update {
+        it.copy(settlementDays = value.coerceIn(0, 10), error = null)
+    }
     fun clearError() = form.update { it.copy(error = null) }
 
     fun applyPreset(preset: MarketPreset) {
@@ -95,6 +114,8 @@ class HoldingEditorViewModel @Inject constructor(
                 currency = preset.currency,
                 quoteUnit = preset.quoteUnit,
                 marketKey = preset.marketKey,
+                settlementDays = preset.settlementDays,
+                isWallet = false,
                 error = null,
             )
         }
@@ -144,6 +165,8 @@ class HoldingEditorViewModel @Inject constructor(
             source = MarketKeyParser.sourceFor(normalizedKey),
             quantity = quantity,
             quoteUnit = current.quoteUnit,
+            isWallet = current.isWallet && current.assetType == AssetType.FCI,
+            settlementDays = if (current.assetType == AssetType.FCI) current.settlementDays else 1,
         )
 
         form.update { it.copy(isSaving = true, error = null) }
@@ -189,6 +212,8 @@ class HoldingEditorViewModel @Inject constructor(
         marketKey = holding.marketKey,
         quantityText = if (holding.quantity > 0.0) holding.quantity.toString().replace('.', ',') else "",
         quoteUnit = holding.quoteUnit,
+        isWallet = holding.isWallet,
+        settlementDays = holding.settlementDays,
         isLoading = false,
     )
 

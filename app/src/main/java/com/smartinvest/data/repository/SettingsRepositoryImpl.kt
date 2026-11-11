@@ -34,14 +34,25 @@ class SettingsRepositoryImpl @Inject constructor(
         val fci = intPreferencesKey("salary_fci_percent")
         val lecap = intPreferencesKey("salary_lecap_percent")
         val mep = intPreferencesKey("salary_mep_percent")
+        val bond = intPreferencesKey("salary_bond_percent")
+        val liquidity = longPreferencesKey("salary_liquidity_cents")
         val ao27d = longPreferencesKey("ao27d_threshold_usd_cents")
         val rebalanceTarget = intPreferencesKey("rebalance_target_peso_percent")
+        val redTarget = intPreferencesKey("rebalance_red_target_peso_percent")
         val rebalanceTolerance = doublePreferencesKey("rebalance_tolerance_pp")
         val maturityDays = intPreferencesKey("maturity_alert_days")
         val rateDrop = doublePreferencesKey("rate_drop_threshold_pp")
         val fallbackMep = doublePreferencesKey("fallback_mep_rate")
         val monthlyDevaluation = doublePreferencesKey("monthly_devaluation_percent")
         val pesoReferenceTna = doublePreferencesKey("peso_reference_tna_percent")
+        val countryRiskPoints = intPreferencesKey("country_risk_points")
+        val countryRisk30dChange = intPreferencesKey("country_risk_30d_change")
+        val previousFxGap = doublePreferencesKey("previous_fx_gap_percent")
+        val electoralCalendar = booleanPreferencesKey("electoral_calendar_enabled")
+        val liquidityGuardrail = booleanPreferencesKey("liquidity_guardrail_enabled")
+        val liquidityGuardrailMonths = intPreferencesKey("liquidity_guardrail_max_months")
+        val previousCarryBand = stringPreferencesKey("previous_carry_band")
+        val carryExcludedPatterns = stringPreferencesKey("carry_excluded_patterns")
         val lastSync = stringPreferencesKey("last_sync_at")
         val hideAmounts = booleanPreferencesKey("hide_amounts")
     }
@@ -59,14 +70,25 @@ class SettingsRepositoryImpl @Inject constructor(
             prefs[Keys.fci] = settings.salaryFciPercent
             prefs[Keys.lecap] = settings.salaryLecapPercent
             prefs[Keys.mep] = settings.salaryMepPercent
+            prefs[Keys.bond] = settings.salaryBondPercent
+            prefs[Keys.liquidity] = settings.salaryLiquidityCents
             prefs[Keys.ao27d] = settings.ao27dThresholdUsdCents
             prefs[Keys.rebalanceTarget] = settings.rebalanceTargetPesoPercent
+            prefs[Keys.redTarget] = settings.redTargetPesoPercent
             prefs[Keys.rebalanceTolerance] = settings.rebalanceTolerancePp
             prefs[Keys.maturityDays] = settings.maturityAlertDays
             prefs[Keys.rateDrop] = settings.rateDropThresholdPp
             prefs[Keys.fallbackMep] = settings.fallbackMepRate
             prefs[Keys.monthlyDevaluation] = settings.monthlyDevaluationPercent
             prefs[Keys.pesoReferenceTna] = settings.pesoReferenceTnaPercent
+            prefs[Keys.countryRiskPoints] = settings.countryRiskPoints
+            prefs[Keys.countryRisk30dChange] = settings.countryRisk30dChange
+            prefs[Keys.previousFxGap] = settings.previousFxGapPercent
+            prefs[Keys.electoralCalendar] = settings.electoralCalendarEnabled
+            prefs[Keys.liquidityGuardrail] = settings.liquidityGuardrailEnabled
+            prefs[Keys.liquidityGuardrailMonths] = settings.liquidityGuardrailMaxMonths
+            prefs[Keys.previousCarryBand] = settings.previousCarryBandName
+            prefs[Keys.carryExcludedPatterns] = settings.carryExcludedPatterns
             prefs[Keys.notifications] = settings.notificationsEnabled
             prefs[Keys.hideAmounts] = settings.hideAmounts
             prefs[Keys.initialized] = true
@@ -77,6 +99,10 @@ class SettingsRepositoryImpl @Inject constructor(
         context.settingsDataStore.edit { it[Keys.notifications] = enabled }
     }
 
+    override suspend fun setPreviousCarryBand(bandName: String) {
+        context.settingsDataStore.edit { it[Keys.previousCarryBand] = bandName }
+    }
+
     override suspend fun isInitialized(): Boolean =
         context.settingsDataStore.data.first()[Keys.initialized] ?: false
 
@@ -85,17 +111,28 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     private fun Preferences.toSettings(): AppSettings = AppSettings(
-        salaryFciPercent = this[Keys.fci] ?: 50,
-        salaryLecapPercent = this[Keys.lecap] ?: 30,
-        salaryMepPercent = this[Keys.mep] ?: 20,
+        salaryFciPercent = this[Keys.fci] ?: 45,
+        salaryLecapPercent = this[Keys.lecap] ?: 15,
+        salaryMepPercent = this[Keys.mep] ?: 25,
+        salaryBondPercent = this[Keys.bond] ?: 15,
+        salaryLiquidityCents = this[Keys.liquidity] ?: 0L,
         ao27dThresholdUsdCents = this[Keys.ao27d] ?: 2_000_000L,
         rebalanceTargetPesoPercent = this[Keys.rebalanceTarget] ?: 60,
+        redTargetPesoPercent = this[Keys.redTarget] ?: 50,
         rebalanceTolerancePp = this[Keys.rebalanceTolerance] ?: 5.0,
         maturityAlertDays = this[Keys.maturityDays] ?: 30,
         rateDropThresholdPp = this[Keys.rateDrop] ?: 0.5,
         fallbackMepRate = this[Keys.fallbackMep] ?: 1_000.0,
         monthlyDevaluationPercent = this[Keys.monthlyDevaluation] ?: 2.0,
         pesoReferenceTnaPercent = this[Keys.pesoReferenceTna] ?: 0.0,
+        countryRiskPoints = this[Keys.countryRiskPoints] ?: 0,
+        countryRisk30dChange = this[Keys.countryRisk30dChange] ?: 0,
+        previousFxGapPercent = this[Keys.previousFxGap] ?: -1.0,
+        electoralCalendarEnabled = this[Keys.electoralCalendar] ?: true,
+        liquidityGuardrailEnabled = this[Keys.liquidityGuardrail] ?: true,
+        liquidityGuardrailMaxMonths = this[Keys.liquidityGuardrailMonths] ?: 6,
+        previousCarryBandName = this[Keys.previousCarryBand] ?: "",
+        carryExcludedPatterns = this[Keys.carryExcludedPatterns] ?: "Mercado Pago, viaje",
         notificationsEnabled = this[Keys.notifications] ?: true,
         hideAmounts = this[Keys.hideAmounts] ?: false,
     )

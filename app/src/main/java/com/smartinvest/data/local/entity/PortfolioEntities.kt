@@ -47,6 +47,8 @@ data class HoldingEntity(
     @ColumnInfo(defaultValue = "'MANUAL'") val source: MarketSource = MarketSource.MANUAL,
     @ColumnInfo(defaultValue = "0.0") val quantity: Double = 0.0,
     @ColumnInfo(defaultValue = "'PER_UNIT'") val quoteUnit: QuoteUnit = QuoteUnit.PER_UNIT,
+    @ColumnInfo(defaultValue = "0") val isWallet: Boolean = false,
+    @ColumnInfo(defaultValue = "1") val settlementDays: Int = 1,
 )
 
 @Entity(
@@ -113,6 +115,8 @@ data class SalaryPlanEntity(
     val fciCents: Long,
     val lecapCents: Long,
     val mepCents: Long,
+    @ColumnInfo(defaultValue = "0") val bondCents: Long = 0,
+    @ColumnInfo(defaultValue = "0") val liquidityCents: Long = 0,
     val createdAt: Long,
 )
 

@@ -7,6 +7,7 @@ import com.smartinvest.data.local.dao.CategoryDao
 import com.smartinvest.data.local.dao.CreditCardDao
 import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.data.local.dao.FundMovementDao
+import com.smartinvest.data.local.dao.HoldingDao
 import com.smartinvest.data.local.dao.InstallmentDao
 import com.smartinvest.data.local.dao.MemberDao
 import com.smartinvest.data.local.dao.SettlementDao
@@ -54,6 +55,7 @@ class HouseholdRepositoryImpl @Inject constructor(
     private val expenseDao: ExpenseDao,
     private val installmentDao: InstallmentDao,
     private val fundDao: FundMovementDao,
+    private val holdingDao: HoldingDao,
     private val settlementDao: SettlementDao,
     private val widgetRefresher: WidgetRefresher,
     @IoDispatcher private val io: CoroutineDispatcher,
@@ -250,6 +252,45 @@ class HouseholdRepositoryImpl @Inject constructor(
                         id
                     }
 
+                    ExpensePaymentMethod.WALLET_FCI -> {
+                        val holdingId = input.walletHoldingId ?: error("Elegí el FCI billetera")
+                        val holding = holdingDao.getById(holdingId) ?: error("FCI billetera inexistente")
+                        require(holding.isWallet) { "El FCI elegido no está marcado como billetera" }
+                        require(holding.currentValueCents >= input.totalCents) {
+                            "El FCI billetera no alcanza. Disponible: " +
+                                com.smartinvest.core.money.MoneyFormatter.ars(holding.currentValueCents)
+                        }
+                        val newQuantity = if (holding.quantity > 0.0) {
+                            val keepFraction = 1.0 - input.totalCents.toDouble() / holding.currentValueCents.toDouble()
+                            (holding.quantity * keepFraction.coerceIn(0.0, 1.0)).coerceAtLeast(0.0)
+                        } else {
+                            0.0
+                        }
+                        val quantityDelta = (holding.quantity - newQuantity).coerceAtLeast(0.0)
+                        val newValue = (holding.currentValueCents - input.totalCents).coerceAtLeast(0L)
+                        holdingDao.upsert(
+                            holding.copy(currentValueCents = newValue, quantity = newQuantity),
+                        )
+                        val month = YearMonth.from(input.date)
+                        expenseDao.insert(
+                            ExpenseEntity(
+                                description = input.description.trim(),
+                                totalAmountCents = input.totalCents,
+                                dateEpochDay = input.date.toEpochDay(),
+                                month = month.toString(),
+                                categoryId = category.id,
+                                paidByMemberId = member.id,
+                                paymentMethod = input.paymentMethod,
+                                installments = 1,
+                                notes = input.notes.trim(),
+                                walletHoldingId = holding.id,
+                                walletQuantityDelta = quantityDelta,
+                                walletValueDeltaCents = input.totalCents,
+                                createdAt = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
+
                     else -> {
                         val month = YearMonth.from(input.date)
                         expenseDao.insert(
@@ -277,7 +318,20 @@ class HouseholdRepositoryImpl @Inject constructor(
     override suspend fun deleteExpense(expenseId: Long) {
         withContext(io) {
             db.withTransaction {
-                expenseDao.getById(expenseId) ?: error("Gasto inexistente")
+                val expense = expenseDao.getById(expenseId) ?: error("Gasto inexistente")
+                if (expense.walletHoldingId != null &&
+                    (expense.walletQuantityDelta > 0.0 || expense.walletValueDeltaCents > 0L)
+                ) {
+                    val holding = holdingDao.getById(expense.walletHoldingId)
+                    if (holding != null) {
+                        holdingDao.upsert(
+                            holding.copy(
+                                quantity = holding.quantity + expense.walletQuantityDelta,
+                                currentValueCents = holding.currentValueCents + expense.walletValueDeltaCents,
+                            ),
+                        )
+                    }
+                }
                 fundDao.deleteForExpense(expenseId)
                 installmentDao.deleteForExpense(expenseId)
                 expenseDao.deleteById(expenseId)

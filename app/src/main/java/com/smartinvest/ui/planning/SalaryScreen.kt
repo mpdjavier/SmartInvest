@@ -79,7 +79,7 @@ fun SalaryScreen(
                 value = state.salaryText,
                 onValueChange = viewModel::setSalary,
                 label = "Sueldo neto del mes",
-                supportingText = "Se descuenta el gasto real del hogar para calcular el colchón.",
+                supportingText = "Primero se separa la liquidez 24/7 configurada; si está en 0 se usa el gasto real del hogar.",
             )
         }
 
@@ -150,16 +150,18 @@ fun SalaryScreen(
             SmartCard {
                 SectionHeader(
                     title = "Distribución del remanente",
-                    subtitle = "FCI T+0 · letras a tasa fija · cobertura MEP",
+                    subtitle = "Liquidez · carry T+1 · tasa fija · MEP · soberanos",
                     actionLabel = "Ajustar %",
                     onAction = onOpenSettings,
                 )
                 Spacer(Modifier.height(10.dp))
                 plan?.allocations?.forEach { line ->
                     val color = when (line.bucket) {
-                        AllocationBucket.FCI_T0 -> Emerald
-                        AllocationBucket.LECAP -> Violet
+                        AllocationBucket.LIQUIDITY -> Emerald
+                        AllocationBucket.CARRY_FCI -> Violet
+                        AllocationBucket.FIXED_RATE -> Amber
                         AllocationBucket.MEP -> Sky
+                        AllocationBucket.SOVEREIGN_BOND -> Rose
                     }
                     Row(
                         modifier = Modifier
@@ -168,7 +170,14 @@ fun SalaryScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("${line.bucket.label} · ${line.percent}%", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                if (line.isFixedAmount) {
+                                    "${line.bucket.label} · ${line.percent}% del sueldo"
+                                } else {
+                                    "${line.bucket.label} · ${line.percent}%"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                            )
                             Text(
                                 line.bucket.destination,
                                 style = MaterialTheme.typography.bodySmall,
@@ -177,12 +186,13 @@ fun SalaryScreen(
                         }
                         Text(Fmt.ars(line.amountCents), style = MaterialTheme.typography.titleSmall, color = color)
                     }
+                    val base = if (line.isFixedAmount) {
+                        (plan.netSalaryCents).coerceAtLeast(1L)
+                    } else {
+                        (plan.investableCents).coerceAtLeast(1L)
+                    }
                     LinearBar(
-                        fraction = if ((plan.investableCents) > 0) {
-                            line.amountCents.toFloat() / plan.investableCents.toFloat()
-                        } else {
-                            0f
-                        },
+                        fraction = (line.amountCents.toFloat() / base.toFloat()).coerceIn(0f, 1f),
                         color = color,
                         height = 6,
                     )
@@ -197,7 +207,7 @@ fun SalaryScreen(
             SmartCard {
                 SectionHeader(
                     title = "Cobertura de emergencia",
-                    subtitle = "FCI T+0 + billeteras disponibles",
+                    subtitle = "FCI billetera y fuentes con rescate ≤ 24 h",
                 )
                 ThinDivider()
                 KeyValueRow("Líquido inmediato", Fmt.ars(plan?.emergencyLiquidCents ?: 0), valueColor = Emerald, strong = true)
@@ -209,7 +219,8 @@ fun SalaryScreen(
                 KeyValueRow("Fuentes líquidas", "${state.sources.count { it.settlementDays <= 1 }} cuentas")
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "El simulador de rescates prioriza FCI eco, luego billeteras y por último letras y dólares.",
+                    "El simulador de rescates prioriza el FCI billetera y los FCI con rescate " +
+                        "≤ 24 h, y después letras y dólares.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

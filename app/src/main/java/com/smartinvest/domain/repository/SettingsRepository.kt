@@ -9,6 +9,8 @@ interface SettingsRepository {
     val settings: Flow<AppSettings>
     suspend fun currentSettings(): AppSettings
     suspend fun update(settings: AppSettings)
+    /** Persists the last effective band so hysteresis survives app restarts. */
+    suspend fun setPreviousCarryBand(bandName: String)
     suspend fun setNotificationsEnabled(enabled: Boolean)
     suspend fun isInitialized(): Boolean
     suspend fun markInitialized()

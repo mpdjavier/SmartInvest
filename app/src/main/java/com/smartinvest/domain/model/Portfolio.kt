@@ -96,6 +96,13 @@ data class Holding(
     val source: MarketSource = MarketSource.MANUAL,
     val quantity: Double = 0.0,
     val quoteUnit: QuoteUnit = QuoteUnit.PER_UNIT,
+    /**
+     * Marks this FCI as the daily-expense account. Expenses default to it and
+     * debits reduce its loaded value. Only one wallet FCI is expected at a time.
+     */
+    val isWallet: Boolean = false,
+    /** Redemption delay in days. Wallet FCIs are treated as immediate (T+0). */
+    val settlementDays: Int = 1,
 ) {
     val isTracked: Boolean get() = marketKey.isNotBlank()
 

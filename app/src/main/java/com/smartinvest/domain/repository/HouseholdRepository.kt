@@ -22,6 +22,8 @@ data class NewExpense(
     val creditCardId: Long? = null,
     val installments: Int = 1,
     val notes: String = "",
+    /** FCI marked as wallet that funds a WALLET_FCI expense. */
+    val walletHoldingId: Long? = null,
 )
 
 data class NewFundMovement(

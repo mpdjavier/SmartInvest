@@ -1,6 +1,7 @@
 package com.smartinvest.domain.usecase
 
 import com.smartinvest.domain.engine.DailyInterestEngine
+import com.smartinvest.domain.engine.DollarBreakEvenEngine
 import com.smartinvest.domain.engine.MacroRiskEngine
 import com.smartinvest.domain.engine.PortfolioAnalyticsEngine
 import com.smartinvest.domain.engine.PortfolioValuationEngine
@@ -9,6 +10,7 @@ import com.smartinvest.domain.engine.SettlementCalculator
 import com.smartinvest.domain.model.AppSettings
 import com.smartinvest.domain.model.CarryRiskAssessment
 import com.smartinvest.domain.model.DailyInterestBreakdown
+import com.smartinvest.domain.model.DollarBreakEvenReport
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HouseholdSummary
@@ -69,11 +71,14 @@ class ObserveInterestBreakdownUseCase @Inject constructor(
 
 data class PortfolioOverview(
     val valuation: PortfolioValuation,
+    /** Portfolio used by the carry ratio: excludes Mercado Pago liquidity and travel. */
+    val investableValuation: PortfolioValuation,
     val analytics: PortfolioAnalytics,
     val rebalance: RebalanceAdvice,
     val settings: AppSettings,
     val macro: CarryRiskAssessment,
     val referencePesoRatePercent: Double,
+    val breakEven: DollarBreakEvenReport,
 )
 
 private data class PortfolioInputs(
@@ -108,18 +113,34 @@ class ObservePortfolioOverviewUseCase @Inject constructor(
             )
             val analytics = PortfolioAnalyticsEngine.calculate(valuation, data.snapshots, today)
             val referenceRate = MacroRiskEngine.referencePesoRate(data.wallets, data.holdings, currentSettings)
+            val breakEven = DollarBreakEvenEngine.calculate(
+                wallets = data.wallets,
+                holdings = data.holdings,
+                fxRates = data.fx,
+                fallbackMepRate = currentSettings.fallbackMepRate,
+                referenceTnaPercent = referenceRate,
+                monthlyDevaluationPercent = currentSettings.monthlyDevaluationPercent,
+            )
+            val investable = MacroRiskEngine.investableValuation(valuation, currentSettings)
+            val macro = MacroRiskEngine.assess(
+                valuation = investable,
+                fxRates = data.fx,
+                settings = currentSettings,
+                referenceTnaPercent = referenceRate,
+                today = today,
+            )
+            if (currentSettings.previousCarryBand != macro.band) {
+                settings.setPreviousCarryBand(macro.band.name)
+            }
             PortfolioOverview(
                 valuation = valuation,
+                investableValuation = investable,
                 analytics = analytics,
-                rebalance = RebalanceAdvisor.analyze(valuation, currentSettings),
+                rebalance = RebalanceAdvisor.analyze(investable, currentSettings),
                 settings = currentSettings,
-                macro = MacroRiskEngine.assess(
-                    valuation = valuation,
-                    fxRates = data.fx,
-                    settings = currentSettings,
-                    referenceTnaPercent = referenceRate,
-                ),
+                macro = macro,
                 referencePesoRatePercent = referenceRate,
+                breakEven = breakEven,
             )
         }
     }

@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
-import com.smartinvest.domain.model.Wallet
 import com.smartinvest.domain.repository.AlertsRepository
 import com.smartinvest.domain.repository.InvestmentRepository
 import com.smartinvest.domain.usecase.ObservePortfolioOverviewUseCase
@@ -19,7 +18,6 @@ import javax.inject.Inject
 
 data class InvestmentsUiState(
     val overview: PortfolioOverview? = null,
-    val wallets: List<Wallet> = emptyList(),
     val holdings: List<Holding> = emptyList(),
     val fxRates: List<FxRate> = emptyList(),
     val isWorking: Boolean = false,
@@ -38,10 +36,9 @@ class InvestmentsViewModel @Inject constructor(
 
     private val core = combine(
         observePortfolio(),
-        investments.observeWallets(),
         investments.observeHoldings(),
-    ) { overview, wallets, holdings ->
-        Triple(overview, wallets, holdings)
+    ) { overview, holdings ->
+        Pair(overview, holdings)
     }
 
     private val extras = combine(
@@ -52,10 +49,9 @@ class InvestmentsViewModel @Inject constructor(
         Triple(fxRates, isWorking, msg)
     }
 
-    val uiState = combine(core, extras) { (overview, wallets, holdings), (fxRates, isWorking, msg) ->
+    val uiState = combine(core, extras) { (overview, holdings), (fxRates, isWorking, msg) ->
         InvestmentsUiState(
             overview = overview,
-            wallets = wallets,
             holdings = holdings,
             fxRates = fxRates,
             isWorking = isWorking,

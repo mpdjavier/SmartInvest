@@ -3,15 +3,15 @@ package com.smartinvest.ui.planning
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartinvest.core.money.MoneyParser
-import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.engine.SalaryAllocationPlanner
 import com.smartinvest.domain.model.AppSettings
+import com.smartinvest.domain.model.CarryRiskAssessment
 import com.smartinvest.domain.model.HouseholdSummary
 import com.smartinvest.domain.model.LiquiditySource
 import com.smartinvest.domain.model.SalaryPlan
 import com.smartinvest.domain.repository.InvestmentRepository
-import com.smartinvest.domain.repository.SettingsRepository
 import com.smartinvest.domain.usecase.ObserveHouseholdSummaryUseCase
+import com.smartinvest.domain.usecase.ObservePortfolioOverviewUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,14 +35,14 @@ private data class SalaryData(
     val summary: HouseholdSummary,
     val settings: AppSettings,
     val sources: List<LiquiditySource>,
-    val mepRate: Double,
+    val macro: CarryRiskAssessment,
 )
 
 @HiltViewModel
 class SalaryViewModel @Inject constructor(
     observeHousehold: ObserveHouseholdSummaryUseCase,
+    observePortfolio: ObservePortfolioOverviewUseCase,
     private val investments: InvestmentRepository,
-    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val month = YearMonth.now()
@@ -52,17 +52,15 @@ class SalaryViewModel @Inject constructor(
 
     private val dataFlow = combine(
         observeHousehold(month),
-        investments.observeWallets(),
-        investments.observeHoldings(),
-        investments.observeFxRates(),
-        settingsRepository.settings,
-    ) { summary, wallets, holdings, fx, settings ->
-        val (mep, _) = PortfolioValuationEngine.mepRate(fx, settings.fallbackMepRate)
+        observePortfolio(),
+    ) { summary, overview ->
+        val wallets = overview.valuation.wallets.map { it.wallet }
+        val holdings = overview.valuation.holdings.map { it.holding }
         SalaryData(
             summary = summary,
-            settings = settings,
-            sources = LiquiditySources.build(wallets, holdings, mep),
-            mepRate = mep,
+            settings = overview.settings,
+            sources = LiquiditySources.build(wallets, holdings, overview.valuation.mepRate),
+            macro = overview.macro,
         )
     }
 
@@ -75,6 +73,7 @@ class SalaryViewModel @Inject constructor(
             householdMonthlySpendCents = data.summary.totalSpendCents,
             liquidEmergencyCents = liquid,
             settings = data.settings,
+            targetPesoPercent = data.macro.riskAdjustedTargetPesoPercent,
         )
         SalaryUiState(
             plan = plan,

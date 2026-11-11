@@ -68,6 +68,8 @@ fun HoldingEntity.toDomain(): Holding = Holding(
     source = source,
     quantity = quantity,
     quoteUnit = quoteUnit,
+    isWallet = isWallet,
+    settlementDays = settlementDays,
 )
 
 fun Holding.toEntity(): HoldingEntity = HoldingEntity(
@@ -85,6 +87,8 @@ fun Holding.toEntity(): HoldingEntity = HoldingEntity(
     source = source,
     quantity = quantity,
     quoteUnit = quoteUnit,
+    isWallet = isWallet,
+    settlementDays = settlementDays,
 )
 
 fun InstrumentQuoteEntity.toDomain(): InstrumentQuote = InstrumentQuote(
@@ -131,6 +135,8 @@ fun SalaryPlanEntity.toDomain(): SavedSalaryPlan = SavedSalaryPlan(
     fciCents = fciCents,
     lecapCents = lecapCents,
     mepCents = mepCents,
+    bondCents = bondCents,
+    liquidityCents = liquidityCents,
     createdAt = createdAt,
 )
 

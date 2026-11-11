@@ -35,7 +35,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "smartinvest.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
 
     @Provides fun memberDao(db: AppDatabase): MemberDao = db.memberDao()
@@ -111,6 +111,18 @@ object DatabaseModule {
     val MIGRATION_2_3 = object : Migration(2, 3) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `wallets` ADD COLUMN `linkedHoldingId` INTEGER")
+        }
+    }
+
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `holdings` ADD COLUMN `isWallet` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE `holdings` ADD COLUMN `settlementDays` INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE `expenses` ADD COLUMN `walletHoldingId` INTEGER")
+            db.execSQL("ALTER TABLE `expenses` ADD COLUMN `walletQuantityDelta` REAL NOT NULL DEFAULT 0.0")
+            db.execSQL("ALTER TABLE `expenses` ADD COLUMN `walletValueDeltaCents` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE `salary_plans` ADD COLUMN `bondCents` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE `salary_plans` ADD COLUMN `liquidityCents` INTEGER NOT NULL DEFAULT 0")
         }
     }
 }

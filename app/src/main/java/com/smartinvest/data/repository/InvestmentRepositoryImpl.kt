@@ -75,6 +75,9 @@ class InvestmentRepositoryImpl @Inject constructor(
     override fun observeHoldings(): Flow<List<Holding>> =
         holdingDao.observeAll().map { list -> list.map { it.toDomain() } }.flowOn(io)
 
+    override fun observeWalletHoldings(): Flow<List<Holding>> =
+        holdingDao.observeWallets().map { list -> list.map { it.toDomain() } }.flowOn(io)
+
     override fun observeQuotes(marketKey: String): Flow<List<InstrumentQuote>> =
         instrumentQuoteDao.observeForMarket(marketKey).map { list -> list.map { it.toDomain() } }.flowOn(io)
 
@@ -152,6 +155,10 @@ class InvestmentRepositoryImpl @Inject constructor(
             require(holding.currentValueCents >= 0) { "La valuación no puede ser negativa" }
             require(holding.costCents >= 0) { "El costo no puede ser negativo" }
             require(holding.quantity >= 0.0) { "La cantidad no puede ser negativa" }
+            require(holding.settlementDays >= 0) { "El plazo de rescate no puede ser negativo" }
+            require(!holding.isWallet || holding.assetType == AssetType.FCI) {
+                "Solo un FCI puede marcarse como billetera"
+            }
 
             val normalizedKey = MarketKeyParser.normalize(holding.marketKey)
             val resolvedSource = if (normalizedKey.isNotBlank()) {
@@ -168,6 +175,9 @@ class InvestmentRepositoryImpl @Inject constructor(
                 if (latest != null && latest.price > 0.0) {
                     adjusted = adjusted.copy(currentValueCents = adjusted.valueCentsFor(latest.price))
                 }
+            }
+            if (adjusted.isWallet) {
+                holdingDao.clearWalletFlags(adjusted.id)
             }
             holdingDao.upsert(adjusted.toEntity())
         }
@@ -359,9 +369,11 @@ class InvestmentRepositoryImpl @Inject constructor(
                     month = plan.month.toString(),
                     netSalaryCents = plan.netSalaryCents,
                     cushionCents = plan.householdCushionCents,
-                    fciCents = plan.allocations.firstOrNull { it.bucket == AllocationBucket.FCI_T0 }?.amountCents ?: 0,
-                    lecapCents = plan.allocations.firstOrNull { it.bucket == AllocationBucket.LECAP }?.amountCents ?: 0,
+                    fciCents = plan.allocations.firstOrNull { it.bucket == AllocationBucket.CARRY_FCI }?.amountCents ?: 0,
+                    lecapCents = plan.allocations.firstOrNull { it.bucket == AllocationBucket.FIXED_RATE }?.amountCents ?: 0,
                     mepCents = plan.allocations.firstOrNull { it.bucket == AllocationBucket.MEP }?.amountCents ?: 0,
+                    bondCents = plan.allocations.firstOrNull { it.bucket == AllocationBucket.SOVEREIGN_BOND }?.amountCents ?: 0,
+                    liquidityCents = plan.allocations.firstOrNull { it.bucket == AllocationBucket.LIQUIDITY }?.amountCents ?: 0,
                     createdAt = System.currentTimeMillis(),
                 ),
             )

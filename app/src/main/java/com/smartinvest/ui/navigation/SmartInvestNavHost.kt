@@ -38,10 +38,10 @@ import com.smartinvest.ui.household.HouseholdScreen
 import com.smartinvest.ui.household.ReceiptImportScreen
 import com.smartinvest.ui.importer.ImportScreen
 import com.smartinvest.ui.investments.DailyInterestScreen
+import com.smartinvest.ui.investments.BreakEvenScreen
 import com.smartinvest.ui.investments.HoldingEditorScreen
 import com.smartinvest.ui.investments.InstrumentDetailScreen
 import com.smartinvest.ui.investments.InvestmentsScreen
-import com.smartinvest.ui.investments.WalletsScreen
 import com.smartinvest.ui.planning.EmergencyScreen
 import com.smartinvest.ui.planning.SalaryScreen
 import com.smartinvest.ui.rebalancing.RebalancingScreen
@@ -56,7 +56,6 @@ object Routes {
 
     const val EXPENSE_EDITOR = "expense_editor/{month}"
     const val FUND_EDITOR = "fund_editor/{month}"
-    const val WALLETS = "wallets"
     const val HOLDING_EDITOR = "holding_editor/{holdingId}"
     const val ANALYTICS = "analytics"
     const val SALARY = "salary"
@@ -66,6 +65,7 @@ object Routes {
     const val DAILY_INTEREST = "daily_interest"
     const val INSTRUMENT_DETAIL = "instrument_detail/{holdingId}"
     const val REBALANCING = "rebalancing"
+    const val BREAK_EVEN = "break_even"
     const val RECEIPT_IMPORT = "receipt_import/{receiptPath}"
 
     fun expenseEditor(month: YearMonth): String = "expense_editor/$month"
@@ -91,7 +91,6 @@ private val tabs = listOf(
 private val secondaryTitles = mapOf(
     Routes.EXPENSE_EDITOR to "Nuevo gasto",
     Routes.FUND_EDITOR to "Fondo común",
-    Routes.WALLETS to "Billeteras",
     Routes.HOLDING_EDITOR to "Activo",
     Routes.ANALYTICS to "Analítica",
     Routes.SALARY to "Repartir sueldo",
@@ -101,6 +100,7 @@ private val secondaryTitles = mapOf(
     Routes.DAILY_INTEREST to "Intereses día a día",
     Routes.INSTRUMENT_DETAIL to "Evolución de instrumentos",
     Routes.REBALANCING to "Asistente macro",
+    Routes.BREAK_EVEN to "Dólar break-even",
     Routes.RECEIPT_IMPORT to "Importar comprobante",
 )
 
@@ -195,7 +195,6 @@ fun SmartInvestNavHost(
 
             composable(Routes.INVESTMENTS) {
                 InvestmentsScreen(
-                    onOpenWallets = { navController.navigate(Routes.WALLETS) },
                     onAddHolding = { navController.navigate(Routes.holdingEditor()) },
                     onEditHolding = { id -> navController.navigate(Routes.holdingEditor(id)) },
                     onOpenAnalytics = { navController.navigate(Routes.ANALYTICS) },
@@ -204,6 +203,7 @@ fun SmartInvestNavHost(
                     onOpenDailyInterest = { navController.navigate(Routes.DAILY_INTEREST) },
                     onOpenInstrumentDetail = { holdingId -> navController.navigate(Routes.instrumentDetail(holdingId)) },
                     onOpenRebalancing = { navController.navigate(Routes.REBALANCING) },
+                    onOpenBreakEven = { navController.navigate(Routes.BREAK_EVEN) },
                 )
             }
 
@@ -228,10 +228,6 @@ fun SmartInvestNavHost(
                 FundMovementScreen(onBack = { navController.popBackStack() })
             }
 
-            composable(Routes.WALLETS) {
-                WalletsScreen()
-            }
-
             composable(
                 route = Routes.HOLDING_EDITOR,
                 arguments = listOf(navArgument("holdingId") { type = NavType.StringType }),
@@ -248,6 +244,10 @@ fun SmartInvestNavHost(
 
             composable(Routes.DAILY_INTEREST) {
                 DailyInterestScreen()
+            }
+
+            composable(Routes.BREAK_EVEN) {
+                BreakEvenScreen()
             }
 
             composable(Routes.REBALANCING) {

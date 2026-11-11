@@ -40,6 +40,8 @@ data class MarketPreset(
     val currency: CurrencyCode,
     val quoteUnit: QuoteUnit,
     val marketKey: String,
+    /** Redemption delay in days (FCIs). */
+    val settlementDays: Int = 1,
 )
 
 object MarketPresets {
@@ -79,6 +81,7 @@ object MarketPresets {
             currency = CurrencyCode.ARS,
             quoteUnit = QuoteUnit.PER_UNIT,
             marketKey = "cafci:1402:4070",
+            settlementDays = 1,
         ),
         MarketPreset(
             label = "Mercado Fondo ARS",
@@ -88,6 +91,7 @@ object MarketPresets {
             currency = CurrencyCode.ARS,
             quoteUnit = QuoteUnit.PER_UNIT,
             marketKey = "cafci:798:1982",
+            settlementDays = 0,
         ),
         MarketPreset(
             label = "Mercado Fondo USD",
@@ -97,6 +101,7 @@ object MarketPresets {
             currency = CurrencyCode.USD,
             quoteUnit = QuoteUnit.PER_UNIT,
             marketKey = "cafci:1522:4557",
+            settlementDays = 0,
         ),
     )
 }

@@ -60,6 +60,9 @@ data class ExpenseEntity(
     val installments: Int = 1,
     val firstInstallmentMonth: String? = null,
     val notes: String = "",
+    val walletHoldingId: Long? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0.0") val walletQuantityDelta: Double = 0.0,
+    @androidx.room.ColumnInfo(defaultValue = "0") val walletValueDeltaCents: Long = 0,
     val createdAt: Long,
 )
 

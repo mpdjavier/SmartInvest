@@ -1,8 +1,8 @@
 # SmartInvest
 
-Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, billeteras remuneradas, FCI, LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
+Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **compilación verificada** en este entorno: `:app:assembleDebug`, `:app:assembleRelease` (con R8 + lint vital) y los **64 tests unitarios** pasan con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **83 tests unitarios** pasando con JDK 21 (JBR de Android Studio) y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -27,7 +27,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 
 - Integrantes dinámicos (por defecto **Vos** y **Mamá**), con color e indicador de usuario actual.
 - Categorías editables (supermercado, servicios, expensas, auto, salud, comida, ocio, otros).
-- Gastos en efectivo, débito, transferencia, tarjeta de crédito o **fondo común**.
+- Gastos en efectivo, débito, transferencia, tarjeta de crédito, **fondo común** o **FCI billetera** (descuenta el saldo del FCI marcado como billetera).
 - **Cuotas**: una compra en N cuotas impacta cada mes solo por el valor de la cuota, nunca por el total.
 - Tarjetas con **cierre y vencimiento manuales**; la primera cuota se imputa según la fecha de compra y el día de cierre.
 - Fondo común: aportes, extracciones y compras pagadas con el fondo, con saldo en tiempo real.
@@ -38,23 +38,22 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 
 ### Cartera
 
-- Billeteras y cuentas: Mercado Pago, Ualá, FCI money market, bróker, banco u otra.
-- **Presets de billeteras reales** (Mercado Pago, Ualá, Personal Pay, Naranja X, Brubank, Cocos, Galicia, Cuenta DNI, Santander, BBVA, Banco Nación y FCI T+0) que completan nombre, institución, tipo y moneda.
-- **FCI vinculado**: una billetera puede apuntar a un FCI ya cargado (por ejemplo, *Mercado Pago ARS*). Si el FCI tiene TNA, esa tasa reemplaza a la TNA manual de la cuenta y se usa en valoración, interés diario y tasa de referencia macro.
-- TNA editable y **tope remunerado** por cuenta (`0` = sin tope).
+- **FCI billetera**: cualquier FCI puede marcarse como cuenta de gastos 24/7. Solo uno queda activo a la vez; los gastos lo usan por defecto y descuentan su valor cargado (al eliminar el gasto se repone).
+- **Plazo de rescate por FCI**: T+0 para money market y **T+1 para Adcap Balanceado III** (rescata a 24 h), configurable con chips en el editor.
 - Activos: LECAP, BONCAP, bonos, FCI, CEDEAR, dólar MEP, cripto y otros, en ARS o USD.
 - **Seguimiento en vivo de instrumentos y FCI**:
   - **Rava** (`rava:S30N6`, `rava:AO27D`, `rava:SPY` o cualquier ticker/URL de `rava.com/perfil/...`): precio actual y curva histórica de cierres diarios. Si la página no publica la tabla histórica, se lee la cotización del encabezado junto con el cierre **Anterior**, así el activo ya aporta variación diaria desde la primera sincronización.
   - **CAFCI** (`cafci:1402:4070` Adcap Balanceado III, `cafci:798:1982` Mercado Fondo ARS, `cafci:1522:4557` Mercado Fondo USD o cualquier URL de `estadisticas.cafci.org.ar/fondos/...`): valor de cuotaparte (VCP) y evolución histórica.
   - Presets de 1 toque en el editor de activos + recálculo automático de valuación según cantidad y unidad (`Por unidad / cuotaparte` o `Por 100 nominales`).
 - **Moneda nativa y rendimiento por activo**: una tenencia cargada en USD (por ejemplo `AO27D`) se muestra en **USD**, con la equivalencia en pesos como dato secundario, y cada fila indica cuánto aporta al **interés diario**.
-- **Desglose de intereses día a día** (`daily_interest`): muestra jornada por jornada cuánto generó cada billetera, letra, bono o FCI y la fórmula exacta usada (`Base × TNA ÷ 365` con tope remunerado, o `Cantidad × (Precio cierre − Precio anterior)` con datos reales de mercado). **El interés diario del panel suma todos los activos con seguimiento automático** (Rava y CAFCI), no solo las billeteras: cada tenencia aporta la variación entre sus dos últimas cotizaciones y, si no hay par de precios, se usa su TNA.
+- **Desglose de intereses día a día** (`daily_interest`): muestra jornada por jornada cuánto generó cada FCI, letra, bono o cuenta y la fórmula exacta usada (`Base × TNA ÷ 365` con tope remunerado, o `Cantidad × (Precio cierre − Precio anterior)` con datos reales de mercado). **El interés diario del panel suma todos los activos con seguimiento automático** (Rava y CAFCI), no solo los FCI: cada tenencia aporta la variación entre sus dos últimas cotizaciones y, si no hay par de precios, se usa su TNA.
 - **Conciliación de intereses**: tarjeta “¿No coinciden los números?” que compara la proyección diaria (TNA actual × días) contra el acumulado real, separa la parte explicada por variación de mercado y muestra el remanente sin explicar (cambios de saldo/TNA, topes y redondeos).
 - Valoración unificada en pesos usando **dólar MEP** (DolarAPI) con fallback configurable.
+- **Dólar break-even por instrumento** (`break_even`): para cada billetera y activo calcula el **MEP que tendría que alcanzar el dólar a 30, 60 y 120 días** para que comprar dólares convenga más que seguir en el instrumento. Usa la TNA propia o, si falta, la TNA de referencia de la cartera; muestra la **devaluación requerida** y el MEP proyectado con la devaluación mensual esperada de Ajustes. Las posiciones en USD (incluidos CEDEARs) se marcan como cobertura en dólares y no tienen break-even cambiario.
 - Historial de tasas y snapshots diarios del patrimonio.
 - Analítica 7 días / 30 días / YTD, ganancia diaria y mensual, serie para gráfico.
 - **Rebalanceo elástico 60/40** con banda de tolerancia configurable: **los CEDEARs se computan como exposición en dólares aunque estén valuados en pesos**, ya que representan acciones del exterior que se mueven con el USD.
-- **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP y desvío de cartera), meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
+- **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
 - Planificador de sueldo y simulador de rescate de emergencia.
 
 ### Importación desde SplitHome
@@ -161,6 +160,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `import` | Importar datos de SplitHome |
 | `daily_interest` | Intereses día a día y base de cálculo |
 | `instrument_detail/{holdingId}` | Evolución histórica de instrumentos (Rava) y FCI (CAFCI) |
+| `break_even` | Dólar break-even por instrumento a 30, 60 y 120 días |
 | `rebalancing` | Asistente macro: carry, semáforo y reparto del próximo ingreso |
 
 ---
@@ -305,6 +305,23 @@ sin_explicar = diferencia − explicado
 
 El acumulado usa el saldo y la TNA **actuales** para todos los días, porque la app no reconstruye saldos históricos. Por eso la tarjeta de conciliación separa TNA, mercado y remanente.
 
+### Dólar break-even
+
+Para cada billetera o activo se calcula el MEP que iguala el rendimiento del instrumento con comprar dólares hoy y mantenerlos:
+
+```
+break_even(días)       = MEP_actual × (1 + TNA / 100 × días / 365)
+devaluación_requerida  = TNA × días / 365
+MEP_esperado(días)     = MEP_actual × (1 + devaluación_mensual / 100) ^ (días / 30)
+```
+
+- Se usan **30, 60 y 120 días**.
+- Si el dólar termina **por encima** del break-even, comprar dólares rinde más; si termina **por debajo**, el instrumento gana.
+- **TNA**: se usa la propia del instrumento (incluida la del FCI vinculado en una billetera). Si no tiene, se usa la **TNA de referencia** de la cartera. Sin ninguna tasa, el break-even iguala el MEP actual.
+- **Activos en USD y CEDEARs**: ya son cobertura en dólares. Su valor y el de comprar dólares escalan con el mismo MEP futuro, así que no existe un break-even cambiario finito; se informa su rendimiento en dólares.
+- La **devaluación mensual esperada** de Ajustes se usa solo como referencia para proyectar el MEP y marcar si el dólar ya supera el break-even.
+- La convención es de **tasa simple / 365 días**, igual que el resto de la app, y asume que la tasa se mantiene durante todo el plazo.
+
 ### Analítica
 
 - Ventanas de **7 días**, **30 días** y **YTD**.
@@ -325,13 +342,16 @@ banda = objetivo ± tolerancia        // por defecto 60% ± 5 pp
 
 ### Asistente macro y rebalanceo orgánico
 
-Índice de riesgo de carry (0–100):
+El índice mide **solo el escenario macro**. El desvío de cartera quedó fuera a propósito:
+es la variable de control, no una señal de mercado, y usarlo en el índice lo volvía circular.
 
 ```
-componente_tasa_real = 40 × clamp((4% − tasa_real_mensual) / 5, 0, 1)
-componente_brecha    = 35 × clamp((brecha_MEP − 3%) / 37, 0, 1)
-componente_desvío    = 25 × clamp(|peso_% − objetivo| / 25 pp, 0, 1)
-riesgo = componente_tasa_real + componente_brecha + componente_desvío
+componente_tasa_real   = 40 × clamp((4% − tasa_real_mensual) / 5, 0, 1)
+componente_brecha_nivel = 25 × clamp((brecha_MEP − 5%) / 7, 0, 1)
+componente_brecha_vel   = 10 × clamp((brecha_hoy − brecha_hace_30d − 1 pp) / 1,5, 0, 1)
+componente_riesgo_país  = 15 × clamp((nivel − 500) / 500, 0, 1)
+                        + 10 × clamp(variación_30d / 150, 0, 1)
+riesgo = clamp(tasa_real + brecha_nivel + brecha_vel + riesgo_país, 0, 100)
 ```
 
 Tasa real y brecha:
@@ -340,16 +360,27 @@ Tasa real y brecha:
 tasa_real_mensual = (1 + TNA/12) / (1 + devaluación_mensual) − 1
 tasa_real_anual   = (1 + tasa_real_mensual)^12 − 1
 brecha_%          = (MEP / oficial − 1) × 100
+velocidad_brecha  = max(brecha_hoy − brecha_hace_30d, 0)
 ```
 
-- **TNA de referencia**: si hay una TNA manual (> 0) se usa esa; si no, el promedio ponderado por saldo de las billeteras ARS y de las tenencias en pesos con TNA (LECAP, BONCAP, FCI, bonos y otros).
-- **Brecha**: dólar oficial vs. MEP de DolarAPI. Si falta el oficial se usa el MEP (brecha 0).
+Reglas de estado:
+
+- **Techo AMARILLO por riesgo país**: nivel > 800 pts o suba > 150 pts en 30 días ⇒ la banda no puede ser VERDE.
+- **Techo AMARILLO por velocidad**: si la brecha se expande ≥ 2,5 pp en 30 días, la banda no puede ser VERDE aunque el nivel siga bajo.
+- **Histéresis**: se entra a ROJO en 66 pero se sale recién en 55; se entra a VERDE en 30 y se sale recién en 35. La banda efectiva se persiste en DataStore.
+- **Calendario electoral** (techo del VERDE en pesos): hasta feb/2027 70%; mar–jun/2027 65%; jul–nov/2027 60% (elección general + balotaje); después vuelve a 70%.
+- **Cadencia**: la lectura puede ser semanal, pero la decisión de flujo se toma una vez al mes, en la fecha del sueldo.
 
 | Índice | Banda | Meta de pesos ajustada |
 | --- | --- | --- |
-| 0 – 30 | 🟢 Riesgo bajo | `max(objetivo, 70%)` |
+| 0 – 30 | 🟢 Riesgo bajo | `min(70%, techo electoral)` |
 | 31 – 65 | 🟡 Riesgo moderado | objetivo estratégico (por defecto 60%) |
-| 66 – 100 | 🔴 Riesgo alto | `min(objetivo, 40%)` |
+| 66 – 100 | 🔴 Riesgo alto | objetivo ROJO configurable (por defecto 50%) |
+
+- **TNA de referencia**: si hay una TNA manual (> 0) se usa esa; si no, el promedio ponderado por saldo de las billeteras ARS y de las tenencias en pesos con TNA (LECAP, BONCAP, FCI, bonos y otros).
+- **Brecha**: dólar oficial vs. MEP de DolarAPI. Si falta el oficial se usa el MEP (brecha 0).
+- **Riesgo país**: se carga a mano en Ajustes (nivel actual y variación de 30 días). Si no hay dato, el componente suma 0 y la UI lo advierte.
+- **Exposición**: se mide por riesgo subyacente. Los CEDEARs cuentan como dólares aunque coticen en pesos. El pozo de liquidez de Mercado Pago y la cubeta de viajes quedan fuera de la ratio invertible; los patrones de exclusión se editan en Ajustes (`carryExcludedPatterns`, por defecto `Mercado Pago, viaje`).
 
 Canalización del próximo ingreso (rebalanceo orgánico, sin vender activos):
 
@@ -362,29 +393,51 @@ a_dólares        = ingreso − a_pesos
 
 - Si la cartera está **sobreponderada en pesos**, `a_pesos = 0` y el **100%** del ingreso va a cobertura en dólares.
 - Si está **sobreponderada en dólares**, `a_pesos = ingreso` y el **100%** va al tramo en pesos.
-- El tramo en pesos se reparte entre FCI T+0 y LECAP/BONCAP según los porcentajes de Ajustes; el tramo en dólares va a MEP/CEDEAR.
+- El tramo en pesos se reparte entre **carry FCI T+1** y **tasa fija (LECAP/BONCAP)**; el tramo en dólares entre **MEP directo** y **bonos soberanos (AO27D)** según los porcentajes de Ajustes.
 - Las piernas siempre suman exactamente el ingreso y **ningún activo se vende**.
+
+**Vencimientos como flujo orgánico**: los instrumentos en pesos que vencen dentro de
+`maturityAlertDays` (30 por defecto) no se renuevan por inercia. El plan los muestra y
+propone el mismo reparto del semáforo (en ROJO, 100% a dólares). El plan también muestra
+la **velocidad de realineamiento**: cuántos meses del próximo sueldo insumen cerrar la
+brecha hasta la meta ajustada (por ejemplo, 10 pp ≈ 2,4 meses con un ahorro de USD 3.800/mes).
+
+**Guardarraíl de liquidez**: el tramo de pesos por encima del objetivo estratégico solo
+puede estar en instrumentos con vencimiento ≤ 6 meses o de rescate T+0/24 h. Si hay
+sobrepeso en instrumentos largos, la UI lo marca para revisar.
+
 
 ### Reparto de sueldo
 
 ```
-disponible = max(sueldo_neto − colchón_hogar, 0)
-déficit    = max(colchón_hogar − sueldo_neto, 0)
+liquidez   = monto_24_7 configurado (si es 0, gasto_real_del_hogar)
+disponible = max(sueldo_neto − liquidez, 0)
+déficit    = max(gasto_hogar − sueldo_neto, 0)
 ```
 
-- El colchón se vincula al **gasto real del mes** del hogar.
-- El disponible se reparte según pesos configurables (por defecto **50% FCI T+0 / 30% letras / 20% MEP**), preservando centavos.
-- Cobertura de emergencia = liquidez inmediata / gasto mensual del hogar (en meses).
+El esquema tiene **cinco líneas**:
+
+1. **Gastos / liquidez 24/7** → FCI marcado como billetera (monto fijo mensual, no porcentaje).
+2. **Carry principal (T+1)** → FCI Adcap Balanceado III (45% del tramo pesos por defecto).
+3. **Tasa fija (bróker)** → LECAP / BONCAP, por ejemplo T30A7 (15% del tramo pesos).
+4. **Cobertura / MEP** → dólar MEP directo (25% del tramo dólares).
+5. **Resguardo / piso** → bonos soberanos AO27D (15% del tramo dólares).
+
+- El **tramo pesos/dólares** lo define `riskAdjustedTargetPesoPercent` del semáforo de carry (ejemplo 60/40), no un fijo.
+- Los cuatro porcentajes (45/15/25/15) son **intra-tramo** y se normalizan si no suman 100%.
+- Si el sueldo no alcanza, se informa el déficit sin generar líneas de inversión.
+- Cobertura de emergencia = fuentes con rescate ≤ 24 h / gasto mensual del hogar (en meses).
 
 ### Rescate de emergencia
 
 Orden de liquidez:
 
-1. **FCI T+0** (rescate inmediato).
-2. **Billeteras / bancos**.
-3. **LECAP / BONCAP / bonos** (venta T+1).
-4. **Dólares / MEP**.
-5. **CEDEAR / cripto / otros**.
+1. **FCI billetera** (rescate inmediato).
+2. **FCI con rescate ≤ 24 h** (Adcap Balanceado III es T+1).
+3. **Cuentas / billeteras existentes**.
+4. **LECAP / BONCAP / bonos** (venta T+1).
+5. **Dólares / MEP**.
+6. **CEDEAR / cripto / otros**.
 
 El simulador toma fuentes por tier y días de liquidación, calcula lo cubierto, el faltante y el plazo máximo.
 
@@ -444,24 +497,24 @@ Además, el widget se refresca al escribir datos y con el botón manual. WorkMan
 
 ## Persistencia
 
-Room, versión 3 (con migraciones no destructivas `MIGRATION_1_2` y `MIGRATION_2_3`, y esquema exportado a `app/schemas`):
+Room, versión 4 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_3` y `MIGRATION_3_4`, y esquema exportado a `app/schemas`):
 
 | Tabla | Contenido |
 | --- | --- |
 | `members` | integrantes del hogar |
 | `categories` | categorías de gasto |
 | `credit_cards` | tarjetas, cierre y vencimiento |
-| `expenses` | compras y gastos |
+| `expenses` | compras y gastos (incluye débito del FCI billetera y su delta para reponer al eliminar) |
 | `installments` | cronograma de cuotas por mes |
 | `fund_movements` | aportes, extracciones y compras del fondo |
 | `settlements` | cierres/pagos manuales de liquidación mensual del hogar |
-| `wallets` | billeteras/cuentas, TNA, topes y FCI vinculado (`linkedHoldingId`) |
-| `holdings` | LECAP, BONCAP, bonos, FCI, CEDEAR, etc. (con `marketKey`, `source`, `quantity`, `quoteUnit`) |
+| `wallets` | cuentas heredadas de versiones anteriores (`linkedHoldingId`) |
+| `holdings` | LECAP, BONCAP, bonos, FCI, CEDEAR, etc. (con `marketKey`, `source`, `quantity`, `quoteUnit`, `isWallet`, `settlementDays`) |
 | `instrument_quotes` | serie histórica de precios y valores de cuotaparte (Rava / CAFCI) |
 | `portfolio_snapshots` | evolución diaria del patrimonio |
 | `fx_rates` | cotizaciones (MEP, blue, oficial…) |
 | `rate_history` | historial de TNA por billetera |
-| `salary_plans` | planes de sueldo guardados |
+| `salary_plans` | planes de sueldo guardados (5 líneas: liquidez, carry, tasa fija, MEP y bonos) |
 | `alerts` | alertas generadas |
 
 Los ajustes (pesos del sueldo, umbrales, tolerancia, MEP de fallback, devaluación mensual esperada, TNA de referencia en pesos, notificaciones) viven en **DataStore Preferences**.
@@ -472,9 +525,9 @@ En el primer arranque se crean:
 
 - Integrantes **Vos** y **Mamá**.
 - Ocho categorías.
-- Cinco cuentas de referencia: Mercado Pago, Ualá, FCI eco (Adcap), Adcap y Banco Galicia.
+- Cinco cuentas heredadas de referencia (Mercado Pago, Ualá, FCI eco de Adcap, Adcap y Banco Galicia) que se conservan para no romper datos previos; la sección de billeteras ya no se muestra en la app.
 
-> Las TNA iniciales son **referencias** (`rateSource = "referencia"`). Configurá topes remunerados y tasas reales en **Cartera → Billeteras**.
+> Las TNA iniciales son **referencias** (`rateSource = "referencia"`). La cuenta de gastos ahora es el **FCI marcado como billetera**, que se edita desde **Cartera → Activo**.
 
 ### Fuentes externas
 
@@ -560,7 +613,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** en este entorno se ejecutaron `:app:testDebugUnitTest` (**64 tests, 0 fallos**), `:app:assembleDebug` y `:app:assembleRelease` con JDK 17 (Temurin) y Android SDK 35. El APK de debug queda en `app/build/outputs/apk/debug/app-debug.apk` (~28,2 MB) y el release sin firmar en `app/build/outputs/apk/release/app-release-unsigned.apk` (~8,0 MB). `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**83 tests, 0 fallos**) con JDK 21 (JBR de Android Studio) y Android SDK 35. Los APK de debug y release se generan en `app/build/outputs/apk/` (el release queda sin firmar). `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -585,7 +638,8 @@ Tests unitarios JVM (sin emulador):
 | `DailyInterestEngineTest` | desglose diario por TNA/tope, variación real de cotizaciones (con y sin cantidad), conciliación y TNA tomada del FCI vinculado |
 | `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago) y pago de servicio (Galicia), etiqueta de importe en línea aparte, concepto `Pago de …`, fechas con mes en texto y comprobantes sin datos |
 | `MarketClientsTest` | normalización de claves/URLs y parseo HTML de Rava (tabla histórica y encabezado con cierre anterior) y CAFCI |
-| `MacroRiskTest` | bandas de carry, TNA ponderada, brecha, metas ajustadas y reparto orgánico 100% pesos / 100% dólares |
+| `MacroRiskTest` | bandas de carry, techo por riesgo país, velocidad de la brecha, calendario electoral, histéresis, guardarraíl de liquidez, alcance por riesgo subyacente, vencimientos como flujo y reparto orgánico 100% pesos / 100% dólares |
+| `BreakEvenEngineTest` | break-even a 30/60/120 días con TNA propia y de referencia, posiciones en USD/CEDEAR sin break-even cambiario, MEP proyectado y resumen ponderado |
 | `PlanningTest` | sueldo, rebalanceo y rescate de emergencia |
 | `XlsxReaderTest` | lectura de `.xlsx`: shared strings, inline strings, números y celdas salteadas |
 | `SplitHomeParserTest` | hojas Gastos/Fondo, pagadores, cuotas, fechas y totales |

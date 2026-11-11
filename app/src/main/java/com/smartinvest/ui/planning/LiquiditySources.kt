@@ -52,7 +52,18 @@ object LiquiditySources {
         }
         if (availableArs <= 0) return null
         val (tier, days, note) = when (holding.assetType) {
-            AssetType.FCI -> Triple(LiquidityTier.FCI_T0, 1, "Rescate del fondo")
+            AssetType.FCI -> {
+                if (holding.isWallet) {
+                    Triple(LiquidityTier.FCI_T0, 0, "FCI billetera · rescate inmediato")
+                } else {
+                    val days = holding.settlementDays.coerceAtLeast(0)
+                    Triple(
+                        LiquidityTier.FCI_T0,
+                        days,
+                        if (days == 0) "Rescate T+0" else "Rescate T+$days (24 h hábiles)",
+                    )
+                }
+            }
             AssetType.LECAP, AssetType.BONCAP -> Triple(LiquidityTier.LECAP, 1, "Venta en bróker (T+1)")
             AssetType.BOND -> Triple(LiquidityTier.LECAP, 1, "Venta en bróker (T+1)")
             AssetType.DOLAR_MEP -> Triple(LiquidityTier.USD_HARD_CURRENCY, 1, "MEP a pesos (T+1)")
@@ -75,6 +86,9 @@ object LiquiditySources {
             holdings.mapNotNull { fromHolding(it, mepRate) }
 
     fun liquidForEmergency(sources: List<LiquiditySource>): Long =
-        sources.filter { it.tier == LiquidityTier.FCI_T0 || it.tier == LiquidityTier.WALLET }
+        sources.filter {
+            (it.tier == LiquidityTier.FCI_T0 || it.tier == LiquidityTier.WALLET) &&
+                it.settlementDays <= 1
+        }
             .sumOf { it.availableCents }
 }

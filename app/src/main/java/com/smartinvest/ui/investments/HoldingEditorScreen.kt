@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -163,6 +164,46 @@ fun HoldingEditorScreen(
             optionLabel = { it.label },
             onSelect = viewModel::setType,
         )
+
+        if (state.assetType == AssetType.FCI) {
+            SmartCard {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Usar como FCI billetera", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Queda como cuenta de gastos por defecto y los gastos descuentan su saldo.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.isWallet,
+                        onCheckedChange = viewModel::setWallet,
+                    )
+                }
+                if (!state.isWallet) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Plazo de rescate",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    ChipRow(
+                        options = listOf(0, 1, 2, 3),
+                        selected = state.settlementDays,
+                        label = { if (it == 0) "T+0" else "T+$it" },
+                        onSelect = viewModel::setSettlementDays,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Adcap Balanceado III rescata a 24 h: corresponde T+1.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Sky,
+                    )
+                }
+            }
+        }
 
         Column {
             Text(

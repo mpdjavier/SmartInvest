@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.model.AllocationBucket
 import com.smartinvest.domain.model.CarryRiskAssessment
 import com.smartinvest.domain.model.CarryRiskBand
@@ -76,7 +77,8 @@ fun RebalancingScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Asistente macro", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Riesgo de carry y rebalanceo orgánico con el próximo ingreso",
+                        "Riesgo de carry y rebalanceo orgánico. Lectura semanal; decisión de " +
+                            "flujo mensual en la fecha del sueldo.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -222,6 +224,42 @@ private fun RiskSemaphoreCard(
             assessment.factors.forEach { factor ->
                 RiskFactorRow(factor = factor, color = color)
             }
+            Spacer(Modifier.height(6.dp))
+            if (assessment.countryRiskCeilingActive) {
+                InfoBanner(
+                    "Techo AMARILLO por riesgo país: nivel ${assessment.countryRiskPoints} pts " +
+                        "(umbral 800) y variación 30 días " +
+                        "${if (assessment.countryRisk30dChange >= 0) "+" else "−"}" +
+                        "${kotlin.math.abs(assessment.countryRisk30dChange)} pts (umbral +150).",
+                    color = Amber,
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            if (assessment.fxGapSpeedCeilingActive) {
+                InfoBanner(
+                    "Techo AMARILLO por velocidad de la brecha: se expandió " +
+                        "${Fmt.pp(assessment.fxGapSpeedPp)} en 30 días aunque el nivel siga bajo.",
+                    color = Amber,
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            if (assessment.hysteresisApplied) {
+                InfoBanner(
+                    "Histéresis: el estado se mantiene en " +
+                        "${assessment.band.label.lowercase()} hasta cruzar el umbral de salida " +
+                        "(ROJO sale en 55; VERDE sale en 35).",
+                    color = color,
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            if (assessment.electoralCapApplied) {
+                InfoBanner(
+                    "Calendario electoral: el estado VERDE tiene techo de " +
+                        "${Fmt.percent(assessment.electoralCapPesoPercent, 0)} en pesos. " +
+                        "La desprotección se hace antes del clima electoral, no durante.",
+                    color = Amber,
+                )
+            }
         }
     }
 }
@@ -236,9 +274,13 @@ private fun RiskFactorRow(factor: MacroRiskFactor, color: Color) {
                 style = MaterialTheme.typography.titleSmall,
             )
             Text(
-                "${factor.score}/${factor.maxScore}",
+                if (factor.isInformational) "Info" else "${factor.score}/${factor.maxScore}",
                 style = MaterialTheme.typography.titleSmall,
-                color = color,
+                color = if (factor.isInformational) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    color
+                },
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -347,6 +389,35 @@ private fun DistributionCard(context: MacroRebalanceContext?) {
                 Amber
             },
         )
+        if (assessment != null) {
+            KeyValueRow(
+                "Techo VERDE por calendario",
+                Fmt.percent(assessment.electoralCapPesoPercent, 0),
+                valueColor = if (assessment.electoralCapApplied) Amber else Emerald,
+            )
+        }
+        if (assessment != null) {
+            ThinDivider()
+            KeyValueRow(
+                "Guardarraíl de liquidez",
+                if (assessment.liquidityGuardrail.isSatisfied) "Cumple" else "Revisar",
+                valueColor = if (assessment.liquidityGuardrail.isSatisfied) Emerald else Amber,
+                strong = !assessment.liquidityGuardrail.isSatisfied,
+            )
+            Text(
+                if (MoneyVisibility.hidden) {
+                    "Detalle oculto por privacidad"
+                } else {
+                    assessment.liquidityGuardrail.detail
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val exclusions = context?.settings?.carryExcludedPatterns.orEmpty()
+            if (exclusions.isNotBlank()) {
+                KeyValueRow("Fuera de la ratio", exclusions)
+            }
+        }
     }
 }
 
@@ -388,6 +459,31 @@ private fun NextIncomeCard(
                     "También podés guardar un plan en la pantalla Sueldo y usarlo como base.",
                 color = Sky,
             )
+            if (plan != null && plan.maturityFlows.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Vencimientos próximos (flujo orgánico)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                plan.maturityFlows.forEach { flow ->
+                    KeyValueRow(
+                        "${flow.symbol} · ${DateUtils.dateLabel(flow.maturityDate)}",
+                        Fmt.ars(flow.amountCents),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (MoneyVisibility.hidden) {
+                        "Detalle oculto por privacidad"
+                    } else {
+                        plan.maturityDetail
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         } else {
             val accent = if (plan.dollarPercentOfIncome >= 50) Sky else Emerald
             InfoBanner(plan.headline, color = accent)
@@ -417,11 +513,42 @@ private fun NextIncomeCard(
             plan.legs.forEach { leg ->
                 AllocationLegRow(leg)
             }
+            if (plan.maturityFlows.isNotEmpty()) {
+                ThinDivider()
+                Text(
+                    "Vencimientos = flujo orgánico",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                plan.maturityFlows.forEach { flow ->
+                    KeyValueRow(
+                        "${flow.symbol} · ${DateUtils.dateLabel(flow.maturityDate)}",
+                        Fmt.ars(flow.amountCents),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (MoneyVisibility.hidden) {
+                        "Detalle oculto por privacidad"
+                    } else {
+                        plan.maturityDetail
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+            }
             ThinDivider()
             KeyValueRow(
                 "Cartera después del ingreso",
                 "${Fmt.percent(plan.currentPesoPercent)} → ${Fmt.percent(plan.projectedPesoPercent)} en pesos",
                 strong = true,
+            )
+            val months = plan.monthsToRealign
+            KeyValueRow(
+                "Tiempo de realineamiento",
+                if (months == null) "—" else "≈ ${formatMonths(months)} meses de ahorro",
             )
             KeyValueRow(
                 "Meta ajustada por riesgo",
@@ -446,9 +573,11 @@ private fun NextIncomeCard(
 @Composable
 private fun AllocationLegRow(leg: OrganicAllocationLeg) {
     val color = when (leg.bucket) {
-        AllocationBucket.FCI_T0 -> Emerald
-        AllocationBucket.LECAP -> Violet
+        AllocationBucket.LIQUIDITY -> Emerald
+        AllocationBucket.CARRY_FCI -> Violet
+        AllocationBucket.FIXED_RATE -> Amber
         AllocationBucket.MEP -> Sky
+        AllocationBucket.SOVEREIGN_BOND -> Rose
     }
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
@@ -525,10 +654,40 @@ private fun MacroAssumptionsCard(
                 "Brecha cambiaria",
                 Fmt.percent(assessment.fxGapPercent, 1),
                 valueColor = when {
-                    assessment.fxGapPercent <= 10.0 -> Emerald
-                    assessment.fxGapPercent <= 25.0 -> Amber
+                    assessment.fxGapPercent < 5.0 -> Emerald
+                    assessment.fxGapPercent <= 12.0 -> Amber
                     else -> Rose
                 },
+            )
+            KeyValueRow(
+                "Velocidad de la brecha (30 días)",
+                if (assessment.fxGap30dAgoPercent == null) {
+                    "Sin lectura previa"
+                } else {
+                    Fmt.pp(assessment.fxGapSpeedPp)
+                },
+                valueColor = if (assessment.fxGapSpeedCeilingActive) Rose else Emerald,
+            )
+            KeyValueRow(
+                "Riesgo país",
+                if (assessment.countryRiskConfigured) {
+                    "${assessment.countryRiskPoints} pts · " +
+                        "${if (assessment.countryRisk30dChange >= 0) "+" else "−"}" +
+                        "${kotlin.math.abs(assessment.countryRisk30dChange)} en 30 días"
+                } else {
+                    "Sin dato"
+                },
+                valueColor = if (assessment.countryRiskCeilingActive) Amber else Emerald,
+            )
+            KeyValueRow(
+                "Objetivo ROJO",
+                "${Fmt.percent(assessment.redTargetPesoPercent, 0)} pesos / " +
+                    "${Fmt.percent(100.0 - assessment.redTargetPesoPercent, 0)} dólares",
+            )
+            KeyValueRow(
+                "Techo VERDE por calendario electoral",
+                Fmt.percent(assessment.electoralCapPesoPercent, 0),
+                valueColor = if (assessment.electoralCapApplied) Amber else Emerald,
             )
             KeyValueRow(
                 "Tasa real mensual",
@@ -543,13 +702,16 @@ private fun MacroAssumptionsCard(
             )
             Spacer(Modifier.height(10.dp))
             InfoBanner(
-                "El índice combina tasa real (40%), brecha cambiaria (35%) y desvío de cartera (25%). " +
-                    "Los CEDEARs suman exposición en dólares aunque coticen en pesos.",
+                "El índice mide solo el escenario: tasa real (40%), brecha cambiaria " +
+                    "nivel (25%) + velocidad (10%) y riesgo país (25%). El desvío de cartera " +
+                    "no suma puntos: se usa para dimensionar el flujo. La ratio excluye " +
+                    "«${context.settings.carryExcludedPatterns}»; los CEDEARs suman exposición " +
+                    "en dólares aunque coticen en pesos.",
                 color = Sky,
             )
             Spacer(Modifier.height(10.dp))
             OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
-                Text("Cambiar devaluación y TNA de referencia")
+                Text("Cambiar riesgo país, brecha previa y calendario electoral")
             }
         }
     }
@@ -590,3 +752,6 @@ private fun riskColor(band: CarryRiskBand?): Color = when (band) {
     CarryRiskBand.HIGH -> Rose
     null -> Sky
 }
+
+private fun formatMonths(value: Double): String =
+    String.format(java.util.Locale.forLanguageTag("es-AR"), "%.1f", value)

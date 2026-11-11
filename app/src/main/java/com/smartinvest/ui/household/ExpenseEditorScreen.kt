@@ -279,6 +279,46 @@ fun ExpenseEditorScreen(
             }
         }
 
+        if (form.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
+            val selectedWallet = data.walletHoldings.firstOrNull { it.id == form.walletHoldingId }
+                ?: data.walletHoldings.firstOrNull()
+            SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
+                Text("FCI billetera", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(6.dp))
+                if (data.walletHoldings.isEmpty()) {
+                    InfoBanner(
+                        "No hay un FCI marcado como billetera. Editá un FCI desde Cartera y activá " +
+                            "\"Usar como FCI billetera\".",
+                        color = Amber,
+                    )
+                } else {
+                    if (data.walletHoldings.size > 1 && selectedWallet != null) {
+                        DropdownField(
+                            label = "FCI de pago",
+                            selected = selectedWallet,
+                            options = data.walletHoldings,
+                            optionLabel = { "${it.symbol} · ${it.name}" },
+                            onSelect = { viewModel.setWalletHolding(it.id) },
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    KeyValueRow(
+                        "Saldo disponible",
+                        Fmt.ars(selectedWallet?.currentValueCents ?: 0),
+                    )
+                    KeyValueRow(
+                        "Saldo después del gasto",
+                        Fmt.ars(((selectedWallet?.currentValueCents ?: 0) - amount).coerceAtLeast(0)),
+                        valueColor = if (amount > (selectedWallet?.currentValueCents ?: 0)) Rose else Emerald,
+                    )
+                    if (amount > (selectedWallet?.currentValueCents ?: 0)) {
+                        Spacer(Modifier.height(8.dp))
+                        InfoBanner("El FCI billetera no alcanza para este gasto.", color = Rose)
+                    }
+                }
+            }
+        }
+
         OutlinedTextField(
             value = form.notes,
             onValueChange = viewModel::setNotes,

@@ -19,6 +19,8 @@ interface InvestmentRepository {
     fun observeWallets(): Flow<List<Wallet>>
     fun observeActiveWallets(): Flow<List<Wallet>>
     fun observeHoldings(): Flow<List<Holding>>
+    /** Holdings flagged as the wallet/transaction account (FCI). */
+    fun observeWalletHoldings(): Flow<List<Holding>>
     fun observeQuotes(marketKey: String): Flow<List<InstrumentQuote>>
     fun observeAllQuotes(): Flow<List<InstrumentQuote>>
     fun observeSnapshots(): Flow<List<PortfolioSnapshot>>

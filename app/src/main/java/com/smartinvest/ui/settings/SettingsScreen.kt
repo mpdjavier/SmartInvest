@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -33,8 +34,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -53,6 +58,7 @@ import com.smartinvest.ui.theme.Emerald
 import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.util.colorFromHex
+import java.util.Locale
 import kotlin.math.roundToLong
 
 @Composable
@@ -158,40 +164,71 @@ fun SettingsScreen(
         // Salary split
         item {
             val settings = state.settings
-            val total = settings.salaryWeightsSum
             SmartCard {
                 SectionHeader(
                     title = "Reparto del sueldo",
-                    subtitle = "FCI T+0 · letras · MEP",
+                    subtitle = "Liquidez 24/7 + tramo pesos + tramo dólares",
                 )
                 Spacer(Modifier.height(8.dp))
+                NumericSettingField(
+                    label = "Liquidez 24/7 mensual (0 = usar gasto del hogar)",
+                    value = if (settings.salaryLiquidityCents > 0) {
+                        (settings.salaryLiquidityCents / 100).toString()
+                    } else {
+                        ""
+                    },
+                    suffix = "$",
+                    onValueChange = { text ->
+                        val pesos = text.filter { it.isDigit() }.toLongOrNull() ?: 0L
+                        viewModel.updateSettings { it.copy(salaryLiquidityCents = pesos * 100) }
+                    },
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Va al FCI marcado como billetera antes de invertir el resto.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Tramo en pesos",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Emerald,
+                )
                 PercentRow(
-                    label = "FCI T+0 (eco)",
+                    label = "Carry principal (FCI T+1)",
                     value = settings.salaryFciPercent,
                     onChange = { value -> viewModel.updateSettings { it.copy(salaryFciPercent = value) } },
                 )
                 PercentRow(
-                    label = "Letras a tasa fija",
+                    label = "Tasa fija (LECAP / BONCAP)",
                     value = settings.salaryLecapPercent,
                     onChange = { value -> viewModel.updateSettings { it.copy(salaryLecapPercent = value) } },
                 )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Tramo en dólares",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Sky,
+                )
                 PercentRow(
-                    label = "Dólar MEP / cobertura",
+                    label = "Cobertura MEP",
                     value = settings.salaryMepPercent,
                     onChange = { value -> viewModel.updateSettings { it.copy(salaryMepPercent = value) } },
                 )
-                Spacer(Modifier.height(6.dp))
-                TagPill(
-                    text = "Total $total%",
-                    color = if (total == 100) Emerald else Amber,
+                PercentRow(
+                    label = "Resguardo / piso (AO27D)",
+                    value = settings.salaryBondPercent,
+                    onChange = { value -> viewModel.updateSettings { it.copy(salaryBondPercent = value) } },
                 )
-                if (total != 100) {
-                    Spacer(Modifier.height(8.dp))
-                    InfoBanner(
-                        "Los porcentajes se normalizan si no suman 100%. Ajustalos para un reparto exacto.",
-                        color = Amber,
-                    )
-                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Ejemplo 60/40: pesos 45/15 y dólares 25/15. Los pesos y dólares se reparten " +
+                        "según el objetivo ajustado por riesgo del semáforo; estos porcentajes " +
+                        "solo definen la mezcla dentro de cada tramo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -227,6 +264,58 @@ fun SettingsScreen(
                     label = { "±${it.roundToLong()} pp" },
                     onSelect = { value -> viewModel.updateSettings { it.copy(rebalanceTolerancePp = value) } },
                 )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Objetivo en estado ROJO",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ChipRow(
+                    options = listOf(40, 50, 60),
+                    selected = settings.redTargetPesoPercent,
+                    label = { "$it% pesos" },
+                    onSelect = { value -> viewModel.updateSettings { it.copy(redTargetPesoPercent = value) } },
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "El ROJO deja de ser ambiguo: el flujo y los vencimientos apuntan a este " +
+                        "objetivo defensivo, no solo a volver a la base 60/40.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Guardarraíl de liquidez", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "El sobrepeso en pesos solo en instrumentos ≤6 meses o T+0/24 h",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = settings.liquidityGuardrailEnabled,
+                        onCheckedChange = { value ->
+                            viewModel.updateSettings { it.copy(liquidityGuardrailEnabled = value) }
+                        },
+                    )
+                }
+                if (settings.liquidityGuardrailEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Plazo máximo del sobrepeso",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    ChipRow(
+                        options = listOf(3, 6, 12),
+                        selected = settings.liquidityGuardrailMaxMonths,
+                        label = { "$it meses" },
+                        onSelect = { value ->
+                            viewModel.updateSettings { it.copy(liquidityGuardrailMaxMonths = value) }
+                        },
+                    )
+                }
             }
         }
 
@@ -273,11 +362,119 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Riesgo país",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                NumericSettingField(
+                    label = "Nivel actual (puntos)",
+                    value = if (settings.countryRiskPoints > 0) settings.countryRiskPoints.toString() else "",
+                    suffix = "pts",
+                    onValueChange = { text ->
+                        viewModel.updateSettings { it.copy(countryRiskPoints = text.toIntOrNull() ?: 0) }
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
+                ChipRow(
+                    options = listOf(700, 800, 873, 900),
+                    selected = settings.countryRiskPoints,
+                    label = { "$it pts" },
+                    onSelect = { value -> viewModel.updateSettings { it.copy(countryRiskPoints = value) } },
+                )
+                Spacer(Modifier.height(8.dp))
+                NumericSettingField(
+                    label = "Variación en 30 días (puntos)",
+                    value = if (settings.countryRisk30dChange != 0) {
+                        settings.countryRisk30dChange.toString()
+                    } else {
+                        ""
+                    },
+                    suffix = "pts",
+                    onValueChange = { text ->
+                        viewModel.updateSettings { it.copy(countryRisk30dChange = text.toIntOrNull() ?: 0) }
+                    },
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Nivel > 800 o suba > 150 pts en 30 días pone techo AMARILLO: no se puede " +
+                        "estar en VERDE aunque la brecha esté planchada.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Brecha MEP de hace 30 días",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                NumericSettingField(
+                    label = "Brecha previa (dejá vacío si no hay dato)",
+                    value = settings.previousFxGapPercent
+                        .takeIf { it >= 0.0 }
+                        ?.let { String.format(Locale.US, "%.1f", it) }
+                        ?: "",
+                    suffix = "%",
+                    onValueChange = { text ->
+                        viewModel.updateSettings {
+                            it.copy(
+                                previousFxGapPercent = text.replace(',', '.').toDoubleOrNull() ?: -1.0,
+                            )
+                        }
+                    },
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Se usa para medir la velocidad, no solo el nivel: una brecha que se duplica " +
+                        "en dos semanas es señal defensiva aunque siga siendo baja.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Alcance del semáforo",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = settings.carryExcludedPatterns,
+                    onValueChange = { value ->
+                        viewModel.updateSettings { it.copy(carryExcludedPatterns = value) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Excluir del índice (separados por coma)") },
+                    singleLine = true,
+                    supportingText = {
+                        Text("Por defecto quedan fuera Mercado Pago y la cubeta de viajes.")
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Calendario electoral", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Techo VERDE: 70% hasta feb/2027, 65% mar–jun, 60% jul–nov",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = settings.electoralCalendarEnabled,
+                        onCheckedChange = { value ->
+                            viewModel.updateSettings { it.copy(electoralCalendarEnabled = value) }
+                        },
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
                 InfoBanner(
-                    "El índice de carry combina tasa real (40%), brecha oficial/MEP (35%) y " +
-                        "desvío de cartera (25%). Un puntaje alto prioriza cubrirte en dólares " +
-                        "con el próximo ingreso, sin vender activos.",
+                    "El índice mide solo el escenario: tasa real (40%), brecha nivel (25%) + " +
+                        "velocidad (10%) y riesgo país (25%). El desvío de cartera no suma " +
+                        "puntos: se usa para dimensionar el flujo.",
                     color = Sky,
                 )
             }
@@ -690,4 +887,29 @@ private fun PercentRow(
             Icon(Icons.Rounded.Add, "Sumar", modifier = Modifier.size(16.dp))
         }
     }
+}
+
+@Composable
+private fun NumericSettingField(
+    label: String,
+    value: String,
+    suffix: String,
+    onValueChange: (String) -> Unit,
+) {
+    var draft by remember(value) { mutableStateOf(value) }
+    OutlinedTextField(
+        value = draft,
+        onValueChange = { input ->
+            if (input.isEmpty() || input.all { it.isDigit() || it == '-' || it == '.' || it == ',' }) {
+                draft = input
+                onValueChange(input)
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(label) },
+        suffix = { Text(suffix) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        shape = MaterialTheme.shapes.medium,
+    )
 }

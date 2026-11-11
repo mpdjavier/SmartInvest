@@ -4,7 +4,6 @@ package com.smartinvest.ui.investments
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,10 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Refresh
@@ -49,9 +47,7 @@ import com.smartinvest.domain.model.CarryRiskBand
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HoldingValuation
-import com.smartinvest.domain.model.Wallet
-import com.smartinvest.domain.model.WalletType
-import com.smartinvest.domain.model.WalletValuation
+import com.smartinvest.domain.model.InstrumentBreakEven
 import com.smartinvest.domain.usecase.PortfolioOverview
 import com.smartinvest.ui.components.EmptyState
 import com.smartinvest.ui.components.InfoBanner
@@ -68,10 +64,10 @@ import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.theme.Violet
 import com.smartinvest.ui.util.Fmt
+import kotlin.math.roundToLong
 
 @Composable
 fun InvestmentsScreen(
-    onOpenWallets: () -> Unit,
     onAddHolding: () -> Unit,
     onEditHolding: (Long) -> Unit,
     onOpenAnalytics: () -> Unit,
@@ -80,6 +76,7 @@ fun InvestmentsScreen(
     onOpenDailyInterest: () -> Unit = {},
     onOpenInstrumentDetail: (Long) -> Unit = {},
     onOpenRebalancing: () -> Unit = {},
+    onOpenBreakEven: () -> Unit = {},
     viewModel: InvestmentsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -95,7 +92,7 @@ fun InvestmentsScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Cartera", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Billeteras, letras y cobertura en dólares",
+                        "Activos, FCI, letras y cobertura en dólares",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -152,24 +149,14 @@ fun InvestmentsScreen(
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = viewModel::syncRates,
-                    enabled = !state.isWorking,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Sincronizar TNA")
-                }
-                OutlinedButton(
-                    onClick = onOpenWallets,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Rounded.AccountBalanceWallet, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Billeteras")
-                }
+            Button(
+                onClick = viewModel::syncRates,
+                enabled = !state.isWorking,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Sincronizar TNA")
             }
         }
 
@@ -196,29 +183,7 @@ fun InvestmentsScreen(
 
         item { RebalanceCard(overview, onOpenRebalancing) }
 
-        item {
-            SectionHeader(
-                title = "Billeteras y cuentas",
-                subtitle = "${state.wallets.count { it.isActive }} activas · tope remunerado configurable",
-                actionLabel = "Gestionar",
-                onAction = onOpenWallets,
-            )
-        }
-
-        if (overview?.valuation?.wallets.isNullOrEmpty()) {
-            item {
-                EmptyState(
-                    icon = Icons.Rounded.AccountBalanceWallet,
-                    title = "Sin cuentas activas",
-                    message = "Agregá Mercado Pago, Ualá, FCI eco, tu bróker o banco para valuar la cartera.",
-                )
-            }
-        } else {
-            items(overview?.valuation?.wallets?.size ?: 0) { index ->
-                val walletValuation = overview!!.valuation.wallets[index]
-                WalletRow(walletValuation)
-            }
-        }
+        item { DollarBreakEvenCard(overview, onOpenBreakEven) }
 
         item {
             SectionHeader(
@@ -246,6 +211,7 @@ fun InvestmentsScreen(
                     holding = holding,
                     valueArsCents = valuation?.valueArsCents ?: holding.currentValueCents,
                     dailyInterestCents = valuation?.dailyInterestCents ?: 0L,
+                    breakEven = overview?.breakEven?.holding(holding.id),
                     onOpenEvolution = { onOpenInstrumentDetail(holding.id) },
                     onEdit = { onEditHolding(holding.id) },
                 )
@@ -368,7 +334,7 @@ private fun RebalanceCard(data: PortfolioOverview?, onOpenRebalancing: () -> Uni
     SmartCard {
         SectionHeader(
             title = "Rebalanceo elástico",
-            subtitle = "Objetivo ${Fmt.percent(advice.targetPesoPercent, 0)} en pesos · banda ±${Fmt.percent(advice.tolerancePp, 0)}",
+            subtitle = "Cartera invertible · objetivo ${Fmt.percent(advice.targetPesoPercent, 0)} en pesos · banda ±${Fmt.percent(advice.tolerancePp, 0)}",
         )
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -402,19 +368,39 @@ private fun RebalanceCard(data: PortfolioOverview?, onOpenRebalancing: () -> Uni
             style = MaterialTheme.typography.bodySmall,
             color = riskColor,
         )
+        val guardrail = macro.liquidityGuardrail
+        if (macro.countryRiskCeilingActive || macro.fxGapSpeedCeilingActive || !guardrail.isSatisfied) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                buildString {
+                    if (macro.countryRiskCeilingActive) {
+                        append("Techo AMARILLO por riesgo país (${macro.countryRiskPoints} pts). ")
+                    }
+                    if (macro.fxGapSpeedCeilingActive) {
+                        append("Brecha acelerando ${Fmt.pp(macro.fxGapSpeedPp)} en 30 días. ")
+                    }
+                    if (!guardrail.isSatisfied) {
+                        append("Guardarraíl de liquidez: ")
+                        append(guardrail.detail)
+                    }
+                }.trim(),
+                style = MaterialTheme.typography.bodySmall,
+                color = Amber,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatTile(
                 label = "Pesos",
                 value = Fmt.percent(advice.pesoPercent),
-                caption = Fmt.compact(overview.valuation.arsAssetsCents),
+                caption = Fmt.compact(overview.investableValuation.arsAssetsCents),
                 accent = Emerald,
                 modifier = Modifier.weight(1f),
             )
             StatTile(
                 label = "Dólares",
                 value = Fmt.percent(advice.dollarPercent),
-                caption = Fmt.compact(overview.valuation.usdAssetsArsCents),
+                caption = Fmt.compact(overview.investableValuation.usdAssetsArsCents),
                 accent = Sky,
                 modifier = Modifier.weight(1f),
             )
@@ -445,51 +431,45 @@ private fun riskColor(band: CarryRiskBand): Color = when (band) {
 }
 
 @Composable
-private fun WalletRow(valuation: WalletValuation) {
-    val wallet = valuation.wallet
-    val color = walletColor(wallet.type)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Rounded.AccountBalanceWallet, null, tint = color, modifier = Modifier.size(19.dp))
-        }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(wallet.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+private fun DollarBreakEvenCard(data: PortfolioOverview?, onOpen: () -> Unit) {
+    val report = data?.breakEven
+    val summary = report?.pesoSummary.orEmpty()
+    SmartCard {
+        SectionHeader(
+            title = "Dólar break-even",
+            subtitle = "MEP que iguala comprar dólares con invertir en pesos",
+        )
+        Spacer(Modifier.height(10.dp))
+        if (summary.isEmpty()) {
             Text(
-                "${wallet.type.label} · ${wallet.currency.symbol} · TNA ${Fmt.rate(valuation.effectiveTnaPercent)}",
+                "Cargá posiciones en pesos para calcular el break-even de la cartera.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            if (wallet.remuneratedCapCents > 0) {
-                Text(
-                    "Tope remunerado ${Fmt.ars(wallet.remuneratedCapCents)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Amber,
-                )
+        } else {
+            Text(
+                "Promedio ponderado de las posiciones en pesos",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                summary.forEach { point ->
+                    StatTile(
+                        label = "${point.days} días",
+                        value = formatMep(point.breakEvenMepRate),
+                        caption = "MEP ${Fmt.signedPercent(point.requiredDevaluationPercent)}",
+                        accent = Amber,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(Fmt.ars(valuation.valueArsCents), style = MaterialTheme.typography.titleSmall)
-            Text(
-                "+ ${Fmt.ars(valuation.dailyInterestCents)} / día",
-                style = MaterialTheme.typography.bodySmall,
-                color = Emerald,
-            )
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Rounded.Calculate, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Ver break-even por instrumento")
         }
     }
 }
@@ -499,6 +479,7 @@ private fun HoldingRow(
     holding: Holding,
     valueArsCents: Long,
     dailyInterestCents: Long,
+    breakEven: InstrumentBreakEven? = null,
     onOpenEvolution: () -> Unit,
     onEdit: () -> Unit,
 ) {
@@ -544,6 +525,7 @@ private fun HoldingRow(
                     color = Amber,
                 )
             }
+            BreakEvenSummaryLine(breakEven)
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -589,18 +571,35 @@ private fun HoldingRow(
     }
 }
 
+@Composable
+private fun BreakEvenSummaryLine(breakEven: InstrumentBreakEven?) {
+    if (breakEven == null) return
+    if (breakEven.isDollarPosition) {
+        Text(
+            "Break-even: ya en dólares",
+            style = MaterialTheme.typography.bodySmall,
+            color = Sky,
+        )
+    } else {
+        Text(
+            "BE " + breakEven.points.joinToString(" · ") {
+                "${it.days}d ${formatMep(it.breakEvenMepRate)}"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = Amber,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun formatMep(rate: Double?): String =
+    if (rate == null || rate <= 0.0) "—" else Fmt.ars((rate * 100.0).roundToLong())
+
 private fun windowColor(percent: Double?): Color = when {
     percent == null -> Sky
     percent >= 0 -> Emerald
     else -> Rose
-}
-
-private fun walletColor(type: WalletType): Color = when (type) {
-    WalletType.WALLET -> Sky
-    WalletType.MONEY_MARKET_FUND -> Emerald
-    WalletType.BROKER -> Violet
-    WalletType.BANK -> Amber
-    WalletType.OTHER -> Sky
 }
 
 private fun assetColor(type: AssetType): Color = when (type) {

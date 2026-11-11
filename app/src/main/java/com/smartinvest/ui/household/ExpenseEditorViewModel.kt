@@ -7,9 +7,11 @@ import com.smartinvest.core.money.MoneyParser
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.ExpensePaymentMethod
+import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.repository.HouseholdRepository
+import com.smartinvest.domain.repository.InvestmentRepository
 import com.smartinvest.domain.repository.NewExpense
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +30,7 @@ data class ExpenseEditorData(
     val categories: List<HouseholdCategory> = emptyList(),
     val cards: List<CreditCard> = emptyList(),
     val fundBalanceCents: Long = 0,
+    val walletHoldings: List<Holding> = emptyList(),
 )
 
 data class ExpenseForm(
@@ -38,6 +41,7 @@ data class ExpenseForm(
     val paidByMemberId: Long? = null,
     val paymentMethod: ExpensePaymentMethod = ExpensePaymentMethod.DEBIT,
     val cardId: Long? = null,
+    val walletHoldingId: Long? = null,
     val installments: Int = 1,
     val notes: String = "",
     val isSaving: Boolean = false,
@@ -53,6 +57,7 @@ data class ExpenseEditorUiState(
 @HiltViewModel
 class ExpenseEditorViewModel @Inject constructor(
     private val repository: HouseholdRepository,
+    private val investments: InvestmentRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -69,14 +74,16 @@ class ExpenseEditorViewModel @Inject constructor(
 
     private val form = MutableStateFlow(ExpenseForm(date = defaultDate))
     private var latestData = ExpenseEditorData()
+    private var defaultsApplied = false
 
     private val dataFlow = combine(
         repository.observeMembers(),
         repository.observeCategories(includeArchived = false),
         repository.observeCards(includeInactive = false),
         repository.observeFundBalance(),
-    ) { members, categories, cards, fundBalance ->
-        ExpenseEditorData(members, categories, cards, fundBalance)
+        investments.observeWalletHoldings(),
+    ) { members, categories, cards, fundBalance, walletHoldings ->
+        ExpenseEditorData(members, categories, cards, fundBalance, walletHoldings)
     }
 
     val uiState = combine(dataFlow, form) { data, currentForm ->
@@ -98,8 +105,15 @@ class ExpenseEditorViewModel @Inject constructor(
                         paidByMemberId = current.paidByMemberId
                             ?: (data.members.firstOrNull { it.isCurrentUser } ?: data.members.firstOrNull())?.id,
                         cardId = current.cardId ?: data.cards.firstOrNull()?.id,
+                        walletHoldingId = current.walletHoldingId ?: data.walletHoldings.firstOrNull()?.id,
+                        paymentMethod = if (!defaultsApplied && data.walletHoldings.isNotEmpty()) {
+                            ExpensePaymentMethod.WALLET_FCI
+                        } else {
+                            current.paymentMethod
+                        },
                     )
                 }
+                defaultsApplied = true
             }
         }
     }
@@ -116,9 +130,16 @@ class ExpenseEditorViewModel @Inject constructor(
         it.copy(
             paymentMethod = method,
             installments = if (method == ExpensePaymentMethod.CREDIT) it.installments.coerceAtLeast(1) else 1,
+            walletHoldingId = if (method == ExpensePaymentMethod.WALLET_FCI) {
+                it.walletHoldingId ?: latestData.walletHoldings.firstOrNull()?.id
+            } else {
+                it.walletHoldingId
+            },
             error = null,
         )
     }
+
+    fun setWalletHolding(id: Long) = form.update { it.copy(walletHoldingId = id, error = null) }
 
     fun setInstallments(count: Int) = form.update { it.copy(installments = count.coerceIn(1, 60)) }
 
@@ -155,6 +176,22 @@ class ExpenseEditorViewModel @Inject constructor(
             form.update { it.copy(error = "El fondo común no alcanza para este gasto") }
             return
         }
+        if (current.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
+            val walletId = current.walletHoldingId
+            if (walletId == null) {
+                form.update { it.copy(error = "Marcá un FCI como billetera para pagar desde ahí") }
+                return
+            }
+            val wallet = latestData.walletHoldings.firstOrNull { it.id == walletId }
+            if (wallet == null) {
+                form.update { it.copy(error = "El FCI billetera ya no está disponible") }
+                return
+            }
+            if (amount > wallet.currentValueCents) {
+                form.update { it.copy(error = "El FCI billetera no alcanza para este gasto") }
+                return
+            }
+        }
 
         form.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
@@ -170,6 +207,11 @@ class ExpenseEditorViewModel @Inject constructor(
                         creditCardId = if (current.paymentMethod == ExpensePaymentMethod.CREDIT) current.cardId else null,
                         installments = if (current.paymentMethod == ExpensePaymentMethod.CREDIT) current.installments else 1,
                         notes = current.notes.trim(),
+                        walletHoldingId = if (current.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
+                            current.walletHoldingId
+                        } else {
+                            null
+                        },
                     ),
                 )
             }.onSuccess {
