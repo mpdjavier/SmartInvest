@@ -29,6 +29,7 @@ data class HoldingForm(
     val currency: CurrencyCode = CurrencyCode.ARS,
     val valueText: String = "",
     val costText: String = "",
+    val deltaAmountText: String = "",
     val tnaText: String = "",
     val maturity: LocalDate? = null,
     val notes: String = "",
@@ -87,7 +88,68 @@ class HoldingEditorViewModel @Inject constructor(
     fun setCurrency(value: CurrencyCode) = form.update { it.copy(currency = value, error = null) }
     fun setValue(value: String) = form.update { it.copy(valueText = value, error = null) }
     fun setCost(value: String) = form.update { it.copy(costText = value, error = null) }
+    fun setDeltaAmount(value: String) = form.update { it.copy(deltaAmountText = value, error = null) }
     fun setTna(value: String) = form.update { it.copy(tnaText = value, error = null) }
+
+    fun applyFundsDelta(add: Boolean) {
+        val current = form.value
+        val deltaCents = MoneyParser.parseToCents(current.deltaAmountText)
+        if (deltaCents == null || deltaCents <= 0L) {
+            form.update { it.copy(error = "Ingresá un monto válido para sumar o retirar") }
+            return
+        }
+        val oldValueCents = MoneyParser.parseToCents(current.valueText) ?: 0L
+        val newValueCents = if (add) {
+            oldValueCents + deltaCents
+        } else {
+            if (deltaCents > oldValueCents) {
+                form.update { it.copy(error = "El retiro supera la valuación actual del activo") }
+                return
+            }
+            oldValueCents - deltaCents
+        }
+
+        val oldCostCents = MoneyParser.parseToCents(current.costText) ?: 0L
+        val newCostCents = when {
+            oldCostCents <= 0L -> 0L
+            add -> oldCostCents + deltaCents
+            oldValueCents > 0L -> (oldCostCents.toDouble() * newValueCents.toDouble() / oldValueCents.toDouble()).toLong()
+            else -> 0L
+        }
+
+        val oldQty = current.quantityText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+        val newQtyText = if (oldQty > 0.0 && oldValueCents > 0L) {
+            val scaledQty = oldQty * (newValueCents.toDouble() / oldValueCents.toDouble())
+            String.format(java.util.Locale.US, "%.4f", scaledQty)
+                .trimEnd('0')
+                .trimEnd('.')
+                .replace('.', ',')
+        } else {
+            current.quantityText
+        }
+
+        val sign = if (add) "+" else "-"
+        val dateLabel = com.smartinvest.core.time.DateUtils.today()
+            .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+        val formattedDelta = if (current.currency == CurrencyCode.USD) {
+            com.smartinvest.core.money.MoneyFormatter.usd(deltaCents)
+        } else {
+            com.smartinvest.core.money.MoneyFormatter.ars(deltaCents)
+        }
+        val logEntry = "$dateLabel: $sign$formattedDelta"
+        val updatedNotes = if (current.notes.isBlank()) logEntry else "${current.notes.trim()}\n$logEntry"
+
+        form.update {
+            it.copy(
+                valueText = centsInput(newValueCents),
+                costText = if (newCostCents > 0L) centsInput(newCostCents) else it.costText,
+                quantityText = newQtyText,
+                deltaAmountText = "",
+                notes = updatedNotes,
+                error = null,
+            )
+        }
+    }
     fun setMaturity(value: LocalDate?) = form.update { it.copy(maturity = value, error = null) }
     fun setNotes(value: String) = form.update { it.copy(notes = value) }
     fun setMarketKey(value: String) = form.update { it.copy(marketKey = value, error = null) }

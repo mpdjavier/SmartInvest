@@ -220,6 +220,37 @@ fun HoldingEditorScreen(
             )
         }
 
+        if (state.id > 0) {
+            SmartCard {
+                SectionHeader(
+                    title = "Sumar o retirar dinero (Aporte / Rescate)",
+                    subtitle = "Actualiza valuación, costo de compra, cuotapartes/nominales y deja registro en notas",
+                )
+                Spacer(Modifier.height(8.dp))
+                AmountInput(
+                    value = state.deltaAmountText,
+                    onValueChange = viewModel::setDeltaAmount,
+                    label = "Monto a sumar o retirar",
+                    prefix = if (state.currency == CurrencyCode.USD) "US$" else "$",
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { viewModel.applyFundsDelta(add = true) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("+ Sumar aporte")
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.applyFundsDelta(add = false) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("− Retirar")
+                    }
+                }
+            }
+        }
+
         AmountInput(
             value = state.valueText,
             onValueChange = viewModel::setValue,

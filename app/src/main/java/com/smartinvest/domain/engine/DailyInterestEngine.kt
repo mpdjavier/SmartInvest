@@ -139,7 +139,7 @@ object DailyInterestEngine {
                         quoteUnit = holding.quoteUnit,
                         dailyNativeCents = deltaNative,
                         dailyArsCents = deltaArs,
-                        explanation = quoteFormula(holding, prevPrice, currPrice, mep),
+                        explanation = quoteFormula(holding, prevPrice, currPrice, deltaNative, mep),
                     )
                 } else if (
                     holding.id !in linkedHoldingIds &&
@@ -483,7 +483,13 @@ object DailyInterestEngine {
         }
     }
 
-    private fun quoteFormula(holding: Holding, prevPrice: Double, currPrice: Double, mep: Double): String = buildString {
+    private fun quoteFormula(
+        holding: Holding,
+        prevPrice: Double,
+        currPrice: Double,
+        deltaNativeCents: Long,
+        mep: Double,
+    ): String = buildString {
         val pct = if (prevPrice > 0.0) (currPrice / prevPrice - 1.0) * 100.0 else 0.0
         val pctSign = if (pct >= 0.0) "+" else ""
         val pctText = pctSign + String.format(localeAr, "%.2f%%", pct)
@@ -507,6 +513,10 @@ object DailyInterestEngine {
             append(" − 1)")
         }
         if (holding.currency == CurrencyCode.USD) {
+            val usdSign = if (deltaNativeCents >= 0L) "+" else "−"
+            append(" = ")
+            append(usdSign)
+            append(MoneyFormatter.usd(kotlin.math.abs(deltaNativeCents)))
             append(" · MEP ")
             append(MoneyFormatter.ars((mep * 100.0).roundToLong()))
         }

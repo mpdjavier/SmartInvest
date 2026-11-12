@@ -270,12 +270,8 @@ class RavaClient @Inject constructor(
                 ?: history.maxByOrNull { it.date }?.price
             require(rawLatestPrice != null) { "No se encontró cotización en Rava para $symbol" }
 
-            val jsonLatest = jsonPoints[quoteDate]?.price
-            val latestPrice = if (jsonLatest != null && hasMoreDecimalPrecision(jsonLatest, rawLatestPrice)) {
-                jsonLatest
-            } else {
-                rawLatestPrice
-            }
+            val jsonLatest = jsonPoints[quoteDate]?.price?.takeIf { it > 0.0 }
+            val latestPrice = jsonLatest ?: rawLatestPrice
             val previousPrice = rawPreviousPrice?.let { prev ->
                 val priorJson = jsonPoints.entries
                     .filter { it.key.isBefore(quoteDate) }
@@ -286,6 +282,16 @@ class RavaClient @Inject constructor(
             }
 
             val points = history.toMutableList()
+            if (previousPrice != null) {
+                val priorIdx = points
+                    .mapIndexed { idx, pt -> idx to pt }
+                    .filter { it.second.date.isBefore(quoteDate) }
+                    .maxByOrNull { it.second.date }
+                    ?.first
+                if (priorIdx != null) {
+                    points[priorIdx] = points[priorIdx].copy(price = previousPrice)
+                }
+            }
             val sameDateIdx = points.indexOfFirst { it.date == quoteDate }
             when {
                 sameDateIdx >= 0 -> points[sameDateIdx] = MarketQuotePoint(date = quoteDate, price = latestPrice)
