@@ -3,9 +3,12 @@ package com.smartinvest.ui.investments
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smartinvest.core.money.MoneyFormatter
 import com.smartinvest.core.money.MoneyParser
 import com.smartinvest.data.network.MarketKeyParser
 import com.smartinvest.data.network.MarketPreset
+import com.smartinvest.domain.engine.BrokerImportSummary
+import com.smartinvest.domain.engine.BrokerMovementImporter
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.Holding
@@ -41,6 +44,7 @@ data class HoldingForm(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val error: String? = null,
+    val infoMessage: String? = null,
     val saved: Boolean = false,
     val deleted: Boolean = false,
 )
@@ -166,6 +170,67 @@ class HoldingEditorViewModel @Inject constructor(
         it.copy(settlementDays = value.coerceIn(0, 10), error = null)
     }
     fun clearError() = form.update { it.copy(error = null) }
+    fun clearInfo() = form.update { it.copy(infoMessage = null) }
+
+    fun importBrokerFileContent(rawContent: String) {
+        val current = form.value
+        val filter = current.marketKey.ifBlank { current.symbol }
+        val summary = BrokerMovementImporter.parseBrokerFile(rawContent, filter)
+            .let { parsed ->
+                if (parsed.movements.isEmpty() && filter.isNotBlank()) {
+                    BrokerMovementImporter.parseBrokerFile(rawContent, "")
+                } else {
+                    parsed
+                }
+            }
+        if (summary.movements.isEmpty()) {
+            form.update {
+                it.copy(error = "No se encontraron suscripciones, rescates o compras en el archivo seleccionado")
+            }
+            return
+        }
+        applyImportedSummary(summary)
+    }
+
+    fun applyEcoValoresAdcapPresetMovements() {
+        val summary = BrokerMovementImporter.summarize(BrokerMovementImporter.ecoValoresAdcapBal3Movements)
+        applyImportedSummary(summary)
+    }
+
+    private fun applyImportedSummary(summary: BrokerImportSummary) {
+        val current = form.value
+        val fmt = { cents: Long ->
+            if (current.currency == CurrencyCode.USD) MoneyFormatter.usd(cents) else MoneyFormatter.ars(cents)
+        }
+        val notesBlock = summary.toNotesBlock(current.currency)
+        val nonMovementNotes = current.notes.lineSequence()
+            .filter { line -> BrokerMovementImporter.parseMovementNotes(line).isEmpty() }
+            .joinToString("\n")
+            .trim()
+        val combinedNotes = if (nonMovementNotes.isBlank()) notesBlock else "$nonMovementNotes\n$notesBlock"
+
+        val currentValCents = MoneyParser.parseToCents(current.valueText) ?: 0L
+        val newValueText = if (currentValCents > 0L) {
+            current.valueText
+        } else {
+            centsInput(summary.netInvestedCents.coerceAtLeast(0L))
+        }
+
+        val info = "Importados ${summary.movements.size} movimientos · " +
+            "Suscripto: ${fmt(summary.totalSubscribedCents)} · " +
+            "Rescatado: ${fmt(summary.totalRedeemedCents)} · " +
+            "Capital neto invertido: ${fmt(summary.netInvestedCents)}"
+
+        form.update {
+            it.copy(
+                valueText = newValueText,
+                costText = if (summary.netInvestedCents > 0L) centsInput(summary.netInvestedCents) else it.costText,
+                notes = combinedNotes,
+                infoMessage = info,
+                error = null,
+            )
+        }
+    }
 
     fun applyPreset(preset: MarketPreset) {
         form.update {

@@ -96,7 +96,17 @@ object DailyInterestEngine {
                 }
             }
 
-            holdings.forEach { holding ->
+            holdings.forEach { rawHolding ->
+                val effectiveValueCents = BrokerMovementImporter.effectiveValueCentsOnDate(
+                    currentValueCents = rawHolding.currentValueCents,
+                    notes = rawHolding.notes,
+                    date = date,
+                )
+                val holding = if (effectiveValueCents != rawHolding.currentValueCents) {
+                    rawHolding.copy(currentValueCents = effectiveValueCents)
+                } else {
+                    rawHolding
+                }
                 val label = holdingLabel(holding, duplicateSymbols)
                 val isFci = holding.assetType == AssetType.FCI || holding.source == MarketSource.CAFCI
                 val series = if (holding.marketKey.isNotBlank()) {

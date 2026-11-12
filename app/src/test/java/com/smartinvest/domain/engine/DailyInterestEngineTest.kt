@@ -304,6 +304,47 @@ class DailyInterestEngineTest {
     }
 
     @Test
+    fun `parses Eco Valores HTML xls movements and adjusts daily FCI base by date`() {
+        val sampleHtml = """
+            <table>
+              <tr><th></th><th>Liquida</th><th>Operado</th><th>Operación</th><th>N° Ope.</th><th>Especie</th><th>Cantidad</th><th>Precio</th><th>Importe</th></tr>
+              <tr><td></td><td>11/11/26</td><td>11/11/26</td><td>SSMF</td><td>64.165</td><td>4070-ADCAP BALANCEADO 3 Clase A</td><td></td><td></td><td>-2.333.253,66</td></tr>
+              <tr><td></td><td>02/11/26</td><td>02/11/26</td><td>SSMF</td><td>63.905</td><td>4070-ADCAP BALANCEADO 3 Clase A</td><td></td><td></td><td>-400.000,00</td></tr>
+              <tr><td></td><td>22/10/26</td><td>21/10/26</td><td>LRSM</td><td>63.460</td><td>4070-ADCAP BALANCEADO 3 Clase A</td><td>-111.415,65</td><td>5.390,630</td><td>600.600,53</td></tr>
+            </table>
+        """.trimIndent()
+
+        val parsed = BrokerMovementImporter.parseBrokerFile(sampleHtml, "cafci:1402:4070")
+        assertEquals(3, parsed.movements.size)
+        assertEquals(2_733_253_66L, parsed.totalSubscribedCents)
+        assertEquals(600_600_53L, parsed.totalRedeemedCents)
+        assertEquals(2_132_653_13L, parsed.netInvestedCents)
+
+        val presetSummary = BrokerMovementImporter.summarize(BrokerMovementImporter.ecoValoresAdcapBal3Movements)
+        assertEquals(12, presetSummary.movements.size)
+        assertEquals(68_783_007_01L, presetSummary.totalSubscribedCents)
+        assertEquals(800_782_91L, presetSummary.totalRedeemedCents)
+        assertEquals(67_982_224_10L, presetSummary.netInvestedCents)
+
+        val notes = presetSummary.toNotesBlock(CurrencyCode.ARS)
+        // On Nov 1 (before Nov 2 +400k and Nov 11 +2.333M), effective base backs out 2.733.253,66.
+        val nov1Base = BrokerMovementImporter.effectiveValueCentsOnDate(
+            currentValueCents = 72_031_053_75L,
+            notes = notes,
+            date = LocalDate.of(2026, 11, 1),
+        )
+        assertEquals(69_297_800_09L, nov1Base)
+
+        // On Nov 10 (after Nov 2 +400k, before Nov 11 +2.333M), effective base backs out 2.333.253,66.
+        val nov10Base = BrokerMovementImporter.effectiveValueCentsOnDate(
+            currentValueCents = 72_031_053_75L,
+            notes = notes,
+            date = LocalDate.of(2026, 11, 10),
+        )
+        assertEquals(69_697_800_09L, nov10Base)
+    }
+
+    @Test
     fun `wallet uses linked FCI tna when the manual rate is empty`() {
         val month = YearMonth.of(2026, 11)
         val today = LocalDate.of(2026, 11, 2)

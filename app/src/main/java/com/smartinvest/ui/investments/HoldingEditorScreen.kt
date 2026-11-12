@@ -1,5 +1,7 @@
 package com.smartinvest.ui.investments
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,7 +61,23 @@ fun HoldingEditorScreen(
     viewModel: HoldingEditorViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showDatePicker by remember { mutableStateOf(false) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri != null) {
+            val content = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.bufferedReader(Charsets.UTF_8).readText()
+                }
+            }.getOrNull()
+            if (!content.isNullOrBlank()) {
+                viewModel.importBrokerFileContent(content)
+            }
+        }
+    }
 
     LaunchedEffect(state.saved, state.deleted) {
         if (state.saved || state.deleted) onBack()
@@ -136,6 +155,13 @@ fun HoldingEditorScreen(
             Column {
                 InfoBanner(error, color = Rose)
                 TextButton(onClick = viewModel::clearError) { Text("Cerrar") }
+            }
+        }
+
+        state.infoMessage?.let { info ->
+            Column {
+                InfoBanner(info, color = Sky)
+                TextButton(onClick = viewModel::clearInfo) { Text("Cerrar") }
             }
         }
 
@@ -220,12 +246,12 @@ fun HoldingEditorScreen(
             )
         }
 
-        if (state.id > 0) {
-            SmartCard {
-                SectionHeader(
-                    title = "Sumar o retirar dinero (Aporte / Rescate)",
-                    subtitle = "Actualiza valuación, costo de compra, cuotapartes/nominales y deja registro en notas",
-                )
+        SmartCard {
+            SectionHeader(
+                title = "Sumar, retirar o importar movimientos",
+                subtitle = "Actualiza valuación, costo neto e historial por fecha para calcular intereses día a día",
+            )
+            if (state.id > 0) {
                 Spacer(Modifier.height(8.dp))
                 AmountInput(
                     value = state.deltaAmountText,
@@ -247,6 +273,22 @@ fun HoldingEditorScreen(
                     ) {
                         Text("− Retirar")
                     }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { filePickerLauncher.launch("*/*") },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Importar Excel / XLS / CSV del bróker")
+            }
+            if (state.marketKey.contains("1402:4070") || state.symbol.contains("ADCAP", ignoreCase = true)) {
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = viewModel::applyEcoValoresAdcapPresetMovements,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Cargar 12 mov. Eco Valores ($ 67.982.224,10 netos)")
                 }
             }
         }
