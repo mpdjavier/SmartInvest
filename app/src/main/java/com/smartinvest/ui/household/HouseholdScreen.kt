@@ -90,6 +90,7 @@ fun HouseholdScreen(
     var pendingExpense by remember { mutableStateOf<MonthlyExpenseItem?>(null) }
     var pendingFundMovement by remember { mutableStateOf<FundMovement?>(null) }
     var settlementDialogTransfer by remember { mutableStateOf<SettlementTransfer?>(null) }
+    var settlementDialogPartial by remember { mutableStateOf(false) }
     var showSettlementDialog by remember { mutableStateOf(false) }
 
     val categories = state.categories.associateBy { it.id }
@@ -151,8 +152,9 @@ fun HouseholdScreen(
             item {
                 SettlementCard(
                     summary = summary,
-                    onOpenSettleDialog = { transfer ->
+                    onOpenSettleDialog = { transfer, partial ->
                         settlementDialogTransfer = transfer
+                        settlementDialogPartial = partial
                         showSettlementDialog = true
                     },
                     onReopenSettlement = viewModel::reopenSettlement,
@@ -261,6 +263,7 @@ fun HouseholdScreen(
         SettlementDialog(
             month = state.month,
             transfer = settlementDialogTransfer,
+            startAsPartial = settlementDialogPartial,
             onConfirm = { amountText, note, advance ->
                 viewModel.registerSettlement(
                     transfer = settlementDialogTransfer,
@@ -278,7 +281,7 @@ fun HouseholdScreen(
 @Composable
 private fun SettlementCard(
     summary: HouseholdSummary,
-    onOpenSettleDialog: (SettlementTransfer?) -> Unit,
+    onOpenSettleDialog: (SettlementTransfer?, Boolean) -> Unit,
     onReopenSettlement: (Long) -> Unit,
     onAdvanceMonth: () -> Unit,
 ) {
@@ -355,23 +358,37 @@ private fun SettlementCard(
                     color = Amber,
                 )
                 Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = { onOpenSettleDialog(transfer) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Saldar deuda (${Fmt.ars(transfer.amountCents)})")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { onOpenSettleDialog(transfer, true) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Rounded.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Pago parcial")
+                    }
+                    Button(
+                        onClick = { onOpenSettleDialog(transfer, false) },
+                        modifier = Modifier.weight(1.3f),
+                    ) {
+                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Saldar total")
+                    }
                 }
                 if (summary.settlements.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "Pagos registrados este mes",
+                        "Transferencias registradas este mes (${Fmt.ars(alreadyPaid)} abonados)",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     summary.settlements.forEach { record ->
-                        RegisteredSettlementRow(record = record, onReopen = { onReopenSettlement(record.id) })
+                        RegisteredSettlementRow(
+                            record = record,
+                            isPartial = true,
+                            onReopen = { onReopenSettlement(record.id) },
+                        )
                     }
                 }
             }
@@ -383,7 +400,11 @@ private fun SettlementCard(
                 )
                 Spacer(Modifier.height(10.dp))
                 summary.settlements.forEach { record ->
-                    RegisteredSettlementRow(record = record, onReopen = { onReopenSettlement(record.id) })
+                    RegisteredSettlementRow(
+                        record = record,
+                        isPartial = false,
+                        onReopen = { onReopenSettlement(record.id) },
+                    )
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
@@ -397,7 +418,7 @@ private fun SettlementCard(
                 InfoBanner("Cuentas equilibradas. No hay transferencias pendientes.", color = Emerald)
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(
-                    onClick = { onOpenSettleDialog(null) },
+                    onClick = { onOpenSettleDialog(null, false) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -432,6 +453,7 @@ private fun SettlementCard(
 @Composable
 private fun RegisteredSettlementRow(
     record: RegisteredSettlement,
+    isPartial: Boolean = false,
     onReopen: () -> Unit,
 ) {
     Row(
@@ -465,7 +487,7 @@ private fun RegisteredSettlementRow(
             )
         }
         TextButton(onClick = onReopen) {
-            Text("Reabrir", color = Rose)
+            Text(if (isPartial) "Anular" else "Reabrir", color = Rose)
         }
     }
 }
@@ -474,35 +496,93 @@ private fun RegisteredSettlementRow(
 private fun SettlementDialog(
     month: YearMonth,
     transfer: SettlementTransfer?,
+    startAsPartial: Boolean = false,
     onConfirm: (amountText: String, note: String, advanceToNextMonth: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val defaultAmount = remember(transfer) {
-        transfer?.let {
-            String.format(java.util.Locale.forLanguageTag("es-AR"), "%.2f", it.amountCents / 100.0)
-        }.orEmpty()
+    val formatCents = { cents: Long ->
+        String.format(java.util.Locale.forLanguageTag("es-AR"), "%.2f", cents / 100.0)
     }
-    var amountText by remember(transfer) { mutableStateOf(defaultAmount) }
-    var note by remember(transfer) { mutableStateOf("") }
-    var advance by remember { mutableStateOf(true) }
+    val defaultAmount = remember(transfer, startAsPartial) {
+        if (startAsPartial || transfer == null) "" else formatCents(transfer.amountCents)
+    }
+    var amountText by remember(transfer, startAsPartial) { mutableStateOf(defaultAmount) }
+    var note by remember(transfer, startAsPartial) {
+        mutableStateOf(if (startAsPartial) "Pago parcial" else "")
+    }
+    var advance by remember(transfer, startAsPartial) { mutableStateOf(!startAsPartial) }
+
+    val typedCents = remember(amountText) {
+        com.smartinvest.core.money.MoneyParser.parseToCents(amountText) ?: 0L
+    }
+    val remainingAfterPayment = if (transfer != null) {
+        (transfer.amountCents - typedCents).coerceAtLeast(0L)
+    } else {
+        0L
+    }
+    val isPartialPayment = transfer != null && typedCents > 0L && typedCents < transfer.amountCents
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (transfer != null) "Saldar cuentas de ${Fmt.month(month)}" else "Cerrar ${Fmt.month(month)}")
+            Text(
+                when {
+                    transfer == null -> "Cerrar ${Fmt.month(month)}"
+                    startAsPartial || isPartialPayment -> "Transferencia parcial · ${Fmt.month(month)}"
+                    else -> "Saldar cuentas de ${Fmt.month(month)}"
+                },
+            )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (transfer != null) {
                     Text(
-                        "${transfer.fromName} le paga a ${transfer.toName} para dejar el período en cero.",
+                        "${transfer.fromName} le transfiere a ${transfer.toName}. " +
+                            "Deuda actual pendiente: ${Fmt.ars(transfer.amountCents)}.",
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                    com.smartinvest.ui.components.ChipRow(
+                        options = listOf(25, 50, 75, 100),
+                        selected = when (typedCents) {
+                            (transfer.amountCents * 25) / 100 -> 25
+                            (transfer.amountCents * 50) / 100 -> 50
+                            (transfer.amountCents * 75) / 100 -> 75
+                            transfer.amountCents -> 100
+                            else -> 0
+                        },
+                        label = { pct -> if (pct == 100) "Total (100%)" else "$pct%" },
+                        onSelect = { pct ->
+                            val targetCents = if (pct == 100) {
+                                transfer.amountCents
+                            } else {
+                                (transfer.amountCents * pct) / 100
+                            }
+                            amountText = formatCents(targetCents)
+                            if (pct < 100) advance = false
+                        },
                     )
                     AmountInput(
                         value = amountText,
-                        onValueChange = { amountText = it },
-                        label = "Monto transferido",
+                        onValueChange = {
+                            amountText = it
+                            val parsed = com.smartinvest.core.money.MoneyParser.parseToCents(it) ?: 0L
+                            if (parsed in 1 until transfer.amountCents) {
+                                advance = false
+                            }
+                        },
+                        label = "Monto a transferir",
                     )
+                    if (typedCents > 0L) {
+                        InfoBanner(
+                            if (isPartialPayment) {
+                                "Se descuentan ${Fmt.ars(typedCents)} de la deuda. " +
+                                    "Quedará un saldo pendiente de ${Fmt.ars(remainingAfterPayment)}."
+                            } else {
+                                "Cubre el total pendiente (${Fmt.ars(transfer.amountCents)}). El mes quedará en cero."
+                            },
+                            color = if (isPartialPayment) Amber else Emerald,
+                        )
+                    }
                 } else {
                     Text(
                         "El mes ya está equilibrado. Al cerrarlo queda constancia de que hicieron cuentas.",
@@ -517,18 +597,29 @@ private fun SettlementDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = advance, onCheckedChange = { advance = it })
-                    Text(
-                        "Ir al mes siguiente al confirmar",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                if (!isPartialPayment) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = advance, onCheckedChange = { advance = it })
+                        Text(
+                            "Ir al mes siguiente al confirmar",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(amountText, note, advance) }) {
-                Text("Confirmar cierre")
+            Button(
+                onClick = { onConfirm(amountText, note, if (isPartialPayment) false else advance) },
+                enabled = transfer == null || typedCents > 0L,
+            ) {
+                Text(
+                    when {
+                        transfer == null -> "Confirmar cierre"
+                        isPartialPayment -> "Registrar pago parcial"
+                        else -> "Saldar total"
+                    },
+                )
             }
         },
         dismissButton = {

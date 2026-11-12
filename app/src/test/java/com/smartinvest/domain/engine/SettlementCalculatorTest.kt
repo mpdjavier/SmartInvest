@@ -192,4 +192,53 @@ class SettlementCalculatorTest {
         assertEquals(-15_000_00L, summary.members.first { it.memberId == mom.id }.differenceCents)
         assertEquals(15_000_00L, summary.members.first { it.memberId == me.id }.differenceCents)
     }
+
+    @Test
+    fun `multiple partial settlements accumulate and reduce remaining debt`() {
+        val expenses = listOf(
+            expense(1, me.id, 100_000_00),
+            expense(2, mom.id, 20_000_00),
+        )
+        // Initial debt: Mom owes Me 40.000. She pays 15.000 and then 10.000 -> 15.000 left.
+        val registered = listOf(
+            RegisteredSettlement(
+                id = 101,
+                month = month,
+                fromMemberId = mom.id,
+                fromName = mom.name,
+                toMemberId = me.id,
+                toName = me.name,
+                amountCents = 15_000_00L,
+                date = LocalDate.of(2025, 5, 18),
+                note = "Pago parcial 1",
+                createdAt = 1_000L,
+            ),
+            RegisteredSettlement(
+                id = 102,
+                month = month,
+                fromMemberId = mom.id,
+                fromName = mom.name,
+                toMemberId = me.id,
+                toName = me.name,
+                amountCents = 10_000_00L,
+                date = LocalDate.of(2025, 5, 25),
+                note = "Pago parcial 2",
+                createdAt = 2_000L,
+            ),
+        )
+        val summary = SettlementCalculator.calculate(
+            month = month,
+            members = listOf(me, mom),
+            expenses = expenses,
+            fundMovements = emptyList(),
+            fundBalanceCents = 0,
+            settlements = registered,
+        )
+
+        assertEquals(25_000_00L, summary.registeredSettlementCents)
+        assertEquals(1, summary.transfers.size)
+        assertEquals(15_000_00L, summary.transfers.first().amountCents)
+        assertEquals(-15_000_00L, summary.members.first { it.memberId == mom.id }.differenceCents)
+        assertEquals(15_000_00L, summary.members.first { it.memberId == me.id }.differenceCents)
+    }
 }

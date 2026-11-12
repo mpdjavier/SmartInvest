@@ -142,10 +142,23 @@ class HouseholdViewModel @Inject constructor(
         val parsedAmount = if (transfer == null) {
             0L
         } else {
-            MoneyParser.parseToCents(amountText) ?: transfer.amountCents
+            val typed = MoneyParser.parseToCents(amountText)
+            if (typed == null || typed <= 0L) {
+                message.value = "Ingresá un monto mayor a cero para registrar la transferencia."
+                return
+            }
+            typed
         }
         val selectedMonth = month.value
-        perform("Liquidación registrada. El mes quedó saldado.") {
+        val isPartial = transfer != null && parsedAmount < transfer.amountCents
+        val remainingCents = if (transfer != null) (transfer.amountCents - parsedAmount).coerceAtLeast(0L) else 0L
+        val confirmMsg = if (isPartial) {
+            "Pago parcial registrado (${com.smartinvest.core.money.MoneyFormatter.ars(parsedAmount)}). " +
+                "Quedan ${com.smartinvest.core.money.MoneyFormatter.ars(remainingCents)} pendientes."
+        } else {
+            "Liquidación registrada. El mes quedó saldado."
+        }
+        perform(confirmMsg) {
             repository.registerSettlement(
                 NewSettlement(
                     month = selectedMonth,
@@ -158,7 +171,7 @@ class HouseholdViewModel @Inject constructor(
                     note = note,
                 ),
             )
-            if (advanceToNextMonth) {
+            if (advanceToNextMonth && !isPartial) {
                 month.value = selectedMonth.plusMonths(1)
             }
         }
