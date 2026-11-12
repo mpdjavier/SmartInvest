@@ -29,6 +29,9 @@ interface MemberDao {
     @Insert
     suspend fun insert(entity: MemberEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<MemberEntity>)
+
     @Update
     suspend fun update(entity: MemberEntity)
 
@@ -56,6 +59,9 @@ interface CategoryDao {
     @Insert
     suspend fun insert(entity: CategoryEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CategoryEntity>)
+
     @Update
     suspend fun update(entity: CategoryEntity)
 
@@ -79,6 +85,9 @@ interface CreditCardDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: CreditCardEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CreditCardEntity>)
 
     @Update
     suspend fun update(entity: CreditCardEntity)
@@ -130,11 +139,17 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE paymentMethod = 'CREDIT' ORDER BY dateEpochDay DESC")
     suspend fun getCreditExpenses(): List<ExpenseEntity>
 
+    @Query("SELECT * FROM expenses ORDER BY id ASC")
+    suspend fun getAll(): List<ExpenseEntity>
+
     @Query("SELECT COUNT(*) FROM expenses")
     suspend fun count(): Int
 
     @Insert
     suspend fun insert(entity: ExpenseEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<ExpenseEntity>)
 
     @Query("DELETE FROM expenses WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -142,8 +157,14 @@ interface ExpenseDao {
 
 @Dao
 interface InstallmentDao {
+    @Query("SELECT * FROM installments ORDER BY id ASC")
+    suspend fun getAll(): List<InstallmentEntity>
+
     @Insert
     suspend fun insertAll(entities: List<InstallmentEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<InstallmentEntity>)
 
     @Query("SELECT * FROM installments WHERE id = :id")
     suspend fun getById(id: Long): InstallmentEntity?
@@ -193,8 +214,14 @@ interface FundMovementDao {
     @Query("DELETE FROM fund_movements WHERE expenseId = :expenseId")
     suspend fun deleteForExpense(expenseId: Long)
 
+    @Query("SELECT * FROM fund_movements ORDER BY id ASC")
+    suspend fun getAll(): List<FundMovementEntity>
+
     @Insert
     suspend fun insert(entity: FundMovementEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<FundMovementEntity>)
 
     @Query("SELECT COUNT(*) FROM fund_movements")
     suspend fun count(): Int
@@ -211,8 +238,14 @@ interface SettlementDao {
     @Query("SELECT * FROM settlements WHERE id = :id")
     suspend fun getById(id: Long): SettlementEntity?
 
+    @Query("SELECT * FROM settlements ORDER BY id ASC")
+    suspend fun getAll(): List<SettlementEntity>
+
     @Insert
     suspend fun insert(entity: SettlementEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<SettlementEntity>)
 
     @Query("DELETE FROM settlements WHERE id = :id")
     suspend fun deleteById(id: Long)

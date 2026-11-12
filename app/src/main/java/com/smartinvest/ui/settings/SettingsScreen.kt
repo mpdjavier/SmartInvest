@@ -1,5 +1,7 @@
 package com.smartinvest.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -39,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,6 +71,36 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportBackup { json ->
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(json.toByteArray(Charsets.UTF_8))
+                    }
+                }
+            }
+        }
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri != null) {
+            val content = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.bufferedReader(Charsets.UTF_8).readText()
+                }
+            }.getOrNull()
+            if (!content.isNullOrBlank()) {
+                viewModel.importBackup(content)
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -544,18 +578,43 @@ fun SettingsScreen(
         item {
             SmartCard {
                 SectionHeader(
-                    title = "Importar datos",
-                    subtitle = "Historial de otra app",
+                    title = "Respaldo completo y sincronización de brókers",
+                    subtitle = "Exportá e importá todos tus datos (.json) o cargá las compras de Eco Valores e IEB+",
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "¿Venís de SplitHome? Importá el reporte .xlsx para arrancar con los gastos, " +
-                        "las categorías y el fondo común ya cargados.",
+                    "Guardá una copia completa de tus inversiones, movimientos, cotizaciones, gastos y ajustes " +
+                        "en un archivo .json para restaurarla cuando quieras sin volver a cargar nada.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(12.dp))
-                Button(
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            val dateStr = com.smartinvest.core.time.DateUtils.today().toString()
+                            exportBackupLauncher.launch("smartinvest-backup-$dateStr.json")
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Exportar (.json)")
+                    }
+                    OutlinedButton(
+                        onClick = { importBackupLauncher.launch("*/*") },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Importar (.json)")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = viewModel::syncBrokerMovements,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Sincronizar mov. Eco Valores + IEB+ (ADCAP, SPY, S30N6, T15E7, AO27)")
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
                     onClick = onOpenImport,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -565,7 +624,7 @@ fun SettingsScreen(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Importar desde SplitHome")
+                    Text("Importar gastos desde SplitHome (.xlsx)")
                 }
             }
         }

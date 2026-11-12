@@ -345,6 +345,75 @@ class DailyInterestEngineTest {
     }
 
     @Test
+    fun `summarizes IEB movements closing prior sold lots and tracks quantity by date`() {
+        val spySummary = BrokerMovementImporter.summarize(BrokerMovementImporter.iebSpyMovements)
+        assertEquals(6, spySummary.movements.size)
+        assertEquals(672.0, spySummary.netQuantity, 0.001)
+        assertEquals(13_263_659_67L, spySummary.netInvestedCents)
+
+        val s30Summary = BrokerMovementImporter.summarize(BrokerMovementImporter.iebS30n6Movements)
+        assertEquals(3, s30Summary.movements.size)
+        assertEquals(2_964_509.0, s30Summary.netQuantity, 0.001)
+        assertEquals(3_653_297_51L, s30Summary.netInvestedCents)
+
+        val t15Summary = BrokerMovementImporter.summarize(BrokerMovementImporter.iebT15e7Movements)
+        assertEquals(1, t15Summary.movements.size)
+        assertEquals(504_061.0, t15Summary.netQuantity, 0.001)
+        assertEquals(777_740_20L, t15Summary.netInvestedCents)
+
+        val t15Notes = t15Summary.toNotesBlock(CurrencyCode.ARS)
+        // Before 11/11/2026 T15E7 had not been bought yet -> quantity is 0.0.
+        assertEquals(
+            0.0,
+            BrokerMovementImporter.effectiveQuantityOnDate(
+                currentQuantity = 504_061.0,
+                currentValueCents = 777_740_20L,
+                notes = t15Notes,
+                date = LocalDate.of(2026, 11, 10),
+            ),
+            0.001,
+        )
+        assertEquals(
+            504_061.0,
+            BrokerMovementImporter.effectiveQuantityOnDate(
+                currentQuantity = 504_061.0,
+                currentValueCents = 777_740_20L,
+                notes = t15Notes,
+                date = LocalDate.of(2026, 11, 11),
+            ),
+            0.001,
+        )
+    }
+
+    @Test
+    fun `serializes and deserializes full app backup json`() {
+        val payload = com.smartinvest.data.backup.AppBackupPayload(
+            version = 1,
+            holdings = listOf(
+                com.smartinvest.data.backup.BackupHoldingDto(
+                    id = 1,
+                    symbol = "SPY",
+                    name = "SPDR S&P 500 CEDEAR",
+                    assetType = "CEDEAR",
+                    currency = "ARS",
+                    currentValueCents = 14_185_920_00L,
+                    costCents = 13_263_659_67L,
+                    marketKey = "rava:SPY",
+                    source = "RAVA",
+                    quantity = 672.0,
+                    quoteUnit = "PER_UNIT",
+                ),
+            ),
+        )
+        val json = com.smartinvest.data.backup.AppBackupManager.serialize(payload)
+        val restored = com.smartinvest.data.backup.AppBackupManager.deserialize(json)
+        assertEquals(1, restored.holdings.size)
+        assertEquals("SPY", restored.holdings.first().symbol)
+        assertEquals(672.0, restored.holdings.first().quantity, 0.001)
+        assertEquals(13_263_659_67L, restored.holdings.first().costCents)
+    }
+
+    @Test
     fun `wallet uses linked FCI tna when the manual rate is empty`() {
         val month = YearMonth.of(2026, 11)
         val today = LocalDate.of(2026, 11, 2)

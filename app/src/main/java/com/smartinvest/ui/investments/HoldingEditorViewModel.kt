@@ -172,29 +172,34 @@ class HoldingEditorViewModel @Inject constructor(
     fun clearError() = form.update { it.copy(error = null) }
     fun clearInfo() = form.update { it.copy(infoMessage = null) }
 
-    fun importBrokerFileContent(rawContent: String) {
+    fun importBrokerFileBytes(bytes: ByteArray) {
         val current = form.value
         val filter = current.marketKey.ifBlank { current.symbol }
-        val summary = BrokerMovementImporter.parseBrokerFile(rawContent, filter)
+        val summary = BrokerMovementImporter.parseBrokerFileBytes(bytes, filter)
             .let { parsed ->
                 if (parsed.movements.isEmpty() && filter.isNotBlank()) {
-                    BrokerMovementImporter.parseBrokerFile(rawContent, "")
+                    BrokerMovementImporter.parseBrokerFileBytes(bytes, "")
                 } else {
                     parsed
                 }
             }
         if (summary.movements.isEmpty()) {
             form.update {
-                it.copy(error = "No se encontraron suscripciones, rescates o compras en el archivo seleccionado")
+                it.copy(error = "No se encontraron suscripciones, rescates o compras para este activo en el archivo")
             }
             return
         }
         applyImportedSummary(summary)
     }
 
-    fun applyEcoValoresAdcapPresetMovements() {
-        val summary = BrokerMovementImporter.summarize(BrokerMovementImporter.ecoValoresAdcapBal3Movements)
-        applyImportedSummary(summary)
+    fun applyBrokerPresetMovements() {
+        val current = form.value
+        val movs = BrokerMovementImporter.presetMovementsFor(current.symbol, current.marketKey)
+        if (movs.isNullOrEmpty()) {
+            form.update { it.copy(error = "No hay movimientos predefinidos para este activo") }
+            return
+        }
+        applyImportedSummary(BrokerMovementImporter.summarize(movs))
     }
 
     private fun applyImportedSummary(summary: BrokerImportSummary) {
@@ -216,15 +221,30 @@ class HoldingEditorViewModel @Inject constructor(
             centsInput(summary.netInvestedCents.coerceAtLeast(0L))
         }
 
-        val info = "Importados ${summary.movements.size} movimientos · " +
-            "Suscripto: ${fmt(summary.totalSubscribedCents)} · " +
-            "Rescatado: ${fmt(summary.totalRedeemedCents)} · " +
-            "Capital neto invertido: ${fmt(summary.netInvestedCents)}"
+        val newQtyText = if (summary.netQuantity > 0.0) {
+            if (summary.netQuantity % 1.0 == 0.0) {
+                String.format(java.util.Locale.US, "%.0f", summary.netQuantity)
+            } else {
+                String.format(java.util.Locale.US, "%.4f", summary.netQuantity)
+                    .trimEnd('0')
+                    .trimEnd('.')
+                    .replace('.', ',')
+            }
+        } else {
+            current.quantityText
+        }
+
+        val qtyNote = if (summary.netQuantity > 0.0) " · Cantidad: $newQtyText" else ""
+        val info = "Importados ${summary.movements.size} movimientos$qtyNote · " +
+            "Comprado/Suscripto: ${fmt(summary.totalSubscribedCents)} · " +
+            "Rescatado/Vendido: ${fmt(summary.totalRedeemedCents)} · " +
+            "Costo neto: ${fmt(summary.netInvestedCents)}"
 
         form.update {
             it.copy(
                 valueText = newValueText,
                 costText = if (summary.netInvestedCents > 0L) centsInput(summary.netInvestedCents) else it.costText,
+                quantityText = newQtyText,
                 notes = combinedNotes,
                 infoMessage = info,
                 error = null,

@@ -56,6 +56,15 @@ object MarketPresets {
             marketKey = "rava:S30N6",
         ),
         MarketPreset(
+            label = "T15E7 (LECAP)",
+            symbol = "T15E7",
+            name = "Letra del Tesoro T15E7",
+            assetType = AssetType.LECAP,
+            currency = CurrencyCode.ARS,
+            quoteUnit = QuoteUnit.PER_100_NOMINAL,
+            marketKey = "rava:T15E7",
+        ),
+        MarketPreset(
             label = "AO27D (Bono USD)",
             symbol = "AO27D",
             name = "Bonar 2027 U\$S",

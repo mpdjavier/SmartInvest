@@ -102,8 +102,20 @@ object DailyInterestEngine {
                     notes = rawHolding.notes,
                     date = date,
                 )
-                val holding = if (effectiveValueCents != rawHolding.currentValueCents) {
-                    rawHolding.copy(currentValueCents = effectiveValueCents)
+                val effectiveQuantity = BrokerMovementImporter.effectiveQuantityOnDate(
+                    currentQuantity = rawHolding.quantity,
+                    currentValueCents = rawHolding.currentValueCents,
+                    notes = rawHolding.notes,
+                    date = date,
+                )
+                if (effectiveValueCents <= 0L && effectiveQuantity <= 0.0) {
+                    return@forEach
+                }
+                val holding = if (effectiveValueCents != rawHolding.currentValueCents || effectiveQuantity != rawHolding.quantity) {
+                    rawHolding.copy(
+                        currentValueCents = effectiveValueCents,
+                        quantity = effectiveQuantity,
+                    )
                 } else {
                     rawHolding
                 }

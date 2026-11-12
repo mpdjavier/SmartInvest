@@ -68,13 +68,13 @@ fun HoldingEditorScreen(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
         if (uri != null) {
-            val content = runCatching {
+            val bytes = runCatching {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.bufferedReader(Charsets.UTF_8).readText()
+                    stream.readBytes()
                 }
             }.getOrNull()
-            if (!content.isNullOrBlank()) {
-                viewModel.importBrokerFileContent(content)
+            if (bytes != null && bytes.isNotEmpty()) {
+                viewModel.importBrokerFileBytes(bytes)
             }
         }
     }
@@ -280,15 +280,19 @@ fun HoldingEditorScreen(
                 onClick = { filePickerLauncher.launch("*/*") },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Importar Excel / XLS / CSV del bróker")
+                Text("Importar Excel (.xlsx / .xls / .csv) del bróker")
             }
-            if (state.marketKey.contains("1402:4070") || state.symbol.contains("ADCAP", ignoreCase = true)) {
+            val presetMovs = com.smartinvest.domain.engine.BrokerMovementImporter.presetMovementsFor(
+                state.symbol,
+                state.marketKey,
+            )
+            if (!presetMovs.isNullOrEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 OutlinedButton(
-                    onClick = viewModel::applyEcoValoresAdcapPresetMovements,
+                    onClick = viewModel::applyBrokerPresetMovements,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Cargar 12 mov. Eco Valores ($ 67.982.224,10 netos)")
+                    Text("Cargar ${presetMovs.size} mov. exportados (${state.symbol.ifBlank { "Bróker" }})")
                 }
             }
         }

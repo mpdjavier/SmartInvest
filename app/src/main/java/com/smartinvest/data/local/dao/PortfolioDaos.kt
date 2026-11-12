@@ -32,6 +32,9 @@ interface WalletDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: WalletEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<WalletEntity>)
+
     @Update
     suspend fun update(entity: WalletEntity)
 
@@ -76,6 +79,9 @@ interface HoldingDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: HoldingEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<HoldingEntity>)
 
     @Query("DELETE FROM holdings WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -137,6 +143,9 @@ interface SnapshotDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: PortfolioSnapshotEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<PortfolioSnapshotEntity>)
+
     @Query("DELETE FROM portfolio_snapshots WHERE dateEpochDay < :epochDay")
     suspend fun deleteOlderThan(epochDay: Long)
 }
@@ -180,8 +189,14 @@ interface SalaryPlanDao {
     @Query("SELECT * FROM salary_plans ORDER BY month DESC")
     fun observeAll(): Flow<List<SalaryPlanEntity>>
 
+    @Query("SELECT * FROM salary_plans ORDER BY month DESC")
+    suspend fun getAll(): List<SalaryPlanEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: SalaryPlanEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<SalaryPlanEntity>)
 }
 
 @Dao

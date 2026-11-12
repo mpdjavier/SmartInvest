@@ -2,6 +2,7 @@ package com.smartinvest.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smartinvest.data.backup.AppBackupManager
 import com.smartinvest.domain.model.AppSettings
 import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.HouseholdCategory
@@ -71,6 +72,7 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     private val household: HouseholdRepository,
     private val preferences: SettingsRepository,
+    private val backupManager: AppBackupManager,
 ) : ViewModel() {
 
     private val categoryDraft = MutableStateFlow<CategoryDraft?>(null)
@@ -269,6 +271,33 @@ class SettingsViewModel @Inject constructor(
 
     fun clearMessage() {
         message.value = null
+    }
+
+    fun exportBackup(onReady: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { backupManager.exportBackupJson() }
+                .onSuccess { json ->
+                    onReady(json)
+                    message.value = "Respaldo JSON exportado correctamente."
+                }
+                .onFailure { message.value = it.message ?: "No se pudo exportar el respaldo" }
+        }
+    }
+
+    fun importBackup(rawJson: String) {
+        viewModelScope.launch {
+            runCatching { backupManager.importBackupJson(rawJson) }
+                .onSuccess { summary -> message.value = summary }
+                .onFailure { message.value = it.message ?: "El archivo de respaldo no es válido" }
+        }
+    }
+
+    fun syncBrokerMovements() {
+        viewModelScope.launch {
+            runCatching { backupManager.syncExportedBrokerHoldings() }
+                .onSuccess { summary -> message.value = summary }
+                .onFailure { message.value = it.message ?: "No se pudieron sincronizar los movimientos" }
+        }
     }
 }
 
