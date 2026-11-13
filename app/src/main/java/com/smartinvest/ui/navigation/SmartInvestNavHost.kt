@@ -35,6 +35,7 @@ import com.smartinvest.ui.dashboard.DashboardScreen
 import com.smartinvest.ui.household.ExpenseEditorScreen
 import com.smartinvest.ui.household.FundMovementScreen
 import com.smartinvest.ui.household.HouseholdScreen
+import com.smartinvest.ui.household.PaymentAgendaScreen
 import com.smartinvest.ui.household.ReceiptImportScreen
 import com.smartinvest.ui.importer.ImportScreen
 import com.smartinvest.ui.investments.DailyInterestScreen
@@ -67,6 +68,7 @@ object Routes {
     const val REBALANCING = "rebalancing"
     const val BREAK_EVEN = "break_even"
     const val RECEIPT_IMPORT = "receipt_import/{receiptPath}"
+    const val PAYMENT_AGENDA = "payment_agenda"
 
     fun expenseEditor(month: YearMonth): String = "expense_editor/$month"
     fun fundEditor(month: YearMonth): String = "fund_editor/$month"
@@ -102,6 +104,7 @@ private val secondaryTitles = mapOf(
     Routes.REBALANCING to "Asistente macro",
     Routes.BREAK_EVEN to "Dólar break-even",
     Routes.RECEIPT_IMPORT to "Importar comprobante",
+    Routes.PAYMENT_AGENDA to "Agenda de pagos",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -190,7 +193,12 @@ fun SmartInvestNavHost(
                     onNewExpense = { month -> navController.navigate(Routes.expenseEditor(month)) },
                     onFundMovement = { month -> navController.navigate(Routes.fundEditor(month)) },
                     onOpenSettings = { navigateTopLevel(Routes.SETTINGS) },
+                    onOpenPaymentAgenda = { navController.navigate(Routes.PAYMENT_AGENDA) },
                 )
+            }
+
+            composable(Routes.PAYMENT_AGENDA) {
+                PaymentAgendaScreen()
             }
 
             composable(Routes.INVESTMENTS) {

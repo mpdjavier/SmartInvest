@@ -3,7 +3,9 @@ package com.smartinvest.data.repository
 import com.smartinvest.core.money.MoneyFormatter
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.data.local.dao.AlertDao
+import com.smartinvest.data.local.dao.CategoryDao
 import com.smartinvest.data.local.dao.CreditCardDao
+import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.data.local.dao.FundMovementDao
 import com.smartinvest.data.local.dao.FxRateDao
 import com.smartinvest.data.local.dao.HoldingDao
@@ -13,6 +15,8 @@ import com.smartinvest.data.local.entity.AlertEntity
 import com.smartinvest.data.mapper.toDomain
 import com.smartinvest.di.IoDispatcher
 import com.smartinvest.domain.engine.CardCycleResolver
+import com.smartinvest.domain.engine.HistoricalExpenseRecord
+import com.smartinvest.domain.engine.PaymentAgendaEngine
 import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.engine.RebalanceAdvisor
 import com.smartinvest.domain.model.AlertSeverity
@@ -43,6 +47,8 @@ class AlertsRepositoryImpl @Inject constructor(
     private val rateHistoryDao: RateHistoryDao,
     private val cardDao: CreditCardDao,
     private val fundDao: FundMovementDao,
+    private val expenseDao: ExpenseDao,
+    private val categoryDao: CategoryDao,
     private val settingsRepository: SettingsRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : AlertsRepository {
@@ -197,6 +203,58 @@ class AlertsRepositoryImpl @Inject constructor(
                 ),
             )?.let(created::add)
         }
+
+        // 7. Scheduled service payments (Agenda de pagos)
+        val categories = categoryDao.getAll()
+        val serviceCategoryIds = categories
+            .filter {
+                it.name.contains("servicio", ignoreCase = true) ||
+                    it.name.contains("expensa", ignoreCase = true)
+            }
+            .map { it.id }
+            .toSet()
+        val historyRecords = expenseDao.getAll().map {
+            HistoricalExpenseRecord(
+                id = it.id,
+                description = it.description,
+                amountCents = it.totalAmountCents,
+                date = LocalDate.ofEpochDay(it.dateEpochDay),
+                categoryId = it.categoryId,
+            )
+        }
+        val agendaSummary = PaymentAgendaEngine.buildForMonth(
+            month = YearMonth.from(today),
+            today = today,
+            expenses = historyRecords,
+            serviceCategoryIds = serviceCategoryIds,
+            templates = PaymentAgendaEngine.decodeTemplates(settings.paymentAgendaJson),
+        )
+        agendaSummary.rows
+            .filter { !it.isPaid && it.alertEnabled }
+            .forEach { row ->
+                val days = row.daysUntilDue
+                if (days in -7..row.alertDaysBefore.toLong()) {
+                    val whenLabel = when {
+                        days < 0L -> "venció hace ${-days} día(s)"
+                        days == 0L -> "vence hoy"
+                        else -> "vence en $days día(s)"
+                    }
+                    val amountLabel = if (row.amountCents > 0L) {
+                        " · Monto est. ${MoneyFormatter.ars(row.amountCents)}"
+                    } else {
+                        ""
+                    }
+                    createAlert(
+                        NewAlert(
+                            type = AlertType.PAYMENT_DUE,
+                            severity = if (days <= 0L) AlertSeverity.WARNING else AlertSeverity.INFO,
+                            title = "Agenda: ${row.name} $whenLabel",
+                            message = "Fecha agendada ${DateUtils.longDateLabel(row.scheduledDate)}$amountLabel.",
+                            dedupeKey = "payment_agenda:${row.key}:${row.scheduledDate}",
+                        ),
+                    )?.let(created::add)
+                }
+            }
 
         alertDao.prune(now - 90L * 86_400_000L)
         created

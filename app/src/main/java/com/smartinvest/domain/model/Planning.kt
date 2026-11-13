@@ -52,6 +52,8 @@ data class AppSettings(
     val notificationsEnabled: Boolean = true,
     /** Privacy mode: monetary amounts are shown as asterisks on every screen. */
     val hideAmounts: Boolean = false,
+    /** Serialized JSON list of user-configured/modified payment agenda items. */
+    val paymentAgendaJson: String = "",
 ) {
     val previousCarryBand: CarryRiskBand?
         get() = previousCarryBandName

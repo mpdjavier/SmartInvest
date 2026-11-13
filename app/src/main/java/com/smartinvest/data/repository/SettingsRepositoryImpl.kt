@@ -55,6 +55,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val carryExcludedPatterns = stringPreferencesKey("carry_excluded_patterns")
         val lastSync = stringPreferencesKey("last_sync_at")
         val hideAmounts = booleanPreferencesKey("hide_amounts")
+        val paymentAgenda = stringPreferencesKey("payment_agenda_json")
     }
 
     override val settings: Flow<AppSettings> = context.settingsDataStore.data
@@ -91,6 +92,7 @@ class SettingsRepositoryImpl @Inject constructor(
             prefs[Keys.carryExcludedPatterns] = settings.carryExcludedPatterns
             prefs[Keys.notifications] = settings.notificationsEnabled
             prefs[Keys.hideAmounts] = settings.hideAmounts
+            prefs[Keys.paymentAgenda] = settings.paymentAgendaJson
             prefs[Keys.initialized] = true
         }
     }
@@ -135,5 +137,6 @@ class SettingsRepositoryImpl @Inject constructor(
         carryExcludedPatterns = this[Keys.carryExcludedPatterns] ?: "Mercado Pago, viaje",
         notificationsEnabled = this[Keys.notifications] ?: true,
         hideAmounts = this[Keys.hideAmounts] ?: false,
+        paymentAgendaJson = this[Keys.paymentAgenda] ?: "",
     )
 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -84,6 +85,7 @@ fun HouseholdScreen(
     onNewExpense: (YearMonth) -> Unit,
     onFundMovement: (YearMonth) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenPaymentAgenda: () -> Unit = {},
     viewModel: HouseholdViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -128,22 +130,32 @@ fun HouseholdScreen(
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { onNewExpense(state.month) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Nuevo gasto")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { onNewExpense(state.month) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Nuevo gasto")
+                    }
+                    OutlinedButton(
+                        onClick = { onFundMovement(state.month) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Rounded.Savings, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Fondo")
+                    }
                 }
                 OutlinedButton(
-                    onClick = { onFundMovement(state.month) },
-                    modifier = Modifier.weight(1f),
+                    onClick = onOpenPaymentAgenda,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Rounded.Savings, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Fondo")
+                    Text("Agenda de pagos y vencimientos")
                 }
             }
         }

@@ -6,6 +6,7 @@ enum class AlertType(val label: String) {
     AO27D_THRESHOLD("Umbral AO27D"),
     REBALANCE("Rebalanceo"),
     CARD_DUE("Vencimiento de tarjeta"),
+    PAYMENT_DUE("Agenda de pagos"),
     FUND_LOW("Fondo común"),
     SYSTEM("Sistema"),
 }

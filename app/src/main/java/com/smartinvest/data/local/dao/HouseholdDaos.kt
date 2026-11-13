@@ -139,6 +139,9 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE paymentMethod = 'CREDIT' ORDER BY dateEpochDay DESC")
     suspend fun getCreditExpenses(): List<ExpenseEntity>
 
+    @Query("SELECT * FROM expenses ORDER BY dateEpochDay DESC, id DESC")
+    fun observeAll(): Flow<List<ExpenseEntity>>
+
     @Query("SELECT * FROM expenses ORDER BY id ASC")
     suspend fun getAll(): List<ExpenseEntity>
 
