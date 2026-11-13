@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.ShoppingCart
@@ -83,6 +84,7 @@ import java.time.YearMonth
 @Composable
 fun HouseholdScreen(
     onNewExpense: (YearMonth) -> Unit,
+    onEditExpense: (YearMonth, Long) -> Unit = { _, _ -> },
     onFundMovement: (YearMonth) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPaymentAgenda: () -> Unit = {},
@@ -202,6 +204,7 @@ fun HouseholdScreen(
                     onTogglePaid = { paid ->
                         expense.installmentId?.let { viewModel.setInstallmentPaid(it, paid) }
                     },
+                    onEdit = { onEditExpense(state.month, expense.expenseId) },
                     onDelete = { pendingExpense = expense },
                 )
             }
@@ -698,9 +701,11 @@ private fun ExpenseCard(
     payerName: String,
     cardName: String?,
     onTogglePaid: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
+        onClick = onEdit,
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = androidx.compose.foundation.BorderStroke(
@@ -753,6 +758,13 @@ private fun ExpenseCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = "Editar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 IconButton(onClick = onDelete) {
                     Icon(

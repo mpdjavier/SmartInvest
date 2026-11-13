@@ -55,7 +55,7 @@ object Routes {
     const val INVESTMENTS = "investments"
     const val SETTINGS = "settings"
 
-    const val EXPENSE_EDITOR = "expense_editor/{month}"
+    const val EXPENSE_EDITOR = "expense_editor/{month}?expenseId={expenseId}"
     const val FUND_EDITOR = "fund_editor/{month}"
     const val HOLDING_EDITOR = "holding_editor/{holdingId}"
     const val ANALYTICS = "analytics"
@@ -70,7 +70,8 @@ object Routes {
     const val RECEIPT_IMPORT = "receipt_import/{receiptPath}"
     const val PAYMENT_AGENDA = "payment_agenda"
 
-    fun expenseEditor(month: YearMonth): String = "expense_editor/$month"
+    fun expenseEditor(month: YearMonth, expenseId: Long = 0L): String =
+        "expense_editor/$month?expenseId=$expenseId"
     fun fundEditor(month: YearMonth): String = "fund_editor/$month"
     fun holdingEditor(holdingId: Long = 0L): String = "holding_editor/$holdingId"
     fun instrumentDetail(holdingId: Long = 0L): String = "instrument_detail/$holdingId"
@@ -191,6 +192,9 @@ fun SmartInvestNavHost(
             composable(Routes.HOUSEHOLD) {
                 HouseholdScreen(
                     onNewExpense = { month -> navController.navigate(Routes.expenseEditor(month)) },
+                    onEditExpense = { month, expenseId ->
+                        navController.navigate(Routes.expenseEditor(month, expenseId))
+                    },
                     onFundMovement = { month -> navController.navigate(Routes.fundEditor(month)) },
                     onOpenSettings = { navigateTopLevel(Routes.SETTINGS) },
                     onOpenPaymentAgenda = { navController.navigate(Routes.PAYMENT_AGENDA) },
@@ -221,7 +225,13 @@ fun SmartInvestNavHost(
 
             composable(
                 route = Routes.EXPENSE_EDITOR,
-                arguments = listOf(navArgument("month") { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument("month") { type = NavType.StringType },
+                    navArgument("expenseId") {
+                        type = NavType.StringType
+                        defaultValue = "0"
+                    },
+                ),
             ) {
                 ExpenseEditorScreen(
                     onBack = { navController.popBackStack() },

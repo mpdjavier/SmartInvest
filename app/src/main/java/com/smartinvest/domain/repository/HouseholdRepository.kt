@@ -26,6 +26,21 @@ data class NewExpense(
     val walletHoldingId: Long? = null,
 )
 
+data class EditableExpense(
+    val id: Long,
+    val description: String,
+    val totalCents: Long,
+    val date: LocalDate,
+    val categoryId: Long,
+    val paidByMemberId: Long,
+    val paymentMethod: ExpensePaymentMethod,
+    val creditCardId: Long? = null,
+    val installments: Int = 1,
+    val notes: String = "",
+    val walletHoldingId: Long? = null,
+    val walletValueDeltaCents: Long = 0L,
+)
+
 data class NewFundMovement(
     val type: FundMovementType,
     val amountCents: Long,
@@ -66,7 +81,9 @@ interface HouseholdRepository {
     suspend fun upsertCard(card: CreditCard): Long
     suspend fun setCardActive(id: Long, active: Boolean)
 
+    suspend fun getExpenseForEdit(expenseId: Long): EditableExpense?
     suspend fun addExpense(input: NewExpense): Long
+    suspend fun updateExpense(expenseId: Long, input: NewExpense): Long
     suspend fun deleteExpense(expenseId: Long)
     suspend fun setInstallmentPaid(installmentId: Long, paid: Boolean)
 

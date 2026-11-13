@@ -262,17 +262,27 @@ fun ExpenseEditorScreen(
             }
         }
 
+        if (form.id > 0L && form.originalPaymentMethod != null && form.originalPaymentMethod != form.paymentMethod) {
+            InfoBanner(
+                "Al guardar se revierte el cobro anterior (${form.originalPaymentMethod.shortLabel}) " +
+                    "y el gasto pasa a ${form.paymentMethod.shortLabel}.",
+                color = Sky,
+            )
+        }
+
         if (form.paymentMethod == ExpensePaymentMethod.COMMON_FUND) {
+            val effectiveFund = data.fundBalanceCents +
+                if (form.originalPaymentMethod == ExpensePaymentMethod.COMMON_FUND) form.originalAmountCents else 0L
             SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
                 Text("Fondo común", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(6.dp))
-                KeyValueRow("Saldo disponible", Fmt.ars(data.fundBalanceCents))
+                KeyValueRow("Saldo disponible", Fmt.ars(effectiveFund))
                 KeyValueRow(
                     "Saldo después de la compra",
-                    Fmt.ars((data.fundBalanceCents - amount).coerceAtLeast(0)),
-                    valueColor = if (amount > data.fundBalanceCents) Rose else Emerald,
+                    Fmt.ars((effectiveFund - amount).coerceAtLeast(0)),
+                    valueColor = if (amount > effectiveFund) Rose else Emerald,
                 )
-                if (amount > data.fundBalanceCents) {
+                if (amount > effectiveFund) {
                     Spacer(Modifier.height(8.dp))
                     InfoBanner("El fondo no alcanza para este gasto.", color = Rose)
                 }
@@ -282,6 +292,15 @@ fun ExpenseEditorScreen(
         if (form.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
             val selectedWallet = data.walletHoldings.firstOrNull { it.id == form.walletHoldingId }
                 ?: data.walletHoldings.firstOrNull()
+            val restoredFromOriginal = if (
+                form.originalPaymentMethod == ExpensePaymentMethod.WALLET_FCI &&
+                form.originalWalletHoldingId == selectedWallet?.id
+            ) {
+                form.originalWalletDeltaCents
+            } else {
+                0L
+            }
+            val effectiveWalletBalance = (selectedWallet?.currentValueCents ?: 0L) + restoredFromOriginal
             SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
                 Text("FCI billetera", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(6.dp))
@@ -304,14 +323,14 @@ fun ExpenseEditorScreen(
                     }
                     KeyValueRow(
                         "Saldo disponible",
-                        Fmt.ars(selectedWallet?.currentValueCents ?: 0),
+                        Fmt.ars(effectiveWalletBalance),
                     )
                     KeyValueRow(
                         "Saldo después del gasto",
-                        Fmt.ars(((selectedWallet?.currentValueCents ?: 0) - amount).coerceAtLeast(0)),
-                        valueColor = if (amount > (selectedWallet?.currentValueCents ?: 0)) Rose else Emerald,
+                        Fmt.ars((effectiveWalletBalance - amount).coerceAtLeast(0)),
+                        valueColor = if (amount > effectiveWalletBalance) Rose else Emerald,
                     )
-                    if (amount > (selectedWallet?.currentValueCents ?: 0)) {
+                    if (amount > effectiveWalletBalance) {
                         Spacer(Modifier.height(8.dp))
                         InfoBanner("El FCI billetera no alcanza para este gasto.", color = Rose)
                     }
@@ -373,7 +392,7 @@ fun ExpenseEditorScreen(
                 Spacer(Modifier.width(8.dp))
                 Text("Guardando…")
             } else {
-                Text("Guardar gasto")
+                Text(if (form.id > 0L) "Guardar cambios" else "Guardar gasto")
             }
         }
 

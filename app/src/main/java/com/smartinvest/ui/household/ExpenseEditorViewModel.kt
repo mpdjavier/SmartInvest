@@ -34,6 +34,7 @@ data class ExpenseEditorData(
 )
 
 data class ExpenseForm(
+    val id: Long = 0L,
     val description: String = "",
     val amountText: String = "",
     val date: LocalDate,
@@ -44,6 +45,10 @@ data class ExpenseForm(
     val walletHoldingId: Long? = null,
     val installments: Int = 1,
     val notes: String = "",
+    val originalPaymentMethod: ExpensePaymentMethod? = null,
+    val originalAmountCents: Long = 0L,
+    val originalWalletHoldingId: Long? = null,
+    val originalWalletDeltaCents: Long = 0L,
     val isSaving: Boolean = false,
     val error: String? = null,
     val saved: Boolean = false,
@@ -64,6 +69,9 @@ class ExpenseEditorViewModel @Inject constructor(
     private val month: YearMonth = savedStateHandle.get<String>("month")
         ?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
         ?: YearMonth.now()
+    private val expenseId: Long = savedStateHandle.get<String>("expenseId")
+        ?.toLongOrNull()
+        ?: 0L
 
     private val today = DateUtils.today()
     private val defaultDate: LocalDate = if (YearMonth.from(today) == month) {
@@ -72,7 +80,7 @@ class ExpenseEditorViewModel @Inject constructor(
         month.atDay(min(today.dayOfMonth, month.lengthOfMonth()))
     }
 
-    private val form = MutableStateFlow(ExpenseForm(date = defaultDate))
+    private val form = MutableStateFlow(ExpenseForm(id = expenseId, date = defaultDate))
     private var latestData = ExpenseEditorData()
     private var defaultsApplied = false
 
@@ -91,10 +99,42 @@ class ExpenseEditorViewModel @Inject constructor(
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        ExpenseEditorUiState(form = ExpenseForm(date = defaultDate)),
+        ExpenseEditorUiState(form = ExpenseForm(id = expenseId, date = defaultDate)),
     )
 
     init {
+        if (expenseId > 0L) {
+            viewModelScope.launch {
+                val existing = repository.getExpenseForEdit(expenseId)
+                if (existing != null) {
+                    defaultsApplied = true
+                    val amountStr = String.format(
+                        java.util.Locale.forLanguageTag("es-AR"),
+                        "%.2f",
+                        existing.totalCents / 100.0,
+                    )
+                    form.update { current ->
+                        current.copy(
+                            id = existing.id,
+                            description = existing.description,
+                            amountText = amountStr,
+                            date = existing.date,
+                            categoryId = existing.categoryId,
+                            paidByMemberId = existing.paidByMemberId,
+                            paymentMethod = existing.paymentMethod,
+                            cardId = existing.creditCardId ?: current.cardId,
+                            walletHoldingId = existing.walletHoldingId ?: current.walletHoldingId,
+                            installments = existing.installments.coerceAtLeast(1),
+                            notes = existing.notes,
+                            originalPaymentMethod = existing.paymentMethod,
+                            originalAmountCents = existing.totalCents,
+                            originalWalletHoldingId = existing.walletHoldingId,
+                            originalWalletDeltaCents = existing.walletValueDeltaCents,
+                        )
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             dataFlow.collect { data ->
                 latestData = data
@@ -106,7 +146,7 @@ class ExpenseEditorViewModel @Inject constructor(
                             ?: (data.members.firstOrNull { it.isCurrentUser } ?: data.members.firstOrNull())?.id,
                         cardId = current.cardId ?: data.cards.firstOrNull()?.id,
                         walletHoldingId = current.walletHoldingId ?: data.walletHoldings.firstOrNull()?.id,
-                        paymentMethod = if (!defaultsApplied && data.walletHoldings.isNotEmpty()) {
+                        paymentMethod = if (!defaultsApplied && expenseId <= 0L && data.walletHoldings.isNotEmpty()) {
                             ExpensePaymentMethod.WALLET_FCI
                         } else {
                             current.paymentMethod
@@ -172,7 +212,9 @@ class ExpenseEditorViewModel @Inject constructor(
             form.update { it.copy(error = "Elegí una tarjeta de crédito") }
             return
         }
-        if (current.paymentMethod == ExpensePaymentMethod.COMMON_FUND && amount > latestData.fundBalanceCents) {
+        val effectiveFundBalance = latestData.fundBalanceCents +
+            if (current.originalPaymentMethod == ExpensePaymentMethod.COMMON_FUND) current.originalAmountCents else 0L
+        if (current.paymentMethod == ExpensePaymentMethod.COMMON_FUND && amount > effectiveFundBalance) {
             form.update { it.copy(error = "El fondo común no alcanza para este gasto") }
             return
         }
@@ -187,7 +229,15 @@ class ExpenseEditorViewModel @Inject constructor(
                 form.update { it.copy(error = "El FCI billetera ya no está disponible") }
                 return
             }
-            if (amount > wallet.currentValueCents) {
+            val restoredFromOriginal = if (
+                current.originalPaymentMethod == ExpensePaymentMethod.WALLET_FCI &&
+                current.originalWalletHoldingId == wallet.id
+            ) {
+                current.originalWalletDeltaCents
+            } else {
+                0L
+            }
+            if (amount > wallet.currentValueCents + restoredFromOriginal) {
                 form.update { it.copy(error = "El FCI billetera no alcanza para este gasto") }
                 return
             }
@@ -195,25 +245,28 @@ class ExpenseEditorViewModel @Inject constructor(
 
         form.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
+            val payload = NewExpense(
+                description = current.description.trim(),
+                totalCents = amount,
+                date = current.date,
+                categoryId = categoryId,
+                paidByMemberId = memberId,
+                paymentMethod = current.paymentMethod,
+                creditCardId = if (current.paymentMethod == ExpensePaymentMethod.CREDIT) current.cardId else null,
+                installments = if (current.paymentMethod == ExpensePaymentMethod.CREDIT) current.installments else 1,
+                notes = current.notes.trim(),
+                walletHoldingId = if (current.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
+                    current.walletHoldingId
+                } else {
+                    null
+                },
+            )
             runCatching {
-                repository.addExpense(
-                    NewExpense(
-                        description = current.description.trim(),
-                        totalCents = amount,
-                        date = current.date,
-                        categoryId = categoryId,
-                        paidByMemberId = memberId,
-                        paymentMethod = current.paymentMethod,
-                        creditCardId = if (current.paymentMethod == ExpensePaymentMethod.CREDIT) current.cardId else null,
-                        installments = if (current.paymentMethod == ExpensePaymentMethod.CREDIT) current.installments else 1,
-                        notes = current.notes.trim(),
-                        walletHoldingId = if (current.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
-                            current.walletHoldingId
-                        } else {
-                            null
-                        },
-                    ),
-                )
+                if (current.id > 0L) {
+                    repository.updateExpense(current.id, payload)
+                } else {
+                    repository.addExpense(payload)
+                }
             }.onSuccess {
                 form.update { it.copy(isSaving = false, saved = true) }
             }.onFailure { error ->

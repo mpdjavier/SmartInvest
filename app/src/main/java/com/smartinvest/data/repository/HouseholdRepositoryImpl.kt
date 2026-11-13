@@ -32,6 +32,7 @@ import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.model.MonthlyExpenseItem
 import com.smartinvest.domain.model.RegisteredSettlement
+import com.smartinvest.domain.repository.EditableExpense
 import com.smartinvest.domain.repository.HouseholdRepository
 import com.smartinvest.domain.repository.NewExpense
 import com.smartinvest.domain.repository.NewFundMovement
@@ -163,211 +164,248 @@ class HouseholdRepositoryImpl @Inject constructor(
         cardDao.setActive(id, active)
     }
 
+    override suspend fun getExpenseForEdit(expenseId: Long): EditableExpense? = withContext(io) {
+        val entity = expenseDao.getById(expenseId) ?: return@withContext null
+        EditableExpense(
+            id = entity.id,
+            description = entity.description,
+            totalCents = entity.totalAmountCents,
+            date = java.time.LocalDate.ofEpochDay(entity.dateEpochDay),
+            categoryId = entity.categoryId,
+            paidByMemberId = entity.paidByMemberId,
+            paymentMethod = entity.paymentMethod,
+            creditCardId = entity.creditCardId,
+            installments = entity.installments.coerceAtLeast(1),
+            notes = entity.notes,
+            walletHoldingId = entity.walletHoldingId,
+            walletValueDeltaCents = entity.walletValueDeltaCents,
+        )
+    }
+
     override suspend fun addExpense(input: NewExpense): Long {
         val expenseId = withContext(io) {
-            require(input.totalCents > 0) { "El monto debe ser mayor a cero" }
-            require(input.description.isNotBlank()) { "Agregá una descripción" }
-            require(input.installments in InstallmentEngine.MIN_INSTALLMENTS..InstallmentEngine.MAX_INSTALLMENTS) {
-                "Las cuotas deben estar entre 1 y ${InstallmentEngine.MAX_INSTALLMENTS}"
-            }
-            val member = memberDao.getById(input.paidByMemberId) ?: error("Integrante inexistente")
-            val category = categoryDao.getById(input.categoryId) ?: error("Categoría inexistente")
-            require(!category.isArchived) { "La categoría está archivada" }
-
             db.withTransaction {
-                when (input.paymentMethod) {
-                    ExpensePaymentMethod.CREDIT -> {
-                        val cardId = input.creditCardId ?: error("Elegí una tarjeta de crédito")
-                        val card = cardDao.getById(cardId) ?: error("Tarjeta inexistente")
-                        require(card.isActive) { "La tarjeta está desactivada" }
-                        val firstMonth = CardCycleResolver.firstInstallmentMonth(input.date, card.closingDay)
-                        val schedule = InstallmentEngine.schedule(
-                            totalCents = input.totalCents,
-                            installments = input.installments,
-                            firstInstallmentMonth = firstMonth,
-                        )
-                        val id = expenseDao.insert(
-                            ExpenseEntity(
-                                description = input.description.trim(),
-                                totalAmountCents = input.totalCents,
-                                dateEpochDay = input.date.toEpochDay(),
-                                month = firstMonth.toString(),
-                                categoryId = category.id,
-                                paidByMemberId = member.id,
-                                paymentMethod = input.paymentMethod,
-                                creditCardId = card.id,
-                                installments = input.installments,
-                                firstInstallmentMonth = firstMonth.toString(),
-                                notes = input.notes.trim(),
-                                createdAt = System.currentTimeMillis(),
-                            ),
-                        )
-                        installmentDao.insertAll(
-                            schedule.map { slice ->
-                                InstallmentEntity(
-                                    expenseId = id,
-                                    creditCardId = card.id,
-                                    number = slice.number,
-                                    count = slice.count,
-                                    dueMonth = slice.dueMonth.toString(),
-                                    amountCents = slice.amountCents,
-                                )
-                            },
-                        )
-                        id
-                    }
-
-                    ExpensePaymentMethod.COMMON_FUND -> {
-                        val balance = fundDao.currentBalance()
-                        require(balance >= input.totalCents) {
-                            "El fondo común no alcanza. Disponible: ${com.smartinvest.core.money.MoneyFormatter.ars(balance)}"
-                        }
-                        val month = YearMonth.from(input.date)
-                        val id = expenseDao.insert(
-                            ExpenseEntity(
-                                description = input.description.trim(),
-                                totalAmountCents = input.totalCents,
-                                dateEpochDay = input.date.toEpochDay(),
-                                month = month.toString(),
-                                categoryId = category.id,
-                                paidByMemberId = member.id,
-                                paymentMethod = input.paymentMethod,
-                                installments = 1,
-                                notes = input.notes.trim(),
-                                createdAt = System.currentTimeMillis(),
-                            ),
-                        )
-                        fundDao.insert(
-                            FundMovementEntity(
-                                type = FundMovementType.EXPENSE,
-                                amountCents = input.totalCents,
-                                dateEpochDay = input.date.toEpochDay(),
-                                month = month.toString(),
-                                memberId = null,
-                                description = "Compra: ${input.description.trim()}",
-                                expenseId = id,
-                                createdAt = System.currentTimeMillis(),
-                            ),
-                        )
-                        id
-                    }
-
-                    ExpensePaymentMethod.WALLET_FCI -> {
-                        val holdingId = input.walletHoldingId ?: error("Elegí el FCI billetera")
-                        val holding = holdingDao.getById(holdingId) ?: error("FCI billetera inexistente")
-                        require(holding.isWallet) { "El FCI elegido no está marcado como billetera" }
-                        require(holding.currentValueCents >= input.totalCents) {
-                            "El FCI billetera no alcanza. Disponible: " +
-                                com.smartinvest.core.money.MoneyFormatter.ars(holding.currentValueCents)
-                        }
-                        val newQuantity = if (holding.quantity > 0.0) {
-                            val keepFraction = 1.0 - input.totalCents.toDouble() / holding.currentValueCents.toDouble()
-                            (holding.quantity * keepFraction.coerceIn(0.0, 1.0)).coerceAtLeast(0.0)
-                        } else {
-                            0.0
-                        }
-                        val quantityDelta = (holding.quantity - newQuantity).coerceAtLeast(0.0)
-                        val newValue = (holding.currentValueCents - input.totalCents).coerceAtLeast(0L)
-                        val dateLabel = input.date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
-                        val rescueAmountText = if (holding.currency == com.smartinvest.domain.model.CurrencyCode.USD) {
-                            com.smartinvest.core.money.MoneyFormatter.usd(input.totalCents)
-                        } else {
-                            com.smartinvest.core.money.MoneyFormatter.ars(input.totalCents)
-                        }
-                        val rescueLogLine = "$dateLabel: -$rescueAmountText (RESCATE: ${input.description.trim()})"
-                        val updatedHoldingNotes = if (holding.notes.isBlank()) {
-                            rescueLogLine
-                        } else {
-                            "${holding.notes.trim()}\n$rescueLogLine"
-                        }
-                        holdingDao.upsert(
-                            holding.copy(
-                                currentValueCents = newValue,
-                                quantity = newQuantity,
-                                notes = updatedHoldingNotes,
-                            ),
-                        )
-                        val month = YearMonth.from(input.date)
-                        expenseDao.insert(
-                            ExpenseEntity(
-                                description = input.description.trim(),
-                                totalAmountCents = input.totalCents,
-                                dateEpochDay = input.date.toEpochDay(),
-                                month = month.toString(),
-                                categoryId = category.id,
-                                paidByMemberId = member.id,
-                                paymentMethod = input.paymentMethod,
-                                installments = 1,
-                                notes = input.notes.trim(),
-                                walletHoldingId = holding.id,
-                                walletQuantityDelta = quantityDelta,
-                                walletValueDeltaCents = input.totalCents,
-                                createdAt = System.currentTimeMillis(),
-                            ),
-                        )
-                    }
-
-                    else -> {
-                        val month = YearMonth.from(input.date)
-                        expenseDao.insert(
-                            ExpenseEntity(
-                                description = input.description.trim(),
-                                totalAmountCents = input.totalCents,
-                                dateEpochDay = input.date.toEpochDay(),
-                                month = month.toString(),
-                                categoryId = category.id,
-                                paidByMemberId = member.id,
-                                paymentMethod = input.paymentMethod,
-                                installments = 1,
-                                notes = input.notes.trim(),
-                                createdAt = System.currentTimeMillis(),
-                            ),
-                        )
-                    }
-                }
+                insertExpenseInternal(input)
             }
         }
         widgetRefresher.refresh()
         return expenseId
     }
 
-    override suspend fun deleteExpense(expenseId: Long) {
-        withContext(io) {
+    override suspend fun updateExpense(expenseId: Long, input: NewExpense): Long {
+        val newId = withContext(io) {
             db.withTransaction {
-                val expense = expenseDao.getById(expenseId) ?: error("Gasto inexistente")
-                if (expense.walletHoldingId != null &&
-                    (expense.walletQuantityDelta > 0.0 || expense.walletValueDeltaCents > 0L)
-                ) {
-                    val holding = holdingDao.getById(expense.walletHoldingId)
-                    if (holding != null) {
-                        val dateLabel = java.time.LocalDate.ofEpochDay(expense.dateEpochDay)
-                            .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
-                        val rescueAmountText = if (holding.currency == com.smartinvest.domain.model.CurrencyCode.USD) {
-                            com.smartinvest.core.money.MoneyFormatter.usd(expense.walletValueDeltaCents)
-                        } else {
-                            com.smartinvest.core.money.MoneyFormatter.ars(expense.walletValueDeltaCents)
-                        }
-                        val rescueLogLine = "$dateLabel: -$rescueAmountText (RESCATE: ${expense.description.trim()})"
-                        val restoredNotes = holding.notes
-                            .lineSequence()
-                            .filterNot { it.trim() == rescueLogLine }
-                            .joinToString("\n")
-                            .trim()
-                        holdingDao.upsert(
-                            holding.copy(
-                                quantity = holding.quantity + expense.walletQuantityDelta,
-                                currentValueCents = holding.currentValueCents + expense.walletValueDeltaCents,
-                                notes = restoredNotes,
-                            ),
-                        )
-                    }
-                }
-                fundDao.deleteForExpense(expenseId)
-                installmentDao.deleteForExpense(expenseId)
-                expenseDao.deleteById(expenseId)
+                revertAndRemoveExpenseInternal(expenseId)
+                insertExpenseInternal(input)
             }
         }
         widgetRefresher.refresh()
+        return newId
+    }
+
+    private suspend fun insertExpenseInternal(input: NewExpense): Long {
+        require(input.totalCents > 0) { "El monto debe ser mayor a cero" }
+        require(input.description.isNotBlank()) { "Agregá una descripción" }
+        require(input.installments in InstallmentEngine.MIN_INSTALLMENTS..InstallmentEngine.MAX_INSTALLMENTS) {
+            "Las cuotas deben estar entre 1 y ${InstallmentEngine.MAX_INSTALLMENTS}"
+        }
+        val member = memberDao.getById(input.paidByMemberId) ?: error("Integrante inexistente")
+        val category = categoryDao.getById(input.categoryId) ?: error("Categoría inexistente")
+        require(!category.isArchived) { "La categoría está archivada" }
+
+        return when (input.paymentMethod) {
+            ExpensePaymentMethod.CREDIT -> {
+                val cardId = input.creditCardId ?: error("Elegí una tarjeta de crédito")
+                val card = cardDao.getById(cardId) ?: error("Tarjeta inexistente")
+                require(card.isActive) { "La tarjeta está desactivada" }
+                val firstMonth = CardCycleResolver.firstInstallmentMonth(input.date, card.closingDay)
+                val schedule = InstallmentEngine.schedule(
+                    totalCents = input.totalCents,
+                    installments = input.installments,
+                    firstInstallmentMonth = firstMonth,
+                )
+                val id = expenseDao.insert(
+                    ExpenseEntity(
+                        description = input.description.trim(),
+                        totalAmountCents = input.totalCents,
+                        dateEpochDay = input.date.toEpochDay(),
+                        month = firstMonth.toString(),
+                        categoryId = category.id,
+                        paidByMemberId = member.id,
+                        paymentMethod = input.paymentMethod,
+                        creditCardId = card.id,
+                        installments = input.installments,
+                        firstInstallmentMonth = firstMonth.toString(),
+                        notes = input.notes.trim(),
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+                installmentDao.insertAll(
+                    schedule.map { slice ->
+                        InstallmentEntity(
+                            expenseId = id,
+                            creditCardId = card.id,
+                            number = slice.number,
+                            count = slice.count,
+                            dueMonth = slice.dueMonth.toString(),
+                            amountCents = slice.amountCents,
+                        )
+                    },
+                )
+                id
+            }
+
+            ExpensePaymentMethod.COMMON_FUND -> {
+                val balance = fundDao.currentBalance()
+                require(balance >= input.totalCents) {
+                    "El fondo común no alcanza. Disponible: ${com.smartinvest.core.money.MoneyFormatter.ars(balance)}"
+                }
+                val month = YearMonth.from(input.date)
+                val id = expenseDao.insert(
+                    ExpenseEntity(
+                        description = input.description.trim(),
+                        totalAmountCents = input.totalCents,
+                        dateEpochDay = input.date.toEpochDay(),
+                        month = month.toString(),
+                        categoryId = category.id,
+                        paidByMemberId = member.id,
+                        paymentMethod = input.paymentMethod,
+                        installments = 1,
+                        notes = input.notes.trim(),
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+                fundDao.insert(
+                    FundMovementEntity(
+                        type = FundMovementType.EXPENSE,
+                        amountCents = input.totalCents,
+                        dateEpochDay = input.date.toEpochDay(),
+                        month = month.toString(),
+                        memberId = null,
+                        description = "Compra: ${input.description.trim()}",
+                        expenseId = id,
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+                id
+            }
+
+            ExpensePaymentMethod.WALLET_FCI -> {
+                val holdingId = input.walletHoldingId ?: error("Elegí el FCI billetera")
+                val holding = holdingDao.getById(holdingId) ?: error("FCI billetera inexistente")
+                require(holding.isWallet) { "El FCI elegido no está marcado como billetera" }
+                require(holding.currentValueCents >= input.totalCents) {
+                    "El FCI billetera no alcanza. Disponible: " +
+                        com.smartinvest.core.money.MoneyFormatter.ars(holding.currentValueCents)
+                }
+                val newQuantity = if (holding.quantity > 0.0) {
+                    val keepFraction = 1.0 - input.totalCents.toDouble() / holding.currentValueCents.toDouble()
+                    (holding.quantity * keepFraction.coerceIn(0.0, 1.0)).coerceAtLeast(0.0)
+                } else {
+                    0.0
+                }
+                val quantityDelta = (holding.quantity - newQuantity).coerceAtLeast(0.0)
+                val newValue = (holding.currentValueCents - input.totalCents).coerceAtLeast(0L)
+                val dateLabel = input.date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                val rescueAmountText = if (holding.currency == com.smartinvest.domain.model.CurrencyCode.USD) {
+                    com.smartinvest.core.money.MoneyFormatter.usd(input.totalCents)
+                } else {
+                    com.smartinvest.core.money.MoneyFormatter.ars(input.totalCents)
+                }
+                val rescueLogLine = "$dateLabel: -$rescueAmountText (RESCATE: ${input.description.trim()})"
+                val updatedHoldingNotes = if (holding.notes.isBlank()) {
+                    rescueLogLine
+                } else {
+                    "${holding.notes.trim()}\n$rescueLogLine"
+                }
+                holdingDao.upsert(
+                    holding.copy(
+                        currentValueCents = newValue,
+                        quantity = newQuantity,
+                        notes = updatedHoldingNotes,
+                    ),
+                )
+                val month = YearMonth.from(input.date)
+                expenseDao.insert(
+                    ExpenseEntity(
+                        description = input.description.trim(),
+                        totalAmountCents = input.totalCents,
+                        dateEpochDay = input.date.toEpochDay(),
+                        month = month.toString(),
+                        categoryId = category.id,
+                        paidByMemberId = member.id,
+                        paymentMethod = input.paymentMethod,
+                        installments = 1,
+                        notes = input.notes.trim(),
+                        walletHoldingId = holding.id,
+                        walletQuantityDelta = quantityDelta,
+                        walletValueDeltaCents = input.totalCents,
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
+
+            else -> {
+                val month = YearMonth.from(input.date)
+                expenseDao.insert(
+                    ExpenseEntity(
+                        description = input.description.trim(),
+                        totalAmountCents = input.totalCents,
+                        dateEpochDay = input.date.toEpochDay(),
+                        month = month.toString(),
+                        categoryId = category.id,
+                        paidByMemberId = member.id,
+                        paymentMethod = input.paymentMethod,
+                        installments = 1,
+                        notes = input.notes.trim(),
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
+        }
+    }
+
+    override suspend fun deleteExpense(expenseId: Long) {
+        withContext(io) {
+            db.withTransaction {
+                revertAndRemoveExpenseInternal(expenseId)
+            }
+        }
+        widgetRefresher.refresh()
+    }
+
+    private suspend fun revertAndRemoveExpenseInternal(expenseId: Long) {
+        val expense = expenseDao.getById(expenseId) ?: error("Gasto inexistente")
+        if (expense.walletHoldingId != null &&
+            (expense.walletQuantityDelta > 0.0 || expense.walletValueDeltaCents > 0L)
+        ) {
+            val holding = holdingDao.getById(expense.walletHoldingId)
+            if (holding != null) {
+                val dateLabel = java.time.LocalDate.ofEpochDay(expense.dateEpochDay)
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                val rescueAmountText = if (holding.currency == com.smartinvest.domain.model.CurrencyCode.USD) {
+                    com.smartinvest.core.money.MoneyFormatter.usd(expense.walletValueDeltaCents)
+                } else {
+                    com.smartinvest.core.money.MoneyFormatter.ars(expense.walletValueDeltaCents)
+                }
+                val rescueLogLine = "$dateLabel: -$rescueAmountText (RESCATE: ${expense.description.trim()})"
+                val restoredNotes = holding.notes
+                    .lineSequence()
+                    .filterNot { it.trim() == rescueLogLine }
+                    .joinToString("\n")
+                    .trim()
+                holdingDao.upsert(
+                    holding.copy(
+                        quantity = holding.quantity + expense.walletQuantityDelta,
+                        currentValueCents = holding.currentValueCents + expense.walletValueDeltaCents,
+                        notes = restoredNotes,
+                    ),
+                )
+            }
+        }
+        fundDao.deleteForExpense(expenseId)
+        installmentDao.deleteForExpense(expenseId)
+        expenseDao.deleteById(expenseId)
     }
 
     override suspend fun setInstallmentPaid(installmentId: Long, paid: Boolean) {
