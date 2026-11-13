@@ -35,12 +35,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smartinvest.core.money.MoneyParser
 import com.smartinvest.data.importer.ReceiptKind
+import com.smartinvest.domain.model.ExpensePaymentMethod
 import com.smartinvest.ui.components.AmountInput
 import com.smartinvest.ui.components.ChipRow
 import com.smartinvest.ui.components.DateField
 import com.smartinvest.ui.components.DropdownField
 import com.smartinvest.ui.components.InfoBanner
+import com.smartinvest.ui.components.KeyValueRow
 import com.smartinvest.ui.components.SectionHeader
 import com.smartinvest.ui.components.SmartCard
 import com.smartinvest.ui.components.TagPill
@@ -263,6 +266,71 @@ fun ReceiptImportScreen(
                         label = { it.name },
                         onSelect = { viewModel.setMember(it.id) },
                     )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Origen de los fondos",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                ChipRow(
+                    options = listOf(
+                        ExpensePaymentMethod.WALLET_FCI,
+                        ExpensePaymentMethod.DEBIT,
+                        ExpensePaymentMethod.COMMON_FUND,
+                    ),
+                    selected = form.paymentMethod,
+                    label = { it.shortLabel },
+                    onSelect = viewModel::setPaymentMethod,
+                )
+                if (form.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
+                    Spacer(Modifier.height(10.dp))
+                    val selectedWallet = state.walletHoldings.firstOrNull { it.id == form.walletHoldingId }
+                        ?: state.walletHoldings.firstOrNull()
+                    val parsedAmountCents = MoneyParser.parseToCents(form.amountText) ?: 0L
+                    SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
+                        Text(
+                            selectedWallet?.let { "FCI billetera · ${it.symbol} (${it.name})" } ?: "FCI billetera",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        if (state.walletHoldings.isEmpty()) {
+                            InfoBanner(
+                                "No hay un FCI marcado como billetera. Editá un FCI en Inversiones y activá " +
+                                    "\"Usar como FCI billetera\".",
+                                color = Amber,
+                            )
+                        } else {
+                            if (state.walletHoldings.size > 1 && selectedWallet != null) {
+                                DropdownField(
+                                    label = "FCI de origen",
+                                    selected = selectedWallet,
+                                    options = state.walletHoldings,
+                                    optionLabel = { "${it.symbol} · ${it.name}" },
+                                    onSelect = { viewModel.setWalletHolding(it.id) },
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
+                            val available = selectedWallet?.currentValueCents ?: 0L
+                            val afterRescue = (available - parsedAmountCents).coerceAtLeast(0L)
+                            KeyValueRow("Saldo disponible", Fmt.ars(available))
+                            KeyValueRow(
+                                "Rescate automático al confirmar",
+                                "− ${Fmt.ars(parsedAmountCents)}",
+                                valueColor = Amber,
+                            )
+                            KeyValueRow(
+                                "Saldo luego del rescate",
+                                Fmt.ars(afterRescue),
+                                valueColor = if (parsedAmountCents > available) Rose else Emerald,
+                            )
+                            if (parsedAmountCents > available) {
+                                Spacer(Modifier.height(8.dp))
+                                InfoBanner("El saldo del FCI billetera no alcanza para cubrir este comprobante.", color = Rose)
+                            }
+                        }
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(

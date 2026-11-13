@@ -11,9 +11,11 @@ import com.smartinvest.data.importer.ReceiptParser
 import com.smartinvest.data.importer.ReceiptTextExtractor
 import com.smartinvest.data.importer.ReceiptKind
 import com.smartinvest.domain.model.ExpensePaymentMethod
+import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.repository.HouseholdRepository
+import com.smartinvest.domain.repository.InvestmentRepository
 import com.smartinvest.domain.repository.NewExpense
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -36,6 +38,8 @@ data class ReceiptForm(
     val date: LocalDate = DateUtils.today(),
     val categoryId: Long? = null,
     val memberId: Long? = null,
+    val paymentMethod: ExpensePaymentMethod = ExpensePaymentMethod.WALLET_FCI,
+    val walletHoldingId: Long? = null,
     val isOwnTransfer: Boolean = false,
     val notes: String = "",
     val isSaving: Boolean = false,
@@ -49,13 +53,21 @@ data class ReceiptImportUiState(
     val form: ReceiptForm = ReceiptForm(),
     val categories: List<HouseholdCategory> = emptyList(),
     val members: List<HouseholdMember> = emptyList(),
+    val walletHoldings: List<Holding> = emptyList(),
     val extractionFailed: Boolean = false,
+)
+
+private data class ReceiptBaseData(
+    val members: List<HouseholdMember>,
+    val categories: List<HouseholdCategory>,
+    val walletHoldings: List<Holding>,
 )
 
 @HiltViewModel
 class ReceiptImportViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: HouseholdRepository,
+    private val investments: InvestmentRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -66,20 +78,24 @@ class ReceiptImportViewModel @Inject constructor(
     private val loading = MutableStateFlow(true)
     private val extractionFailed = MutableStateFlow(false)
     private val form = MutableStateFlow(ReceiptForm())
+    private var latestWalletHoldings: List<Holding> = emptyList()
 
     private val dataFlow = combine(
         repository.observeMembers(),
         repository.observeCategories(includeArchived = false),
-    ) { members, categories -> members to categories }
+        investments.observeWalletHoldings(),
+    ) { members, categories, walletHoldings ->
+        ReceiptBaseData(members, categories, walletHoldings)
+    }
 
     val uiState = combine(parsed, form, loading, dataFlow) { receipt, currentForm, isLoading, data ->
-        val (members, categories) = data
         ReceiptImportUiState(
             isLoading = isLoading,
             parsed = receipt,
             form = currentForm,
-            categories = categories,
-            members = members,
+            categories = data.categories,
+            members = data.members,
+            walletHoldings = data.walletHoldings,
             extractionFailed = extractionFailed.value,
         )
     }.stateIn(
@@ -90,12 +106,17 @@ class ReceiptImportViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            dataFlow.collect { (members, categories) ->
+            dataFlow.collect { data ->
+                latestWalletHoldings = data.walletHoldings
+                val serviceCategory = data.categories.firstOrNull {
+                    it.name.contains("servicio", ignoreCase = true)
+                } ?: data.categories.firstOrNull()
                 form.update { current ->
                     current.copy(
-                        categoryId = current.categoryId ?: categories.firstOrNull()?.id,
+                        categoryId = current.categoryId ?: serviceCategory?.id,
                         memberId = current.memberId
-                            ?: (members.firstOrNull { it.isCurrentUser } ?: members.firstOrNull())?.id,
+                            ?: (data.members.firstOrNull { it.isCurrentUser } ?: data.members.firstOrNull())?.id,
+                        walletHoldingId = current.walletHoldingId ?: data.walletHoldings.firstOrNull()?.id,
                     )
                 }
             }
@@ -118,13 +139,17 @@ class ReceiptImportViewModel @Inject constructor(
             parsed.value = receipt
             extractionFailed.value = text.isBlank()
             if (receipt != null) {
-                form.value = form.value.copy(
-                    description = receipt.description,
-                    amountText = centsToInput(receipt.amountCents),
-                    date = receipt.date ?: DateUtils.today(),
-                    isOwnTransfer = receipt.likelyOwnTransfer && receipt.kind == ReceiptKind.TRANSFER,
-                    notes = buildNotes(receipt),
-                )
+                val cleanDesc = ReceiptParser.stripPagoDePrefix(receipt.description)
+                    .ifBlank { receipt.description }
+                form.update { current ->
+                    current.copy(
+                        description = cleanDesc,
+                        amountText = centsToInput(receipt.amountCents),
+                        date = receipt.date ?: DateUtils.today(),
+                        isOwnTransfer = receipt.likelyOwnTransfer && receipt.kind == ReceiptKind.TRANSFER,
+                        notes = buildNotes(receipt),
+                    )
+                }
             }
             loading.value = false
         }
@@ -146,6 +171,8 @@ class ReceiptImportViewModel @Inject constructor(
     fun setDate(value: LocalDate) = form.update { it.copy(date = value) }
     fun setCategory(id: Long) = form.update { it.copy(categoryId = id) }
     fun setMember(id: Long) = form.update { it.copy(memberId = id) }
+    fun setPaymentMethod(method: ExpensePaymentMethod) = form.update { it.copy(paymentMethod = method, error = null) }
+    fun setWalletHolding(id: Long) = form.update { it.copy(walletHoldingId = id, error = null) }
     fun setNotes(value: String) = form.update { it.copy(notes = value) }
     fun setOwnTransfer(value: Boolean) = form.update { it.copy(isOwnTransfer = value, error = null) }
 
@@ -161,8 +188,9 @@ class ReceiptImportViewModel @Inject constructor(
             }
             return
         }
+        val cleanDescription = ReceiptParser.stripPagoDePrefix(current.description).ifBlank { current.description.trim() }
         val amount = MoneyParser.parseToCents(current.amountText)
-        if (current.description.isBlank()) {
+        if (cleanDescription.isBlank()) {
             form.update { it.copy(error = "Agregá una descripción") }
             return
         }
@@ -180,18 +208,33 @@ class ReceiptImportViewModel @Inject constructor(
             form.update { it.copy(error = "Elegí quién pagó") }
             return
         }
+        val walletId = current.walletHoldingId ?: latestWalletHoldings.firstOrNull()?.id
+        if (current.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
+            val wallet = latestWalletHoldings.firstOrNull { it.id == walletId } ?: latestWalletHoldings.firstOrNull()
+            if (wallet == null) {
+                form.update {
+                    it.copy(error = "No hay un FCI marcado como billetera. Marcalo en Inversiones o elegí otro medio de pago.")
+                }
+                return
+            }
+            if (amount > wallet.currentValueCents) {
+                form.update { it.copy(error = "El saldo del FCI billetera (${wallet.symbol}) no alcanza para este monto") }
+                return
+            }
+        }
 
         form.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
             runCatching {
                 repository.addExpense(
                     NewExpense(
-                        description = current.description.trim(),
+                        description = cleanDescription,
                         totalCents = amount,
                         date = current.date,
                         categoryId = categoryId,
                         paidByMemberId = memberId,
-                        paymentMethod = ExpensePaymentMethod.DEBIT,
+                        paymentMethod = current.paymentMethod,
+                        walletHoldingId = if (current.paymentMethod == ExpensePaymentMethod.WALLET_FCI) walletId else null,
                         notes = current.notes.trim(),
                     ),
                 )

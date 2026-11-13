@@ -268,8 +268,24 @@ class HouseholdRepositoryImpl @Inject constructor(
                         }
                         val quantityDelta = (holding.quantity - newQuantity).coerceAtLeast(0.0)
                         val newValue = (holding.currentValueCents - input.totalCents).coerceAtLeast(0L)
+                        val dateLabel = input.date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                        val rescueAmountText = if (holding.currency == com.smartinvest.domain.model.CurrencyCode.USD) {
+                            com.smartinvest.core.money.MoneyFormatter.usd(input.totalCents)
+                        } else {
+                            com.smartinvest.core.money.MoneyFormatter.ars(input.totalCents)
+                        }
+                        val rescueLogLine = "$dateLabel: -$rescueAmountText (RESCATE: ${input.description.trim()})"
+                        val updatedHoldingNotes = if (holding.notes.isBlank()) {
+                            rescueLogLine
+                        } else {
+                            "${holding.notes.trim()}\n$rescueLogLine"
+                        }
                         holdingDao.upsert(
-                            holding.copy(currentValueCents = newValue, quantity = newQuantity),
+                            holding.copy(
+                                currentValueCents = newValue,
+                                quantity = newQuantity,
+                                notes = updatedHoldingNotes,
+                            ),
                         )
                         val month = YearMonth.from(input.date)
                         expenseDao.insert(
@@ -324,10 +340,24 @@ class HouseholdRepositoryImpl @Inject constructor(
                 ) {
                     val holding = holdingDao.getById(expense.walletHoldingId)
                     if (holding != null) {
+                        val dateLabel = java.time.LocalDate.ofEpochDay(expense.dateEpochDay)
+                            .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                        val rescueAmountText = if (holding.currency == com.smartinvest.domain.model.CurrencyCode.USD) {
+                            com.smartinvest.core.money.MoneyFormatter.usd(expense.walletValueDeltaCents)
+                        } else {
+                            com.smartinvest.core.money.MoneyFormatter.ars(expense.walletValueDeltaCents)
+                        }
+                        val rescueLogLine = "$dateLabel: -$rescueAmountText (RESCATE: ${expense.description.trim()})"
+                        val restoredNotes = holding.notes
+                            .lineSequence()
+                            .filterNot { it.trim() == rescueLogLine }
+                            .joinToString("\n")
+                            .trim()
                         holdingDao.upsert(
                             holding.copy(
                                 quantity = holding.quantity + expense.walletQuantityDelta,
                                 currentValueCents = holding.currentValueCents + expense.walletValueDeltaCents,
+                                notes = restoredNotes,
                             ),
                         )
                     }

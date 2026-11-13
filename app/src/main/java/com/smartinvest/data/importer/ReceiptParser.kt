@@ -45,6 +45,10 @@ object ReceiptParser {
         """^\s*(?:pago|transferencia|d[eé]bito)\s+(?:de|a|para)\s+(.+)$""",
         FLAGS,
     )
+    private val leadingPagoDeRegex = Regex(
+        """^\s*pago\s+de(?:\s+servicios?)?\s*[:\-]?\s*""",
+        FLAGS,
+    )
     private val referenceLabelRegex = Regex(
         """\b(nro\.?\s*°?|n[uú]mero|operaci[oó]n|c[oó]digo|comprobante|transacci[oó]n)\b""",
         FLAGS,
@@ -122,7 +126,9 @@ object ReceiptParser {
             ?.let { paymentConceptRegex.find(it)?.groupValues?.getOrNull(1)?.trim() }
             ?.take(90)
             ?.takeIf { it.isNotBlank() }
-        val service = labeledService ?: conceptName
+        val service = (labeledService ?: conceptName)
+            ?.let(::stripPagoDePrefix)
+            ?.takeIf { it.isNotBlank() }
         val reference = extractReference(lines)
 
         val explicitOwnTransfer = Regex(
@@ -132,16 +138,17 @@ object ReceiptParser {
         val likelyOwnTransfer = explicitOwnTransfer ||
             (kind == ReceiptKind.TRANSFER && origin != null && destination != null && origin != destination)
 
-        val description = when {
+        val rawDescription = when {
             kind == ReceiptKind.TRANSFER && origin != null && destination != null ->
                 "Transferencia $origin → $destination"
             kind == ReceiptKind.TRANSFER -> "Transferencia"
-            conceptLine != null -> conceptLine.trim()
             service != null -> service
+            conceptLine != null -> conceptLine.trim()
             destination != null -> "Pago a $destination"
             origin != null -> "Pago desde $origin"
             else -> "Gasto desde comprobante"
         }
+        val description = stripPagoDePrefix(rawDescription).ifBlank { rawDescription }
 
         val warnings = buildList {
             if (amount == null) add("No se detectó el importe. Ingresalo manualmente.")
@@ -345,6 +352,9 @@ object ReceiptParser {
 
     /** Used by tests to keep the supported labels visible. */
     internal fun supportedInstitutions(): List<String> = institutions.map { it.canonical }
+
+    internal fun stripPagoDePrefix(text: String): String =
+        text.replace(leadingPagoDeRegex, "").trim()
 
     internal fun formatDate(date: LocalDate): String =
         date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.forLanguageTag("es-AR")))

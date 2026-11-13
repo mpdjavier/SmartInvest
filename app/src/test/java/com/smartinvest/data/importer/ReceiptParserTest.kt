@@ -92,7 +92,7 @@ class ReceiptParserTest {
         assertEquals(ReceiptKind.EXPENSE, receipt.kind)
         assertEquals(1_510_573L, receipt.amountCents)
         assertEquals(LocalDate.of(2026, 11, 10), receipt.date)
-        assertEquals("Pago de SM Tucumán CISI", receipt.description)
+        assertEquals("SM Tucumán CISI", receipt.description)
         assertEquals("SM Tucumán CISI", receipt.serviceName)
         assertEquals("493481871301", receipt.reference)
         assertTrue(!receipt.likelyOwnTransfer)
