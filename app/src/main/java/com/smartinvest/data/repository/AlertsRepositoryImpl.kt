@@ -207,10 +207,7 @@ class AlertsRepositoryImpl @Inject constructor(
         // 7. Scheduled service payments (Agenda de pagos)
         val categories = categoryDao.getAll()
         val serviceCategoryIds = categories
-            .filter {
-                it.name.contains("servicio", ignoreCase = true) ||
-                    it.name.contains("expensa", ignoreCase = true)
-            }
+            .filter { it.name.contains("servicio", ignoreCase = true) }
             .map { it.id }
             .toSet()
         val historyRecords = expenseDao.getAll().map {

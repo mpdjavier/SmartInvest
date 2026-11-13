@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
@@ -26,6 +27,7 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -180,10 +182,7 @@ class PaymentAgendaViewModel @Inject constructor(
         latestTemplates = templates
 
         val serviceCatIds = sources.categories
-            .filter {
-                it.name.contains("servicio", ignoreCase = true) ||
-                    it.name.contains("expensa", ignoreCase = true)
-            }
+            .filter { it.name.contains("servicio", ignoreCase = true) }
             .map { it.id }
             .toSet()
 
@@ -569,6 +568,7 @@ fun PaymentAgendaScreen(
                 PaymentAgendaRowCard(
                     row = row,
                     onEdit = { viewModel.startEditItem(row) },
+                    onDelete = { viewModel.removeAgendaItem(row.key) },
                     onPay = { viewModel.startPayItem(row) },
                 )
             }
@@ -606,6 +606,7 @@ fun PaymentAgendaScreen(
 private fun PaymentAgendaRowCard(
     row: PaymentAgendaRow,
     onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onPay: () -> Unit,
 ) {
     val statusColor = when (row.status) {
@@ -670,6 +671,13 @@ private fun PaymentAgendaRowCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Rounded.DeleteOutline,
+                    contentDescription = "Eliminar",
+                    tint = Rose,
+                )
+            }
             TextButton(onClick = onEdit) {
                 Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
