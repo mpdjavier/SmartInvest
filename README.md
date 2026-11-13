@@ -149,10 +149,11 @@ Pantallas secundarias (con barra superior y flecha de volver):
 
 | Ruta | Pantalla |
 | --- | --- |
-| `expense_editor/{month}` | Nuevo gasto |
+| `expense_editor/{month}?expenseId={expenseId}` | Alta y edición de gastos (con reversión/imputación automática de medios de pago) |
 | `fund_editor/{month}` | Movimiento del fondo común |
-| `wallets` | Billeteras y tasas |
-| `holding_editor/{holdingId}` | Activo (alta/edición) |
+| `payment_agenda` | Agenda mensual de pagos de servicios (hereda fecha del pago anterior, alertas y pago directo) |
+| `receipt_import/{receiptPath}` | Importación de comprobantes PDF/texto (quita «Pago de», categoría Servicios y rescate en FCI billetera) |
+| `holding_editor/{holdingId}` | Activo (alta/edición, sumar/retirar aportes e importador `.xlsx`/`.xls`/`.csv` de brókers) |
 | `analytics` | Analítica de cartera |
 | `salary` | Repartir sueldo |
 | `emergency` | Rescate de emergencia |
