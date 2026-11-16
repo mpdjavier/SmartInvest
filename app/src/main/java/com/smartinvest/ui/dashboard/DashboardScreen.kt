@@ -200,18 +200,17 @@ fun DashboardScreen(
                         StatTile(
                             label = "Interés / día",
                             value = Fmt.ars(overview.analytics.dailyInterestCents),
-                            caption = "TNA ponderada",
+                            caption = "Día a día",
                             accent = EmeraldSoft,
-                            help = "Estimación de un día: saldo remunerado × TNA ÷ 365. " +
-                                "En Intereses día a día el saldo se capitaliza con los intereses previos.",
+                            help = "Interés del día calculado con la misma metodología de Intereses día a día " +
+                                "(capitalización diaria y variación de cuotapartes/mercado).",
                         )
                         StatTile(
                             label = "Proyección mes",
                             value = Fmt.ars(overview.analytics.monthlyInterestCents),
-                            caption = "30 días",
+                            caption = "Prom. × 30d",
                             accent = Sky,
-                            help = "Interés diario estimado × 30 días. Es una proyección simple, " +
-                                "sin reinvertir los intereses de cada día.",
+                            help = "Promedio de los intereses diarios del mes multiplicado por 30 días.",
                         )
                         StatTile(
                             label = "Ganancia 30d",

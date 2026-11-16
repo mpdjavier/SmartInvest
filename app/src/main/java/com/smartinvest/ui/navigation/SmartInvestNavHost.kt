@@ -60,6 +60,7 @@ import com.smartinvest.ui.household.PaymentAgendaScreen
 import com.smartinvest.ui.household.ReceiptImportScreen
 import com.smartinvest.ui.importer.ImportScreen
 import com.smartinvest.ui.investments.DailyInterestScreen
+import com.smartinvest.ui.investments.FundEvaluatorScreen
 import com.smartinvest.ui.investments.HoldingEditorScreen
 import com.smartinvest.ui.investments.InstrumentDetailScreen
 import com.smartinvest.ui.investments.InvestmentsScreen
@@ -97,6 +98,7 @@ object Routes {
     const val EXPENSE_SEARCH = "expense_search"
     const val EXPENSE_REPORT = "expense_report"
     const val PORTFOLIO_RECONCILIATION = "portfolio_reconciliation"
+    const val FUND_EVALUATOR = "fund_evaluator"
 
     fun expenseEditor(month: YearMonth, expenseId: Long = 0L): String =
         "expense_editor/$month?expenseId=$expenseId"
@@ -136,6 +138,7 @@ private val secondaryTitles = mapOf(
     Routes.EXPENSE_SEARCH to "Buscar gastos",
     Routes.EXPENSE_REPORT to "Reportes de gastos",
     Routes.PORTFOLIO_RECONCILIATION to "Ajuste y control de cartera",
+    Routes.FUND_EVALUATOR to "Evaluador FCI",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -301,7 +304,12 @@ fun SmartInvestNavHost(
                     onOpenInstrumentDetail = { holdingId -> navController.navigate(Routes.instrumentDetail(holdingId)) },
                     onOpenRebalancing = { navController.navigate(Routes.REBALANCING) },
                     onOpenReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
+                    onOpenFundEvaluator = { navController.navigate(Routes.FUND_EVALUATOR) },
                 )
+            }
+
+            composable(Routes.FUND_EVALUATOR) {
+                FundEvaluatorScreen()
             }
 
             composable(Routes.PORTFOLIO_RECONCILIATION) {

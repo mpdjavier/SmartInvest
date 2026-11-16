@@ -201,10 +201,10 @@ interface SalaryPlanDao {
 
 @Dao
 interface AlertDao {
-    @Query("SELECT * FROM alerts ORDER BY createdAt DESC")
+    @Query("SELECT * FROM alerts WHERE createdAt > 0 ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<AlertEntity>>
 
-    @Query("SELECT COUNT(*) FROM alerts WHERE isRead = 0")
+    @Query("SELECT COUNT(*) FROM alerts WHERE isRead = 0 AND createdAt > 0")
     fun observeUnreadCount(): Flow<Int>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -213,9 +213,22 @@ interface AlertDao {
     @Query("UPDATE alerts SET isRead = 1 WHERE id = :id")
     suspend fun markRead(id: Long)
 
-    @Query("UPDATE alerts SET isRead = 1")
+    @Query("UPDATE alerts SET isRead = 1 WHERE createdAt > 0")
     suspend fun markAllRead()
 
-    @Query("DELETE FROM alerts WHERE createdAt < :before")
+    /**
+     * Soft-deletes a read alert by negating [AlertEntity.createdAt] so it disappears from
+     * the UI while keeping its [AlertEntity.dedupeKey] to prevent [scanAlerts] from recreating it.
+     */
+    @Query("UPDATE alerts SET createdAt = -ABS(createdAt) WHERE id = :id AND isRead = 1 AND createdAt > 0")
+    suspend fun deleteRead(id: Long)
+
+    @Query("UPDATE alerts SET createdAt = -ABS(createdAt) WHERE isRead = 1 AND createdAt > 0")
+    suspend fun deleteAllRead()
+
+    @Query("DELETE FROM alerts WHERE dedupeKey = :dedupeKey")
+    suspend fun deleteByDedupeKey(dedupeKey: String)
+
+    @Query("DELETE FROM alerts WHERE ABS(createdAt) < :before")
     suspend fun prune(before: Long)
 }

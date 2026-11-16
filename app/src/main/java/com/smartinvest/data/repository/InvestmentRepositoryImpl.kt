@@ -347,14 +347,15 @@ class InvestmentRepositoryImpl @Inject constructor(
 
     override suspend fun refreshSnapshot(): PortfolioValuation = withContext(io) {
         val settings = settingsRepository.currentSettings()
+        val today = DateUtils.today()
         val valuation = PortfolioValuationEngine.calculate(
             wallets = walletDao.getAll().map { it.toDomain() },
             holdings = holdingDao.getAll().map { it.toDomain() },
             fxRates = fxRateDao.getAll().map { it.toDomain() },
             fallbackMepRate = settings.fallbackMepRate,
             quotes = instrumentQuoteDao.getAll().map { it.toDomain() },
+            today = today,
         )
-        val today = DateUtils.today()
         snapshotDao.upsert(
             PortfolioSnapshotEntity(
                 dateEpochDay = today.toEpochDay(),

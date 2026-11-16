@@ -50,9 +50,9 @@ class AlertScanWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = runCatching {
-        val created = alerts.scanAlerts()
+        val created = alerts.scanAlerts().filter { it.notifyPush }
         val current = settings.currentSettings()
-        if (current.notificationsEnabled) {
+        if (current.notificationsEnabled && created.isNotEmpty()) {
             NotificationHelper.notifyAlerts(applicationContext, created, current.hideAmounts)
         }
         Result.success()

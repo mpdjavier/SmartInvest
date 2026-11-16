@@ -21,6 +21,8 @@ interface AlertsRepository {
     fun observeUnreadCount(): Flow<Int>
     suspend fun markRead(id: Long)
     suspend fun markAllRead()
+    suspend fun deleteRead(id: Long)
+    suspend fun deleteAllRead()
     suspend fun insertIfNew(alert: NewAlert): Boolean
     suspend fun pruneOlderThan(days: Long)
     suspend fun scanAlerts(): List<AppAlert>

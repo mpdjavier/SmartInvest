@@ -22,6 +22,8 @@ data class AppAlert(
     val dedupeKey: String,
     val createdAt: Long,
     val isRead: Boolean,
+    /** True only when this alert corresponds to the day of the event and can send a push notification. */
+    val notifyPush: Boolean = true,
 )
 
 data class NewAlert(
@@ -30,4 +32,6 @@ data class NewAlert(
     val title: String,
     val message: String,
     val dedupeKey: String,
+    /** Push notifications are only sent on the day of the event, never in advance. */
+    val notifyPush: Boolean = true,
 )

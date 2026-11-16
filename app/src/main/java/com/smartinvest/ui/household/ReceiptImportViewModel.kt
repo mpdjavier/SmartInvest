@@ -409,8 +409,10 @@ class ReceiptImportViewModel @Inject constructor(
             settings.copy(paymentAgendaJson = PaymentAgendaEngine.encodeTemplates(templates)),
         )
 
-        // 3. Create immediate alerts for Vencimiento and Próximo Cierre
+        // 3. Create immediate alerts for Vencimiento and Próximo Cierre (push only on the day of the event)
+        val today = DateUtils.today()
         if (current.dueAlertEnabled) {
+            val dueStage = if (current.dueDate == today) "today" else "advance"
             alertsRepository.insertIfNew(
                 NewAlert(
                     type = AlertType.CARD_DUE,
@@ -419,11 +421,13 @@ class ReceiptImportViewModel @Inject constructor(
                     message = "Monto a pagar: ${MoneyFormatter.ars(amountCents)} · " +
                         "Vence el ${DateUtils.longDateLabel(current.dueDate)}" +
                         (nextClosing?.let { " · Próximo cierre: ${DateUtils.longDateLabel(it)}." } ?: "."),
-                    dedupeKey = "statement_due:${dueKey}:${current.dueDate}",
+                    dedupeKey = "statement_due:${dueKey}:${current.dueDate}:$dueStage",
+                    notifyPush = current.dueDate == today,
                 ),
             )
         }
         if (current.closingAlertEnabled && nextClosing != null) {
+            val closeStage = if (nextClosing == today) "today" else "advance"
             alertsRepository.insertIfNew(
                 NewAlert(
                     type = AlertType.CARD_DUE,
@@ -431,7 +435,8 @@ class ReceiptImportViewModel @Inject constructor(
                     title = "Próximo cierre $cardLabel: ${DateUtils.longDateLabel(nextClosing)}",
                     message = "El próximo cierre de $cardLabel es el ${DateUtils.longDateLabel(nextClosing)}. " +
                         "Resumen actual a pagar: ${MoneyFormatter.ars(amountCents)}.",
-                    dedupeKey = "statement_close:${dueKey}:$nextClosing",
+                    dedupeKey = "statement_close:${dueKey}:$nextClosing:$closeStage",
+                    notifyPush = nextClosing == today,
                 ),
             )
         }

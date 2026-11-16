@@ -107,6 +107,7 @@ class ObservePortfolioOverviewUseCase @Inject constructor(
                 fxRates = data.fx,
                 fallbackMepRate = currentSettings.fallbackMepRate,
                 quotes = data.quotes,
+                today = today,
             )
             val analytics = PortfolioAnalyticsEngine.calculate(valuation, data.snapshots, today)
             val referenceRate = MacroRiskEngine.referencePesoRate(data.wallets, data.holdings, currentSettings)

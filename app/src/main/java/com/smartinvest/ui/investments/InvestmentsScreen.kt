@@ -78,6 +78,7 @@ fun InvestmentsScreen(
     onOpenInstrumentDetail: (Long) -> Unit = {},
     onOpenRebalancing: () -> Unit = {},
     onOpenReconciliation: () -> Unit = {},
+    onOpenFundEvaluator: () -> Unit = {},
     viewModel: InvestmentsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -151,10 +152,10 @@ fun InvestmentsScreen(
                     StatTile(
                         label = "Interés mes",
                         value = Fmt.compact(overview?.valuation?.monthlyInterestCents ?: 0),
-                        caption = "TNA ponderada",
+                        caption = "Prom. × 30d",
                         accent = Amber,
                         modifier = Modifier.weight(1f),
-                        help = "Interés diario estimado × 30 días, con la TNA y variación actual.",
+                        help = "Promedio de los intereses diarios del mes multiplicado por 30 días.",
                     )
                 }
             }
@@ -184,6 +185,19 @@ fun InvestmentsScreen(
                 Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Ajuste manual y control de saldos", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            }
+        }
+
+        item {
+            OutlinedButton(
+                onClick = onOpenFundEvaluator,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+            ) {
+                Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Evaluador FCI", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             }
         }
 
@@ -344,8 +358,8 @@ private fun ValuationCard(overview: PortfolioOverview?) {
                 value = Fmt.ars(valuation?.dailyInterestCents ?: 0),
                 accent = Emerald,
                 modifier = Modifier.weight(1f),
-                help = "Estimación de un día: saldo remunerado × TNA ÷ 365, o variación " +
-                    "de la última cotización cuando el activo tiene mercado.",
+                help = "Interés del día calculado con la metodología de Intereses día a día " +
+                    "(capitalización diaria y variación de cuotapartes/mercado).",
             )
             StatTile(
                 label = "Ganancia no realizada",

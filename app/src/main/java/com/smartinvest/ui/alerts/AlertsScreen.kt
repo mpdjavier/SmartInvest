@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -46,6 +47,7 @@ import com.smartinvest.domain.model.AppAlert
 import com.smartinvest.ui.components.EmptyState
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.theme.Emerald
+import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.util.MoneyVisibility
 import com.smartinvest.ui.util.severityColor
@@ -120,12 +122,27 @@ fun AlertsScreen(
             }
         }
 
-        if (state.unreadCount > 0) {
+        if (state.unreadCount > 0 || state.readCount > 0) {
             item {
-                TextButton(onClick = viewModel::markAllRead) {
-                    Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Marcar todas como leídas")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.unreadCount > 0) {
+                        TextButton(onClick = viewModel::markAllRead) {
+                            Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Marcar todas como leídas", maxLines = 1, softWrap = false)
+                        }
+                    }
+                    if (state.readCount > 0) {
+                        TextButton(onClick = viewModel::deleteAllRead) {
+                            Icon(Icons.Rounded.DeleteOutline, null, tint = Rose, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Eliminar leídas (${state.readCount})", color = Rose, maxLines = 1, softWrap = false)
+                        }
+                    }
                 }
             }
         }
@@ -141,13 +158,21 @@ fun AlertsScreen(
             }
         } else {
             items(state.alerts, key = { it.id }) { alert ->
-                AlertCard(alert = alert, onRead = { viewModel.markRead(alert.id) })
+                AlertCard(
+                    alert = alert,
+                    onRead = { viewModel.markRead(alert.id) },
+                    onDelete = if (alert.isRead) {
+                        { viewModel.deleteRead(alert.id) }
+                    } else {
+                        null
+                    },
+                )
             }
         }
 
         item {
             Text(
-                "Las notificaciones push se envían con WorkManager y requieren permiso de notificaciones.",
+                "Las notificaciones push se envían únicamente el día del evento con WorkManager y requieren permiso de notificaciones.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -156,7 +181,11 @@ fun AlertsScreen(
 }
 
 @Composable
-private fun AlertCard(alert: AppAlert, onRead: () -> Unit) {
+private fun AlertCard(
+    alert: AppAlert,
+    onRead: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+) {
     val color = severityColor(alert.severity)
     Row(
         modifier = Modifier
@@ -214,6 +243,19 @@ private fun AlertCard(alert: AppAlert, onRead: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
             )
+        }
+        if (onDelete != null) {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.DeleteOutline,
+                    contentDescription = "Eliminar alerta leída",
+                    tint = Rose,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

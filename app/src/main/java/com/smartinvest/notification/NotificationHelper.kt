@@ -35,7 +35,8 @@ object NotificationHelper {
     }
 
     fun notifyAlerts(context: Context, alerts: List<AppAlert>, hideAmounts: Boolean = false) {
-        if (alerts.isEmpty()) return
+        val pushAlerts = alerts.filter { it.notifyPush }
+        if (pushAlerts.isEmpty()) return
         if (!notificationsAllowed(context)) return
 
         ensureChannel(context)
@@ -48,12 +49,12 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val critical = alerts.any { it.severity == AlertSeverity.CRITICAL }
-        val title = if (alerts.size == 1) alerts.first().title else "${alerts.size} alertas financieras"
+        val critical = pushAlerts.any { it.severity == AlertSeverity.CRITICAL }
+        val title = if (pushAlerts.size == 1) pushAlerts.first().title else "${pushAlerts.size} alertas financieras"
         val summary = when {
-            alerts.size > 1 -> alerts.joinToString(" · ") { it.title }
+            pushAlerts.size > 1 -> pushAlerts.joinToString(" · ") { it.title }
             hideAmounts -> "Abrí SmartInvest para ver el detalle"
-            else -> alerts.first().message
+            else -> pushAlerts.first().message
         }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -65,9 +66,9 @@ object NotificationHelper {
             .setAutoCancel(true)
             .setContentIntent(openApp)
 
-        if (alerts.size > 1) {
+        if (pushAlerts.size > 1) {
             val inbox = NotificationCompat.InboxStyle()
-            alerts.take(5).forEach { inbox.addLine(it.title) }
+            pushAlerts.take(5).forEach { inbox.addLine(it.title) }
             builder.setStyle(inbox)
         }
 

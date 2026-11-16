@@ -1,5 +1,6 @@
 package com.smartinvest.domain.engine
 
+import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
@@ -11,6 +12,8 @@ import com.smartinvest.domain.model.PortfolioValuation
 import com.smartinvest.domain.model.Wallet
 import com.smartinvest.domain.model.WalletValuation
 import com.smartinvest.domain.model.effectiveTnaPercent
+import java.time.LocalDate
+import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import kotlin.math.min
 import kotlin.math.pow
@@ -64,9 +67,36 @@ object PortfolioValuationEngine {
         fxRates: List<FxRate>,
         fallbackMepRate: Double,
         quotes: List<InstrumentQuote> = emptyList(),
+        today: LocalDate = DateUtils.today(),
     ): PortfolioValuation {
         val (mep, estimated) = mepRate(fxRates, fallbackMepRate)
         val activeWallets = wallets.filter { it.isActive }
+        val effectiveToday = if (
+            quotes.isNotEmpty() &&
+            activeWallets.none { it.balanceCents > 0L && it.effectiveTnaPercent(holdings) > 0.0 } &&
+            holdings.none { (it.tnaPercent ?: 0.0) > 0.0 } &&
+            quotes.none { YearMonth.from(it.date) == YearMonth.from(today) }
+        ) {
+            quotes.maxOf { it.date }
+        } else {
+            today
+        }
+
+        val breakdown = DailyInterestEngine.build(
+            month = YearMonth.from(effectiveToday),
+            wallets = wallets,
+            holdings = holdings,
+            fxRates = fxRates,
+            quotes = quotes,
+            fallbackMepRate = fallbackMepRate,
+            today = effectiveToday,
+        )
+        val latestDay = breakdown.days.firstOrNull { it.date == effectiveToday }
+            ?: breakdown.days.firstOrNull()
+        val lineBySourceId = latestDay?.lines
+            ?.groupBy { it.sourceId }
+            ?.mapValues { (_, items) -> items.sumOf { it.dailyArsCents } }
+            .orEmpty()
 
         val walletValuations = activeWallets.map { wallet ->
             val effectiveTna = wallet.effectiveTnaPercent(holdings)
@@ -79,16 +109,7 @@ object PortfolioValuationEngine {
                 wallet.balanceCents,
                 wallet.remuneratedCapCents,
             )
-            val dailyNative = InterestCalculator.dailyInterestCents(
-                wallet.balanceCents,
-                effectiveTna,
-                wallet.remuneratedCapCents,
-            )
-            val dailyArs = if (wallet.currency == CurrencyCode.ARS) {
-                dailyNative
-            } else {
-                (dailyNative * mep).roundToLong()
-            }
+            val dailyArs = lineBySourceId["wallet:${wallet.id}"] ?: 0L
             WalletValuation(
                 wallet = wallet,
                 valueArsCents = valueArs,
@@ -98,30 +119,13 @@ object PortfolioValuationEngine {
             )
         }
 
-        val linkedHoldingIds = activeWallets
-            .filter { it.balanceCents > 0L }
-            .mapNotNull { it.linkedHoldingId }
-            .toSet()
-
         val holdingValuations = holdings.map { holding ->
             val valueArs = if (holding.currency == CurrencyCode.ARS) {
                 holding.currentValueCents
             } else {
                 (holding.currentValueCents * mep).roundToLong()
             }
-            val dailyArs = when {
-                // A wallet linked to this holding already accrues interest on its own balance.
-                holding.id in linkedHoldingIds -> 0L
-                else -> {
-                    val marketNative = latestMarketDailyCents(holding, quotes)
-                    if (marketNative != null) {
-                        toArs(marketNative, holding.currency, mep)
-                    } else {
-                        val tna = holding.tnaPercent ?: 0.0
-                        InterestCalculator.dailyInterestCents(valueArs, tna)
-                    }
-                }
-            }
+            val dailyArs = lineBySourceId["holding:${holding.id}"] ?: 0L
             HoldingValuation(
                 holding = holding,
                 valueArsCents = valueArs,
@@ -144,7 +148,9 @@ object PortfolioValuationEngine {
         val totalUsd = if (mep > 0.0) (totalArs / mep).roundToLong() else 0L
 
         val holdingDailyInterest = holdingValuations.sumOf { it.dailyInterestCents }
-        val dailyInterest = walletValuations.sumOf { it.dailyInterestCents } + holdingDailyInterest
+        val dailyInterest = latestDay?.totalArsCents
+            ?: (walletValuations.sumOf { it.dailyInterestCents } + holdingDailyInterest)
+        val monthlyInterest = InterestCalculator.monthlyProjectionCents(breakdown.averageDailyArsCents)
 
         val cost = holdings.sumOf { holding ->
             val costNative = if (holding.costCents > 0L) holding.costCents else holding.currentValueCents
@@ -157,7 +163,7 @@ object PortfolioValuationEngine {
             arsAssetsCents = arsAssets,
             usdAssetsArsCents = usdAssetsArs,
             dailyInterestCents = dailyInterest,
-            monthlyInterestCents = InterestCalculator.monthlyProjectionCents(dailyInterest),
+            monthlyInterestCents = monthlyInterest,
             wallets = walletValuations,
             holdings = holdingValuations,
             mepRate = mep,

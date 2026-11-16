@@ -62,6 +62,10 @@ class AlertsRepositoryImpl @Inject constructor(
 
     override suspend fun markAllRead() = withContext(io) { alertDao.markAllRead() }
 
+    override suspend fun deleteRead(id: Long) = withContext(io) { alertDao.deleteRead(id) }
+
+    override suspend fun deleteAllRead() = withContext(io) { alertDao.deleteAllRead() }
+
     override suspend fun insertIfNew(alert: NewAlert): Boolean = withContext(io) {
         createAlert(alert) != null
     }
@@ -107,6 +111,16 @@ class AlertsRepositoryImpl @Inject constructor(
             val maturity = holding.maturityDate ?: return@forEach
             val days = DateUtils.daysBetween(today, maturity)
             if (days in -1..settings.maturityAlertDays.toLong()) {
+                val baseKey = "maturity:${holding.id}:${maturity}"
+                val stage = when {
+                    days < 0L -> "overdue"
+                    days == 0L -> "today"
+                    else -> "advance"
+                }
+                if (days <= 0L) {
+                    alertDao.deleteByDedupeKey(baseKey)
+                    alertDao.deleteByDedupeKey("$baseKey:advance")
+                }
                 val whenText = when {
                     days < 0 -> "venció ayer"
                     days == 0L -> "vence hoy"
@@ -119,7 +133,8 @@ class AlertsRepositoryImpl @Inject constructor(
                         title = "${holding.symbol} $whenText",
                         message = "${holding.name} (${DateUtils.longDateLabel(maturity)}). " +
                             "Valor actual ${MoneyFormatter.ars(holding.currentValueCents)}. Planificá la reinversión.",
-                        dedupeKey = "maturity:${holding.id}:${maturity}",
+                        dedupeKey = "$baseKey:$stage",
+                        notifyPush = days == 0L,
                     ),
                 )?.let(created::add)
             }
@@ -177,6 +192,12 @@ class AlertsRepositoryImpl @Inject constructor(
             val due = CardCycleResolver.nextDueDate(today, card.dueDay)
             val days = DateUtils.daysBetween(today, due)
             if (days in 0..5) {
+                val baseDueKey = "card_due:${card.id}:$due"
+                val dueStage = if (days == 0L) "today" else "advance"
+                if (days == 0L) {
+                    alertDao.deleteByDedupeKey(baseDueKey)
+                    alertDao.deleteByDedupeKey("$baseDueKey:advance")
+                }
                 createAlert(
                     NewAlert(
                         type = AlertType.CARD_DUE,
@@ -184,13 +205,20 @@ class AlertsRepositoryImpl @Inject constructor(
                         title = "${card.name} vence ${if (days == 0L) "hoy" else "en $days días"}",
                         message = "Vencimiento ${DateUtils.longDateLabel(due)} · " +
                             "cierre día ${card.closingDay}. Evitá intereses.",
-                        dedupeKey = "card_due:${card.id}:$due",
+                        dedupeKey = "$baseDueKey:$dueStage",
+                        notifyPush = days == 0L,
                     ),
                 )?.let(created::add)
             }
             val closing = CardCycleResolver.nextDueDate(today, card.closingDay)
             val daysToClose = DateUtils.daysBetween(today, closing)
             if (daysToClose in 0..5) {
+                val baseCloseKey = "card_close:${card.id}:$closing"
+                val closeStage = if (daysToClose == 0L) "today" else "advance"
+                if (daysToClose == 0L) {
+                    alertDao.deleteByDedupeKey(baseCloseKey)
+                    alertDao.deleteByDedupeKey("$baseCloseKey:advance")
+                }
                 createAlert(
                     NewAlert(
                         type = AlertType.CARD_DUE,
@@ -198,7 +226,8 @@ class AlertsRepositoryImpl @Inject constructor(
                         title = "Cierre de ${card.name} ${if (daysToClose == 0L) "hoy" else "en $daysToClose días"}",
                         message = "Próximo cierre ${DateUtils.longDateLabel(closing)} · " +
                             "vencimiento día ${card.dueDay}.",
-                        dedupeKey = "card_close:${card.id}:$closing",
+                        dedupeKey = "$baseCloseKey:$closeStage",
+                        notifyPush = daysToClose == 0L,
                     ),
                 )?.let(created::add)
             }
@@ -245,6 +274,16 @@ class AlertsRepositoryImpl @Inject constructor(
             .forEach { row ->
                 val days = row.daysUntilDue
                 if (days in -7..row.alertDaysBefore.toLong()) {
+                    val baseAgendaKey = "payment_agenda:${row.key}:${row.scheduledDate}"
+                    val stage = when {
+                        days < 0L -> "overdue"
+                        days == 0L -> "today"
+                        else -> "advance"
+                    }
+                    if (days <= 0L) {
+                        alertDao.deleteByDedupeKey(baseAgendaKey)
+                        alertDao.deleteByDedupeKey("$baseAgendaKey:advance")
+                    }
                     val whenLabel = when {
                         days < 0L -> "venció hace ${-days} día(s)"
                         days == 0L -> "vence hoy"
@@ -261,7 +300,8 @@ class AlertsRepositoryImpl @Inject constructor(
                             severity = if (days <= 0L) AlertSeverity.WARNING else AlertSeverity.INFO,
                             title = "Agenda: ${row.name} $whenLabel",
                             message = "Fecha agendada ${DateUtils.longDateLabel(row.scheduledDate)}$amountLabel.",
-                            dedupeKey = "payment_agenda:${row.key}:${row.scheduledDate}",
+                            dedupeKey = "$baseAgendaKey:$stage",
+                            notifyPush = days == 0L,
                         ),
                     )?.let(created::add)
                 }
@@ -281,7 +321,7 @@ class AlertsRepositoryImpl @Inject constructor(
             createdAt = System.currentTimeMillis(),
         )
         val id = alertDao.insert(entity)
-        return if (id > 0) entity.copy(id = id).toDomain() else null
+        return if (id > 0) entity.copy(id = id).toDomain().copy(notifyPush = alert.notifyPush) else null
     }
 
     private fun fmtRate(value: Double): String =

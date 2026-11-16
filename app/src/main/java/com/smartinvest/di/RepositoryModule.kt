@@ -4,6 +4,7 @@ import com.smartinvest.data.network.ComparatasasScraper
 import com.smartinvest.data.network.RateScraper
 import com.smartinvest.data.repository.AlertsRepositoryImpl
 import com.smartinvest.data.repository.BootstrapRepositoryImpl
+import com.smartinvest.data.repository.FundEvaluationRepositoryImpl
 import com.smartinvest.data.repository.HouseholdRepositoryImpl
 import com.smartinvest.data.repository.ImportRepositoryImpl
 import com.smartinvest.data.repository.InvestmentRepositoryImpl
@@ -12,6 +13,7 @@ import com.smartinvest.data.widget.WidgetRefresher
 import com.smartinvest.data.widget.WidgetRefresherImpl
 import com.smartinvest.domain.repository.AlertsRepository
 import com.smartinvest.domain.repository.BootstrapRepository
+import com.smartinvest.domain.repository.FundEvaluationRepository
 import com.smartinvest.domain.repository.HouseholdRepository
 import com.smartinvest.domain.repository.ImportRepository
 import com.smartinvest.domain.repository.InvestmentRepository
@@ -37,6 +39,12 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFundEvaluationRepository(
+        impl: FundEvaluationRepositoryImpl,
+    ): FundEvaluationRepository
 
     @Binds
     @Singleton

@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **95 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **121 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -66,6 +66,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - **Rebalanceo elástico 60/40** con banda de tolerancia configurable: **tanto los CEDEARs (`SPY`) como los bonos soberanos (`AO27` y `AO27D`) y FCI en dólares (`MP-USD`) se computan como exposición en dólares aunque estén valuados en pesos**, ya que mantienen su valor en moneda dura.
 - **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 14/11/2026 en 1 toque, y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
 - **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
+- **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): compara el universo Eco Valores o **las 2.300+ clases del catálogo completo**, con la rentabilidad y la estabilidad como parámetros independientes. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. En el seguimiento las métricas salen de la serie diaria en ventanas de 30/90/180/365 días; en el catálogo completo se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
 - Planificador de sueldo y simulador de rescate de emergencia.
 
 ### Importación desde SplitHome
@@ -179,6 +180,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `receipt_import/{receiptPath}` | Importación de comprobantes PDF/texto (quita «Pago de», categoría Servicios y rescate en FCI billetera) |
 | `holding_editor/{holdingId}` | Activo (alta/edición, valuación manual fija en ARS/USD, sumar/retirar aportes e importador `.xlsx`/`.xls`/`.csv` de brókers) |
 | `portfolio_reconciliation` | Ajuste manual de saldos en ARS y USD, carga de lista por texto y verificación de cálculos/evolución |
+| `fund_evaluator` | Evaluador FCI con rentabilidad y estabilidad configurables: seguimiento o catálogo completo, orden por rentabilidad/estabilidad/caída/volatilidad, piso de estabilidad, referencia Adcap Balanceado III, simulador y buscador |
 | `analytics` | Analítica de cartera |
 | `salary` | Repartir sueldo |
 | `emergency` | Rescate de emergencia |
@@ -563,6 +565,7 @@ En el primer arranque se crean:
 - **Comparatasas.ar** con Jsoup para TNA de billeteras. El scraping es *best-effort*: si el sitio cambia, se conservan las tasas manuales.
 - **Rava Bursátil** (`https://www.rava.com/perfil/{TICKER}`) para precio actual y tabla de cierres históricos de letras, bonos y CEDEARs (`S30N6`, `AO27D`, `SPY`, etc.).
 - **CAFCI** (`https://estadisticas.cafci.org.ar/fondos/{FONDO}?clase={CLASE}`) para valor de cuotaparte y rendimientos históricos de FCI (ej. Adcap Balanceado III `1402/4070`, Mercado Fondo ARS `798/1982`, Mercado Fondo USD `1522/4557`).
+- **compararfondos.com.ar** (`https://compararfondos.com.ar/api/fondos` y `/api/fondo/{clase}`) para el catálogo completo y la serie diaria de cuotapartes del evaluador de estabilidad. API pública, sin clave, con atribución obligatoria a compararfondos.com.ar (datos CAFCI/CNV).
 
 ---
 
@@ -641,7 +644,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**95 tests, 0 fallos**) con JDK 17 y Android SDK 35. Los APK de debug (~29,1 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**121 tests, 0 fallos, 18 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,1 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -673,6 +676,9 @@ Tests unitarios JVM (sin emulador):
 | `SplitHomeParserTest` | hojas Gastos/Fondo, pagadores, cuotas, fechas y totales |
 | `ExpenseReportEngineTest` | búsqueda por texto/categoría/medio/integrante, totales y promedios, agrupaciones, top de gastos y exportación CSV con escape |
 | `FormattersTest` | enmascarado de montos en modo privacidad (ARS/USD/compactos/firmados) y restauración al desactivarlo |
+| `FundStabilityEngineTest` | retorno, volatilidad anualizada, máxima caída, peor/mejor día y ratio de días positivos; recorte por ventana; score y tiers; ranking por estabilidad/rentabilidad/caída/volatilidad; umbral mínimo de estabilidad; filtros; evaluación del catálogo por horizonte (7d/30d/12m), clases sin datos a 90 días y ranking completo por rentabilidad; comparación contra Adcap Balanceado III y simulación con la serie real |
+| `FundComparisonClientTest` | parseo del catálogo de compararfondos (nombre, gestora, tipo, moneda, métricas a 30/365 días) y de la serie diaria (`history`), orden, descarte de puntos inválidos y respuesta vacía |
+| `FundWatchlistCodecTest` | persistencia JSON del seguimiento, deduplicación, lista vacía explícita y JSON inválido |
 
 ---
 

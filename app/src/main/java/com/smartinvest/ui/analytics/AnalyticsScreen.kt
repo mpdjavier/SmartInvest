@@ -153,7 +153,7 @@ fun AnalyticsScreen(
                 )
                 ThinDivider()
                 KeyValueRow("Interés estimado por día", Fmt.ars(overview?.analytics?.dailyInterestCents ?: 0), valueColor = Emerald, strong = true)
-                KeyValueRow("Proyección mensual", Fmt.ars(overview?.analytics?.monthlyInterestCents ?: 0), valueColor = Emerald)
+                KeyValueRow("Interés por mes (prom. × 30)", Fmt.ars(overview?.analytics?.monthlyInterestCents ?: 0), valueColor = Emerald)
                 KeyValueRow(
                     "Ganancia últimos 30 días",
                     Fmt.signedArs(overview?.analytics?.trailing30dGainCents ?: 0),

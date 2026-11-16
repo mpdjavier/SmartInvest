@@ -1,5 +1,6 @@
 package com.smartinvest.domain.engine
 
+import com.smartinvest.data.mapper.toDomain
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
@@ -199,7 +200,13 @@ class PortfolioValuationTest {
                 notes = "",
             ),
         )
-        val valuation = PortfolioValuationEngine.calculate(emptyList(), holdings, emptyList(), 1_000.0)
+        val valuation = PortfolioValuationEngine.calculate(
+            wallets = emptyList(),
+            holdings = holdings,
+            fxRates = emptyList(),
+            fallbackMepRate = 1_000.0,
+            today = LocalDate.of(2026, 11, 1),
+        )
         assertEquals(1_000_00L, valuation.dailyInterestCents)
     }
 
@@ -219,7 +226,13 @@ class PortfolioValuationTest {
         )
         val wallets = listOf(wallet(1, 1_000_000, 0.0).copy(linkedHoldingId = 7))
 
-        val valuation = PortfolioValuationEngine.calculate(wallets, listOf(fci), emptyList(), 1_000.0)
+        val valuation = PortfolioValuationEngine.calculate(
+            wallets = wallets,
+            holdings = listOf(fci),
+            fxRates = emptyList(),
+            fallbackMepRate = 1_000.0,
+            today = LocalDate.of(2026, 11, 1),
+        )
 
         // 1.000.000 cents at 36,5% = 1.000 cents/day from the wallet only.
         assertEquals(36.5, valuation.wallets.first().effectiveTnaPercent, 0.001)
@@ -350,6 +363,111 @@ class PortfolioValuationTest {
 
         // (101 - 100) × 0,01 × 10.000 × 100 = 10.000 cents = $ 100.
         assertEquals(10_000L, valuation.holdings.first().dailyInterestCents)
+    }
+
+    @Test
+    fun `daily interest matches DailyInterestEngine and monthly projection uses average daily times 30`() {
+        val today = LocalDate.of(2026, 11, 16)
+        val wallets = listOf(wallet(1, 2_000_000_00L, 36.5))
+        val fci = Holding(
+            id = 10,
+            symbol = "ADCAP-BAL3",
+            name = "Adcap Balanceado III",
+            assetType = AssetType.FCI,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 5_000_000_00L,
+            costCents = 4_800_000_00L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "",
+            marketKey = "cafci:1402:4070",
+            source = MarketSource.CAFCI,
+            quantity = 0.0,
+            quoteUnit = QuoteUnit.PER_UNIT,
+        )
+        val spy = Holding(
+            id = 11,
+            symbol = "SPY",
+            name = "SPDR S&P 500 CEDEAR",
+            assetType = AssetType.CEDEAR,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 14_185_920_00L,
+            costCents = 13_991_040_00L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "",
+            marketKey = "rava:SPY",
+            source = MarketSource.RAVA,
+            quantity = 672.0,
+            quoteUnit = QuoteUnit.PER_UNIT,
+        )
+        val quotes = listOf(
+            quote("cafci:1402:4070", "ADCAP-BAL3", 100.0, LocalDate.of(2026, 11, 1)).copy(
+                source = MarketSource.CAFCI,
+                quoteUnit = QuoteUnit.PER_UNIT,
+            ),
+            quote("cafci:1402:4070", "ADCAP-BAL3", 101.5, LocalDate.of(2026, 11, 13)).copy(
+                source = MarketSource.CAFCI,
+                quoteUnit = QuoteUnit.PER_UNIT,
+            ),
+            // SPY only traded on Nov 10 -> Nov 11, not on Nov 16.
+            quote("rava:SPY", "SPY", 20820.0, LocalDate.of(2026, 11, 10)).copy(quoteUnit = QuoteUnit.PER_UNIT),
+            quote("rava:SPY", "SPY", 21110.0, LocalDate.of(2026, 11, 11)).copy(quoteUnit = QuoteUnit.PER_UNIT),
+        )
+
+        val valuation = PortfolioValuationEngine.calculate(
+            wallets = wallets,
+            holdings = listOf(fci, spy),
+            fxRates = emptyList(),
+            fallbackMepRate = 1_000.0,
+            quotes = quotes,
+            today = today,
+        )
+        val breakdown = DailyInterestEngine.build(
+            month = java.time.YearMonth.from(today),
+            wallets = wallets,
+            holdings = listOf(fci, spy),
+            fxRates = emptyList(),
+            quotes = quotes,
+            fallbackMepRate = 1_000.0,
+            today = today,
+        )
+        val todayRow = breakdown.days.first { it.date == today }
+
+        // Daily interest in Inicio/Cartera matches the exact today row in Intereses día a día.
+        assertEquals(todayRow.totalArsCents, valuation.dailyInterestCents)
+        // Monthly interest is average of daily interests × 30, not today's single-day interest × 30.
+        assertEquals(breakdown.averageDailyArsCents * 30L, valuation.monthlyInterestCents)
+        assertTrue(valuation.monthlyInterestCents != valuation.dailyInterestCents * 30L)
+    }
+
+    @Test
+    fun `alert push flag is only enabled for event day alerts and not advance or overdue`() {
+        val advance = com.smartinvest.data.local.entity.AlertEntity(
+            id = 1,
+            type = com.smartinvest.domain.model.AlertType.PAYMENT_DUE,
+            severity = com.smartinvest.domain.model.AlertSeverity.INFO,
+            title = "Agenda: Luz vence en 3 día(s)",
+            message = "Fecha agendada 19/11/2026.",
+            dedupeKey = "payment_agenda:luz:2026-11-19:advance",
+            createdAt = 1_000L,
+        )
+        val todayAlert = advance.copy(
+            id = 2,
+            severity = com.smartinvest.domain.model.AlertSeverity.WARNING,
+            title = "Agenda: Luz vence hoy",
+            dedupeKey = "payment_agenda:luz:2026-11-19:today",
+        )
+        val overdue = advance.copy(
+            id = 3,
+            severity = com.smartinvest.domain.model.AlertSeverity.WARNING,
+            title = "Agenda: Luz venció hace 1 día(s)",
+            dedupeKey = "payment_agenda:luz:2026-11-19:overdue",
+        )
+
+        assertFalse(advance.toDomain().notifyPush)
+        assertTrue(todayAlert.toDomain().notifyPush)
+        assertFalse(overdue.toDomain().notifyPush)
     }
 
     private fun quote(

@@ -251,6 +251,13 @@ fun DailyInterestScreen(
                             "en el período seleccionado.",
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+                KeyValueRow(
+                    "Interés por mes (promedio × 30)",
+                    Fmt.signedArs((breakdown?.averageDailyArsCents ?: 0L) * 30L),
+                    valueColor = signedColor(breakdown?.averageDailyArsCents ?: 0L),
+                    strong = true,
+                )
             }
         }
 

@@ -54,6 +54,8 @@ data class AppSettings(
     val hideAmounts: Boolean = false,
     /** Serialized JSON list of user-configured/modified payment agenda items. */
     val paymentAgendaJson: String = "",
+    /** Serialized JSON list of FCI class names followed in the stability evaluator. */
+    val fundWatchlistJson: String = "",
 ) {
     val previousCarryBand: CarryRiskBand?
         get() = previousCarryBandName

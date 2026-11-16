@@ -149,4 +149,5 @@ fun AlertEntity.toDomain(): AppAlert = AppAlert(
     dedupeKey = dedupeKey,
     createdAt = createdAt,
     isRead = isRead,
+    notifyPush = !dedupeKey.endsWith(":advance") && !dedupeKey.endsWith(":overdue"),
 )

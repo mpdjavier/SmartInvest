@@ -16,6 +16,7 @@ import javax.inject.Inject
 data class AlertsUiState(
     val alerts: List<AppAlert> = emptyList(),
     val unreadCount: Int = 0,
+    val readCount: Int = 0,
     val filter: AlertType? = null,
     val isScanning: Boolean = false,
     val message: String? = null,
@@ -37,9 +38,11 @@ class AlertsViewModel @Inject constructor(
         scanning,
         message,
     ) { alerts, unread, typeFilter, isScanning, msg ->
+        val filtered = if (typeFilter == null) alerts else alerts.filter { it.type == typeFilter }
         AlertsUiState(
-            alerts = if (typeFilter == null) alerts else alerts.filter { it.type == typeFilter },
+            alerts = filtered,
             unreadCount = unread,
+            readCount = alerts.count { it.isRead },
             filter = typeFilter,
             isScanning = isScanning,
             message = msg,
@@ -59,6 +62,22 @@ class AlertsViewModel @Inject constructor(
             runCatching { repository.markAllRead() }
                 .onSuccess { message.value = "Todas las alertas marcadas como leídas." }
                 .onFailure { message.value = it.message ?: "No se pudo actualizar" }
+        }
+    }
+
+    fun deleteRead(id: Long) {
+        viewModelScope.launch {
+            runCatching { repository.deleteRead(id) }
+                .onSuccess { message.value = "Alerta eliminada." }
+                .onFailure { message.value = it.message ?: "No se pudo eliminar" }
+        }
+    }
+
+    fun deleteAllRead() {
+        viewModelScope.launch {
+            runCatching { repository.deleteAllRead() }
+                .onSuccess { message.value = "Alertas leídas eliminadas." }
+                .onFailure { message.value = it.message ?: "No se pudo eliminar" }
         }
     }
 

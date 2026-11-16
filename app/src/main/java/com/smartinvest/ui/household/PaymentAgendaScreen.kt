@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -678,8 +679,18 @@ private fun PaymentAgendaRowCard(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Rounded.DeleteOutline,
@@ -690,14 +701,14 @@ private fun PaymentAgendaRowCard(
             TextButton(onClick = onEdit) {
                 Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Modificar")
+                Text("Modificar", maxLines = 1, softWrap = false)
             }
             if (!row.isPaid) {
                 Spacer(Modifier.width(4.dp))
                 Button(onClick = onPay) {
                     Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Pagar")
+                    Text("Pagar", maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -750,7 +761,7 @@ private fun AgendaEditDialog(
                     Column(Modifier.weight(1f)) {
                         Text("Alerta de vencimiento", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "Genera aviso en Alertas y al escanear vencimientos",
+                            "Aviso en Alertas y notificación push únicamente el día del vencimiento",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

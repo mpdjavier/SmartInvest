@@ -60,6 +60,7 @@ class WidgetDataLoader @Inject constructor(
             fxRates = fxRates,
             fallbackMepRate = currentSettings.fallbackMepRate,
             quotes = quotes,
+            today = today,
         )
 
         val members = memberDao.observeAll().first().map { it.toDomain() }
