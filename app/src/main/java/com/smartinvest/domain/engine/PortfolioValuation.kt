@@ -37,13 +37,17 @@ object InterestCalculator {
 object PortfolioValuationEngine {
 
     /**
-     * CEDEARs represent foreign equities and move with USD even when quoted in ARS,
-     * so they count in the dollar exposure bucket for the 60/40 rebalance.
+     * CEDEARs (e.g. SPY) represent foreign equities and sovereign bonds (e.g. AO27 / AO27D)
+     * maintain their value in USD even when quoted or held in ARS, so they count in the
+     * dollar exposure bucket for the 60/40 rebalance.
      */
     fun isDollarExposure(holding: Holding): Boolean =
         holding.currency == CurrencyCode.USD ||
             holding.assetType == AssetType.CEDEAR ||
-            holding.assetType == AssetType.DOLAR_MEP
+            holding.assetType == AssetType.BOND ||
+            holding.assetType == AssetType.DOLAR_MEP ||
+            holding.symbol.trim().uppercase().endsWith("USD") ||
+            holding.marketKey.trim().equals("cafci:1522:4557", ignoreCase = true)
 
     fun mepRate(rates: List<FxRate>, fallback: Double): Pair<Double, Boolean> {
         val mep = rates.firstOrNull { it.house == "bolsa" }

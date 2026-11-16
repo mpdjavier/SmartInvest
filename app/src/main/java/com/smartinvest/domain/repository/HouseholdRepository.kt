@@ -2,12 +2,14 @@ package com.smartinvest.domain.repository
 
 import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.ExpensePaymentMethod
+import com.smartinvest.domain.model.ExpenseRecord
 import com.smartinvest.domain.model.FundMovement
 import com.smartinvest.domain.model.FundMovementType
 import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.model.MonthlyExpenseItem
 import com.smartinvest.domain.model.RegisteredSettlement
+import com.smartinvest.domain.model.YearMonthRange
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.YearMonth
@@ -65,6 +67,10 @@ interface HouseholdRepository {
     fun observeCategories(includeArchived: Boolean = true): Flow<List<HouseholdCategory>>
     fun observeCards(includeInactive: Boolean = true): Flow<List<CreditCard>>
     fun observeMonthlyExpenses(month: YearMonth): Flow<List<MonthlyExpenseItem>>
+    /** Every expense occurrence (installments included) that impacts [range]. */
+    fun observeExpenseRecords(range: YearMonthRange): Flow<List<ExpenseRecord>>
+    /** Distinct descriptions already used, most recent first, for autocomplete. */
+    fun observeExpenseDescriptions(): Flow<List<String>>
     fun observeFundMovements(month: YearMonth): Flow<List<FundMovement>>
     fun observeSettlements(month: YearMonth): Flow<List<RegisteredSettlement>>
     fun observeFundBalance(): Flow<Long>

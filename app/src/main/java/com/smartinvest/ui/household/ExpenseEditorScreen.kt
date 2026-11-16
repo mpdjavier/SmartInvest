@@ -1,7 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.smartinvest.ui.household
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -68,6 +72,21 @@ fun ExpenseEditorScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val form = state.form
     val data = state.data
+    val descriptionQuery = form.description.trim()
+    val descriptionSuggestions = remember(descriptionQuery, data.previousDescriptions) {
+        if (descriptionQuery.length < 2) {
+            emptyList()
+        } else {
+            data.previousDescriptions
+                .asSequence()
+                .filter {
+                    it.contains(descriptionQuery, ignoreCase = true) &&
+                        !it.equals(descriptionQuery, ignoreCase = true)
+                }
+                .take(5)
+                .toList()
+        }
+    }
 
     var showDatePicker by remember { mutableStateOf(false) }
 
@@ -148,6 +167,28 @@ fun ExpenseEditorScreen(
             singleLine = true,
             shape = MaterialTheme.shapes.medium,
         )
+
+        if (descriptionSuggestions.isNotEmpty()) {
+            Column {
+                Text(
+                    "Sugerencias de gastos anteriores",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    descriptionSuggestions.forEach { suggestion ->
+                        AssistChip(
+                            onClick = { viewModel.setDescription(suggestion) },
+                            label = { Text(suggestion, maxLines = 1) },
+                        )
+                    }
+                }
+            }
+        }
 
         AmountInput(
             value = form.amountText,

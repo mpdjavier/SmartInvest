@@ -154,7 +154,7 @@ class ImportRepositoryImpl @Inject constructor(
             val method = when {
                 row.payer == SplitHomePayer.FUND -> ExpensePaymentMethod.COMMON_FUND
                 row.isInstallmentPurchase -> ExpensePaymentMethod.CREDIT
-                else -> ExpensePaymentMethod.DEBIT
+                else -> ExpensePaymentMethod.CASH
             }
             val paidBy = if (row.payer == SplitHomePayer.SECONDARY) secondary.id else primary.id
             val firstMonth = if (method == ExpensePaymentMethod.CREDIT) {

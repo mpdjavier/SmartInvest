@@ -3,6 +3,7 @@ package com.smartinvest.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,12 +20,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -66,7 +69,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.smartinvest.ui.theme.Amber
 import com.smartinvest.ui.theme.Emerald
+import com.smartinvest.ui.theme.Hairline
 import com.smartinvest.ui.theme.Outline
+import com.smartinvest.ui.theme.PlexMono
 import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import kotlin.math.abs
@@ -82,7 +87,8 @@ fun SmartCard(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.padding(contentPadding), content = content)
     }
@@ -95,27 +101,118 @@ fun SectionHeader(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)? = null,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            if (subtitle != null) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
                 Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    title.uppercase(),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.14.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (action != null) {
+                action()
+            } else if (actionLabel != null && onAction != null) {
+                TextButton(onClick = onAction) {
+                    Text(actionLabel.uppercase(), style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
-        if (actionLabel != null && onAction != null) {
-            TextButton(onClick = onAction) {
-                Text(actionLabel, color = MaterialTheme.colorScheme.primary)
-            }
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 9.dp),
+            color = Amber.copy(alpha = 0.45f),
+        )
+    }
+}
+
+/**
+ * Small "?" affordance that opens a short explanation. Uses a compact 18 dp target
+ * so adding it next to a tile label never changes the header height or vertical alignment.
+ */
+@Composable
+fun HelpHint(
+    text: String,
+    modifier: Modifier = Modifier,
+    contentDescription: String = "Más información",
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clip(CircleShape)
+                .clickable { expanded = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.HelpOutline,
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            Text(
+                text,
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
+}
+
+/**
+ * Large single-line currency / total figure that scales its font size automatically
+ * so long amounts (e.g. `+ $ 5.123.456,78` or `$ 130.236.245,49`) never wrap into
+ * multiple lines or split the currency symbol from the number.
+ */
+@Composable
+fun HeroAmountText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    val fontSize = when {
+        text.length >= 19 -> 17.sp
+        text.length >= 16 -> 19.5.sp
+        text.length >= 13 -> 22.5.sp
+        else -> 26.sp
+    }
+    Text(
+        text = text,
+        modifier = modifier,
+        style = MaterialTheme.typography.headlineLarge.copy(
+            fontFamily = PlexMono,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = fontSize,
+            lineHeight = (fontSize.value + 5f).sp,
+            letterSpacing = (-0.5).sp,
+        ),
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -125,27 +222,62 @@ fun StatTile(
     modifier: Modifier = Modifier,
     caption: String? = null,
     accent: Color = MaterialTheme.colorScheme.primary,
+    help: String? = null,
 ) {
+    val valueFontSize = when {
+        value.length >= 16 -> 12.5.sp
+        value.length >= 13 -> 14.sp
+        value.length >= 10 -> 15.5.sp
+        else -> 17.sp
+    }
     Column(modifier) {
-        Text(
-            label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            value,
-            style = MaterialTheme.typography.titleLarge,
-            color = accent,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label.uppercase(),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (help != null) {
+                Spacer(Modifier.width(3.dp))
+                HelpHint(help)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier.height(24.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                value,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontFamily = PlexMono,
+                    fontSize = valueFontSize,
+                    lineHeight = 20.sp,
+                    letterSpacing = (-0.3).sp,
+                ),
+                color = accent,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (caption != null) {
+            Spacer(Modifier.height(2.dp))
             Text(
                 caption,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -156,12 +288,13 @@ fun StatTile(
 fun MetricPill(text: String, color: Color, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
-        shape = CircleShape,
-        color = color.copy(alpha = 0.14f),
+        shape = MaterialTheme.shapes.small,
+        color = color.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.45f)),
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelMedium,
             color = color,
             maxLines = 1,
@@ -179,8 +312,9 @@ fun MonthSelector(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
@@ -190,20 +324,20 @@ fun MonthSelector(
                 Icon(
                     Icons.Rounded.ChevronLeft,
                     contentDescription = "Mes anterior",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = Amber,
                 )
             }
             Text(
-                text = label,
+                text = label.uppercase(),
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
             )
             IconButton(onClick = onNext, modifier = Modifier.size(38.dp)) {
                 Icon(
                     Icons.Rounded.ChevronRight,
                     contentDescription = "Mes siguiente",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = Amber,
                 )
             }
         }
@@ -459,16 +593,17 @@ fun InfoBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(color.copy(alpha = 0.1f))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .clip(MaterialTheme.shapes.small)
+            .background(color.copy(alpha = 0.08f))
+            .border(1.dp, color.copy(alpha = 0.35f), MaterialTheme.shapes.small)
+            .padding(horizontal = 11.dp, vertical = 9.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Icon(
             Icons.Rounded.Info,
             contentDescription = null,
             tint = color,
-            modifier = Modifier.size(17.dp),
+            modifier = Modifier.size(16.dp),
         )
         Spacer(Modifier.width(8.dp))
         Text(text, style = MaterialTheme.typography.bodySmall, color = color)
@@ -483,18 +618,19 @@ fun LinearBar(
     trackColor: Color = Outline,
     height: Int = 8,
 ) {
+    val barShape = MaterialTheme.shapes.extraSmall
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(height.dp)
-            .clip(CircleShape)
+            .clip(barShape)
             .background(trackColor.copy(alpha = 0.7f)),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .fillMaxWidth(fraction.coerceIn(0f, 1f))
-                .clip(CircleShape)
+                .clip(barShape)
                 .background(color),
         )
     }
@@ -516,16 +652,26 @@ fun KeyValueRow(
     ) {
         Text(
             label,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 10.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Text(
             value,
-            style = if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+            style = (if (strong) {
+                MaterialTheme.typography.titleSmall
+            } else {
+                MaterialTheme.typography.bodyMedium
+            }).copy(fontFamily = PlexMono),
             color = valueColor,
             fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal,
             textAlign = TextAlign.End,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
@@ -534,7 +680,7 @@ fun KeyValueRow(
 fun ThinDivider(modifier: Modifier = Modifier) {
     HorizontalDivider(
         modifier = modifier.padding(vertical = 10.dp),
-        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+        color = MaterialTheme.colorScheme.outlineVariant,
     )
 }
 
@@ -543,11 +689,12 @@ fun TagPill(text: String, color: Color, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.small,
-        color = color.copy(alpha = 0.14f),
+        color = color.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.40f)),
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
             color = color,
             maxLines = 1,
@@ -570,7 +717,7 @@ fun PortfolioChart(
         repeat(3) { index ->
             val y = height * (index + 1) / 4f
             drawLine(
-                color = Outline.copy(alpha = 0.45f),
+                color = Hairline,
                 start = Offset(0f, y),
                 end = Offset(width, y),
                 strokeWidth = 1f,
@@ -613,7 +760,7 @@ fun PortfolioChart(
         drawPath(
             path = area,
             brush = Brush.verticalGradient(
-                colors = listOf(lineColor.copy(alpha = 0.30f), lineColor.copy(alpha = 0.01f)),
+                colors = listOf(lineColor.copy(alpha = 0.22f), lineColor.copy(alpha = 0.01f)),
                 startY = 0f,
                 endY = height,
             ),
@@ -621,7 +768,7 @@ fun PortfolioChart(
         drawPath(
             path = line,
             color = lineColor,
-            style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round),
+            style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
         )
         drawCircle(lineColor, radius = 3.5.dp.toPx(), center = pointAt(values.lastIndex))
     }
@@ -632,15 +779,17 @@ fun IconBubble(
     icon: ImageVector,
     tint: Color,
     modifier: Modifier = Modifier,
-    background: Color = tint.copy(alpha = 0.14f),
+    background: Color = tint.copy(alpha = 0.12f),
 ) {
+    val bubbleShape = MaterialTheme.shapes.small
     Box(
         modifier = modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(background),
+            .size(34.dp)
+            .clip(bubbleShape)
+            .background(background)
+            .border(1.dp, tint.copy(alpha = 0.30f), bubbleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
     }
 }

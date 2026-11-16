@@ -1,6 +1,8 @@
 package com.smartinvest.ui.dashboard
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,15 +24,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Savings
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,8 +52,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartinvest.core.time.DateUtils
@@ -56,6 +66,8 @@ import com.smartinvest.domain.model.HouseholdSummary
 import com.smartinvest.domain.model.MemberSettlement
 import com.smartinvest.domain.model.PerformanceWindow
 import com.smartinvest.domain.usecase.PortfolioOverview
+import com.smartinvest.ui.components.HelpHint
+import com.smartinvest.ui.components.HeroAmountText
 import com.smartinvest.ui.components.IconBubble
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.components.LinearBar
@@ -68,6 +80,7 @@ import com.smartinvest.ui.components.ThinDivider
 import com.smartinvest.ui.theme.Amber
 import com.smartinvest.ui.theme.Emerald
 import com.smartinvest.ui.theme.EmeraldSoft
+import com.smartinvest.ui.theme.PlexMono
 import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.util.Fmt
@@ -87,6 +100,9 @@ fun DashboardScreen(
     onOpenSalary: () -> Unit,
     onOpenEmergency: () -> Unit,
     onOpenAnalytics: () -> Unit,
+    onOpenExpenseSearch: () -> Unit = {},
+    onOpenExpenseReport: () -> Unit = {},
+    onOpenPortfolioReconciliation: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -106,14 +122,35 @@ fun DashboardScreen(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        "Hoy · ${Fmt.longDate(DateUtils.today())}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Emerald),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "EN VIVO · ${Fmt.longDate(DateUtils.today()).uppercase()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         "Tu panorama financiero",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                }
+                IconButton(onClick = viewModel::togglePrivacy) {
+                    Icon(
+                        if (state.hideAmounts) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = if (state.hideAmounts) {
+                            "Mostrar cifras"
+                        } else {
+                            "Ocultar cifras"
+                        },
+                        tint = if (state.hideAmounts) Amber else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = viewModel::refresh, enabled = !state.isRefreshing) {
@@ -151,30 +188,40 @@ fun DashboardScreen(
 
         item {
             state.overview?.let { overview ->
-                // FlowRow keeps every figure complete: when the three tiles do not fit on
-                // one line they wrap instead of ellipsizing "Interés / día".
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    StatTile(
-                        label = "Interés / día",
-                        value = Fmt.ars(overview.analytics.dailyInterestCents),
-                        caption = "TNA ponderada",
-                        accent = EmeraldSoft,
-                    )
-                    StatTile(
-                        label = "Proyección mes",
-                        value = Fmt.ars(overview.analytics.monthlyInterestCents),
-                        caption = "30 días",
-                        accent = Sky,
-                    )
-                    StatTile(
-                        label = "Ganancia 30d",
-                        value = Fmt.signedArs(overview.analytics.trailing30dGainCents),
-                        caption = "${Fmt.signedArs(overview.analytics.trailing30dGainPerDayCents)} / día",
-                        accent = if (overview.analytics.trailing30dGainCents >= 0) Emerald else Rose,
-                    )
+                SmartCard {
+                    SectionHeader(title = "Flujo estimado", subtitle = "Tasas y proyecciones")
+                    Spacer(Modifier.height(12.dp))
+                    // FlowRow keeps every figure complete: when the three tiles do not fit on
+                    // one line they wrap instead of ellipsizing "Interés / día".
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        StatTile(
+                            label = "Interés / día",
+                            value = Fmt.ars(overview.analytics.dailyInterestCents),
+                            caption = "TNA ponderada",
+                            accent = EmeraldSoft,
+                            help = "Estimación de un día: saldo remunerado × TNA ÷ 365. " +
+                                "En Intereses día a día el saldo se capitaliza con los intereses previos.",
+                        )
+                        StatTile(
+                            label = "Proyección mes",
+                            value = Fmt.ars(overview.analytics.monthlyInterestCents),
+                            caption = "30 días",
+                            accent = Sky,
+                            help = "Interés diario estimado × 30 días. Es una proyección simple, " +
+                                "sin reinvertir los intereses de cada día.",
+                        )
+                        StatTile(
+                            label = "Ganancia 30d",
+                            value = Fmt.signedArs(overview.analytics.trailing30dGainCents),
+                            caption = "${Fmt.signedArs(overview.analytics.trailing30dGainPerDayCents)} / día",
+                            accent = if (overview.analytics.trailing30dGainCents >= 0) Emerald else Rose,
+                            help = "Variación del patrimonio en los últimos 30 días según los " +
+                                "snapshots diarios. Incluye rendimiento y cambios de valuación.",
+                        )
+                    }
                 }
             }
         }
@@ -208,7 +255,7 @@ fun DashboardScreen(
 
         item {
             SmartCard {
-                Text("Acciones rápidas", style = MaterialTheme.typography.titleMedium)
+                SectionHeader(title = "Acciones rápidas")
                 Spacer(Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -239,6 +286,21 @@ fun DashboardScreen(
                         label = { Text("Analítica") },
                         leadingIcon = { Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(17.dp)) },
                     )
+                    AssistChip(
+                        onClick = onOpenExpenseSearch,
+                        label = { Text("Buscar gastos") },
+                        leadingIcon = { Icon(Icons.Rounded.Search, null, modifier = Modifier.size(17.dp)) },
+                    )
+                    AssistChip(
+                        onClick = onOpenExpenseReport,
+                        label = { Text("Reportes") },
+                        leadingIcon = { Icon(Icons.Rounded.Description, null, modifier = Modifier.size(17.dp)) },
+                    )
+                    AssistChip(
+                        onClick = onOpenPortfolioReconciliation,
+                        label = { Text("Ajustar saldos") },
+                        leadingIcon = { Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(17.dp)) },
+                    )
                 }
             }
         }
@@ -254,6 +316,7 @@ fun DashboardScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeroCard(
     overview: PortfolioOverview?,
@@ -261,33 +324,43 @@ private fun HeroCard(
     isRefreshing: Boolean,
 ) {
     val valuation = overview?.valuation
-    SmartCard {
+    SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "PATRIMONIO TOTAL",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.14.sp,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.weight(1f))
             MetricPill(
                 text = if (valuation?.mepIsEstimated == true) "MEP estimado" else "MEP en vivo",
-                color = if (valuation?.mepIsEstimated == true) Amber else Sky,
+                color = if (valuation?.mepIsEstimated == true) Amber else Emerald,
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            Fmt.ars(valuation?.totalArsCents ?: 0),
-            style = MaterialTheme.typography.headlineLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 9.dp),
+            color = Amber.copy(alpha = 0.45f),
+        )
+        Spacer(Modifier.height(10.dp))
+        HeroAmountText(
+            text = Fmt.ars(valuation?.totalArsCents ?: 0),
         )
         Text(
             "${Fmt.usd(valuation?.totalUsdCents ?: 0)} · MEP ${Fmt.ars(((valuation?.mepRate ?: 0.0) * 100).roundToLong())}",
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = com.smartinvest.ui.theme.PlexMono),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             val change30 = overview?.analytics?.change30d?.percent
             MetricPill(
                 text = "30d ${Fmt.signedPercent(change30)}",
@@ -302,10 +375,16 @@ private fun HeroCard(
                 color = EmeraldSoft,
             )
             if (valuation?.unrealizedGainCents != null) {
-                MetricPill(
-                    text = "Valor ${Fmt.signedArs(valuation.unrealizedGainCents)}",
-                    color = if (valuation.unrealizedGainCents >= 0) Emerald else Rose,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MetricPill(
+                        text = "No realizada ${Fmt.signedArs(valuation.unrealizedGainCents)}",
+                        color = if (valuation.unrealizedGainCents >= 0) Emerald else Rose,
+                    )
+                    HelpHint(
+                        "Ganancia no realizada: diferencia entre el valor actual de tus activos " +
+                            "y lo que pagaste por ellos. No es plata cobrada hasta que vendas.",
+                    )
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -380,18 +459,19 @@ private fun WindowPill(window: PerformanceWindow?, modifier: Modifier = Modifier
     }
     Column(
         modifier = modifier
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+            .padding(horizontal = 9.dp, vertical = 7.dp),
     ) {
         Text(
-            window?.label ?: "—",
+            (window?.label ?: "—").uppercase(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             Fmt.signedPercent(window?.percent),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(fontFamily = PlexMono),
             color = color,
         )
     }
@@ -523,18 +603,21 @@ private fun DollarCard(rates: List<FxRate>) {
             ) {
                 shown.forEach { rate ->
                     Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     ) {
-                        Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                        Column(Modifier.padding(horizontal = 11.dp, vertical = 8.dp)) {
                             Text(
-                                rate.name,
+                                rate.name.uppercase(),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
                                 Fmt.ars((rate.sell * 100).roundToLong()),
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontFamily = PlexMono,
+                                ),
                                 color = if (rate.house == "bolsa") Emerald else MaterialTheme.colorScheme.onSurface,
                             )
                         }

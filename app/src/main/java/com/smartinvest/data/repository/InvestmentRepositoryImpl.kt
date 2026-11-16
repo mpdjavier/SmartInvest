@@ -21,6 +21,7 @@ import com.smartinvest.data.network.MarketKeyParser
 import com.smartinvest.data.network.toDomain
 import com.smartinvest.data.widget.WidgetRefresher
 import com.smartinvest.di.IoDispatcher
+import com.smartinvest.domain.engine.PortfolioReconciliationEngine
 import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.model.AllocationBucket
 import com.smartinvest.domain.model.AssetType
@@ -238,7 +239,11 @@ class InvestmentRepositoryImpl @Inject constructor(
                 instrumentQuoteDao.upsertAll(entities)
                 instrumentQuoteDao.deleteForMarketAfter(effectiveKey, result.latestDate.toEpochDay())
                 storedQuotes += entities.size
-                if (holding.quantity > 0.0 && result.latestPrice > 0.0) {
+                if (
+                    holding.quantity > 0.0 &&
+                    result.latestPrice > 0.0 &&
+                    !PortfolioReconciliationEngine.isManualValuationLocked(holding)
+                ) {
                     val newValue = holding.valueCentsFor(result.latestPrice)
                     holdingDao.updateValuation(holding.id, newValue, result.name)
                 }
@@ -308,7 +313,11 @@ class InvestmentRepositoryImpl @Inject constructor(
             // Also update any matching holdings in portfolio.
             holdingDao.getAll()
                 .map { it.toDomain() }
-                .filter { MarketKeyParser.normalize(it.marketKey) == normalized && it.quantity > 0.0 }
+                .filter {
+                    MarketKeyParser.normalize(it.marketKey) == normalized &&
+                        it.quantity > 0.0 &&
+                        !PortfolioReconciliationEngine.isManualValuationLocked(it)
+                }
                 .forEach { h ->
                     holdingDao.updateValuation(h.id, h.valueCentsFor(fetched.latestPrice), fetched.name)
                 }

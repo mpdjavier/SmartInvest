@@ -49,6 +49,7 @@ import com.smartinvest.domain.model.QuoteUnit
 import com.smartinvest.domain.repository.InvestmentRepository
 import com.smartinvest.ui.components.ChipRow
 import com.smartinvest.ui.components.EmptyState
+import com.smartinvest.ui.components.HeroAmountText
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.components.MetricPill
 import com.smartinvest.ui.components.PortfolioChart
@@ -402,9 +403,8 @@ private fun InstrumentSummaryCard(
             }
         }
         Spacer(Modifier.height(10.dp))
-        Text(
-            latest?.let { formatQuotePrice(it.price, option.currency) } ?: "—",
-            style = MaterialTheme.typography.headlineLarge,
+        HeroAmountText(
+            text = latest?.let { formatQuotePrice(it.price, option.currency) } ?: "—",
         )
         Text(
             latest?.let { "Último cierre: ${Fmt.longDate(it.date)} · ${option.quoteUnit.label}" }
@@ -480,12 +480,16 @@ private fun QuoteRow(
             Text(
                 formatQuotePrice(quote.price, option.currency),
                 style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                softWrap = false,
             )
             if (pct != null) {
                 Text(
                     Fmt.signedPercent(pct, 2),
                     style = MaterialTheme.typography.bodySmall,
                     color = pctColor(pct),
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
         }

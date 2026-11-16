@@ -311,7 +311,7 @@ private fun DistributionCard(context: MacroRebalanceContext?) {
     SmartCard {
         SectionHeader(
             title = "Distribución actual vs. meta",
-            subtitle = "Los CEDEARs cuentan como exposición en dólares",
+            subtitle = "Los CEDEARs (SPY) y bonos (AO27 / AO27D) cuentan como exposición en dólares",
         )
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -598,12 +598,21 @@ private fun AllocationLegRow(leg: OrganicAllocationLeg) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
-            Text(Fmt.ars(leg.amountCents), style = MaterialTheme.typography.titleSmall, color = color)
+            Text(
+                Fmt.ars(leg.amountCents),
+                style = MaterialTheme.typography.titleSmall,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+            )
             Text(
                 "${leg.percent}% del ingreso",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -705,8 +714,8 @@ private fun MacroAssumptionsCard(
                 "El índice mide solo el escenario: tasa real (40%), brecha cambiaria " +
                     "nivel (25%) + velocidad (10%) y riesgo país (25%). El desvío de cartera " +
                     "no suma puntos: se usa para dimensionar el flujo. La ratio excluye " +
-                    "«${context.settings.carryExcludedPatterns}»; los CEDEARs suman exposición " +
-                    "en dólares aunque coticen en pesos.",
+                    "«${context.settings.carryExcludedPatterns}»; los CEDEARs y los bonos " +
+                    "(AO27 / AO27D) suman exposición en dólares aunque coticen en pesos.",
                 color = Sky,
             )
             Spacer(Modifier.height(10.dp))

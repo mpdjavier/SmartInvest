@@ -118,6 +118,72 @@ class PortfolioValuationTest {
     }
 
     @Test
+    fun `bonds in ars and usd both count as dollar exposure alongside spy`() {
+        val holdings = listOf(
+            Holding(
+                id = 1,
+                symbol = "S30N6",
+                name = "Letra del Tesoro S30N6",
+                assetType = AssetType.LECAP,
+                currency = CurrencyCode.ARS,
+                currentValueCents = 500_000_00L,
+                costCents = 500_000_00L,
+                tnaPercent = null,
+                maturityDate = null,
+                notes = "",
+            ),
+            Holding(
+                id = 2,
+                symbol = "AO27",
+                name = "Bonar 2027 $",
+                assetType = AssetType.BOND,
+                currency = CurrencyCode.ARS,
+                currentValueCents = 200_000_00L,
+                costCents = 200_000_00L,
+                tnaPercent = null,
+                maturityDate = null,
+                notes = "",
+            ),
+            Holding(
+                id = 3,
+                symbol = "AO27D",
+                name = "Bonar 2027 U\$S",
+                assetType = AssetType.BOND,
+                currency = CurrencyCode.USD,
+                currentValueCents = 100_00L, // US$ 100 * 1.000 = $ 100.000 ARS
+                costCents = 100_00L,
+                tnaPercent = null,
+                maturityDate = null,
+                notes = "",
+            ),
+            Holding(
+                id = 4,
+                symbol = "SPY",
+                name = "SPDR S&P 500 CEDEAR",
+                assetType = AssetType.CEDEAR,
+                currency = CurrencyCode.ARS,
+                currentValueCents = 200_000_00L,
+                costCents = 200_000_00L,
+                tnaPercent = null,
+                maturityDate = null,
+                notes = "",
+            ),
+        )
+        val fx = listOf(FxRate("bolsa", "MEP", 0.0, 1_000.0, 0))
+
+        val valuation = PortfolioValuationEngine.calculate(emptyList(), holdings, fx, 1_000.0)
+
+        assertTrue(PortfolioValuationEngine.isDollarExposure(holdings[1]))
+        assertTrue(PortfolioValuationEngine.isDollarExposure(holdings[2]))
+        assertTrue(PortfolioValuationEngine.isDollarExposure(holdings[3]))
+        assertEquals(1_000_000_00L, valuation.totalArsCents)
+        assertEquals(500_000_00L, valuation.arsAssetsCents)
+        assertEquals(500_000_00L, valuation.usdAssetsArsCents)
+        assertEquals(50.0, valuation.pesoSharePercent, 0.001)
+        assertEquals(50.0, valuation.dollarSharePercent, 0.001)
+    }
+
+    @Test
     fun `holdings with tna contribute to daily portfolio interest`() {
         val holdings = listOf(
             Holding(

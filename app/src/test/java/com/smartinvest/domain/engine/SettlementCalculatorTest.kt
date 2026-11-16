@@ -23,7 +23,7 @@ class SettlementCalculatorTest {
         id: Long,
         payer: Long,
         cents: Long,
-        method: ExpensePaymentMethod = ExpensePaymentMethod.DEBIT,
+        method: ExpensePaymentMethod = ExpensePaymentMethod.CASH,
         installment: Boolean = false,
     ) = MonthlyExpenseItem(
         expenseId = id,

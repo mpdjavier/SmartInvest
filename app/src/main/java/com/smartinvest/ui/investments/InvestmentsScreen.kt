@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Refresh
@@ -42,14 +41,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smartinvest.domain.engine.PortfolioReconciliationEngine
+import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CarryRiskBand
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HoldingValuation
-import com.smartinvest.domain.model.InstrumentBreakEven
 import com.smartinvest.domain.usecase.PortfolioOverview
 import com.smartinvest.ui.components.EmptyState
+import com.smartinvest.ui.components.HeroAmountText
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.components.LinearBar
 import com.smartinvest.ui.components.MetricPill
@@ -60,11 +61,11 @@ import com.smartinvest.ui.components.TagPill
 import com.smartinvest.ui.components.ThinDivider
 import com.smartinvest.ui.theme.Amber
 import com.smartinvest.ui.theme.Emerald
+import com.smartinvest.ui.theme.PlexMono
 import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.theme.Violet
 import com.smartinvest.ui.util.Fmt
-import kotlin.math.roundToLong
 
 @Composable
 fun InvestmentsScreen(
@@ -76,7 +77,7 @@ fun InvestmentsScreen(
     onOpenDailyInterest: () -> Unit = {},
     onOpenInstrumentDetail: (Long) -> Unit = {},
     onOpenRebalancing: () -> Unit = {},
-    onOpenBreakEven: () -> Unit = {},
+    onOpenReconciliation: () -> Unit = {},
     viewModel: InvestmentsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,7 +91,7 @@ fun InvestmentsScreen(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Cartera", style = MaterialTheme.typography.titleLarge)
+                    Text("Cartera", style = MaterialTheme.typography.headlineSmall)
                     Text(
                         "Activos, FCI, letras y cobertura en dólares",
                         style = MaterialTheme.typography.bodySmall,
@@ -123,28 +124,39 @@ fun InvestmentsScreen(
         item { ValuationCard(overview) }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile(
-                    label = "En pesos",
-                    value = Fmt.compact(overview?.valuation?.arsAssetsCents ?: 0),
-                    caption = Fmt.percent(overview?.valuation?.pesoSharePercent),
-                    accent = Emerald,
-                    modifier = Modifier.weight(1f),
-                )
-                StatTile(
-                    label = "En dólares",
-                    value = Fmt.compact(overview?.valuation?.usdAssetsArsCents ?: 0),
-                    caption = Fmt.percent(overview?.valuation?.dollarSharePercent),
-                    accent = Sky,
-                    modifier = Modifier.weight(1f),
-                )
-                StatTile(
-                    label = "Interés mes",
-                    value = Fmt.compact(overview?.valuation?.monthlyInterestCents ?: 0),
-                    caption = "TNA ponderada",
-                    accent = Amber,
-                    modifier = Modifier.weight(1f),
-                )
+            SmartCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    StatTile(
+                        label = "En pesos",
+                        value = Fmt.compact(overview?.valuation?.arsAssetsCents ?: 0),
+                        caption = Fmt.percent(overview?.valuation?.pesoSharePercent),
+                        accent = Emerald,
+                        modifier = Modifier.weight(1f),
+                        help = "Activos en pesos puros (FCI en pesos y LECAP/BONCAP). " +
+                            "No incluye CEDEARs (SPY) ni bonos soberanos (AO27/AO27D), que computan como dolarizados.",
+                    )
+                    StatTile(
+                        label = "En dólares",
+                        value = Fmt.compact(overview?.valuation?.usdAssetsArsCents ?: 0),
+                        caption = Fmt.percent(overview?.valuation?.dollarSharePercent),
+                        accent = Sky,
+                        modifier = Modifier.weight(1f),
+                        help = "Exposición dolarizada expresada en pesos al MEP actual: incluye activos en USD (AO27D), " +
+                            "CEDEARs (SPY), bonos en pesos (AO27) y FCI en dólares (MP-USD).",
+                    )
+                    StatTile(
+                        label = "Interés mes",
+                        value = Fmt.compact(overview?.valuation?.monthlyInterestCents ?: 0),
+                        caption = "TNA ponderada",
+                        accent = Amber,
+                        modifier = Modifier.weight(1f),
+                        help = "Interés diario estimado × 30 días, con la TNA y variación actual.",
+                    )
+                }
             }
         }
 
@@ -152,38 +164,59 @@ fun InvestmentsScreen(
             Button(
                 onClick = viewModel::syncRates,
                 enabled = !state.isWorking,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Sincronizar TNA")
+                Text("Sincronizar TNA", maxLines = 1, softWrap = false)
             }
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = onOpenReconciliation,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+            ) {
+                Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Ajuste manual y control de saldos", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 OutlinedButton(
                     onClick = onOpenDailyInterest,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
                 ) {
                     Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Interés diario")
+                    Text("Interés diario", maxLines = 1, softWrap = false)
                 }
                 OutlinedButton(
                     onClick = { onOpenInstrumentDetail(0L) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.ShowChart, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Evolución / FCI")
+                    Text("Evolución / FCI", maxLines = 1, softWrap = false)
                 }
             }
         }
 
         item { RebalanceCard(overview, onOpenRebalancing) }
-
-        item { DollarBreakEvenCard(overview, onOpenBreakEven) }
 
         item {
             SectionHeader(
@@ -204,14 +237,15 @@ fun InvestmentsScreen(
             }
         } else {
             val valuations = overview?.valuation?.holdings.orEmpty()
+            val mepRate = overview?.valuation?.mepRate ?: 1_000.0
             items(state.holdings.size) { index ->
                 val holding = state.holdings[index]
                 val valuation = valuations.firstOrNull { it.holding.id == holding.id }
                 HoldingRow(
                     holding = holding,
                     valueArsCents = valuation?.valueArsCents ?: holding.currentValueCents,
+                    mepRate = mepRate,
                     dailyInterestCents = valuation?.dailyInterestCents ?: 0L,
-                    breakEven = overview?.breakEven?.holding(holding.id),
                     onOpenEvolution = { onOpenInstrumentDetail(holding.id) },
                     onEdit = { onEditHolding(holding.id) },
                 )
@@ -275,16 +309,15 @@ private fun ValuationCard(overview: PortfolioOverview?) {
             )
         }
         Spacer(Modifier.height(6.dp))
-        Text(
-            Fmt.ars(valuation?.totalArsCents ?: 0),
-            style = MaterialTheme.typography.headlineLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        HeroAmountText(
+            text = Fmt.ars(valuation?.totalArsCents ?: 0),
         )
         Text(
             Fmt.usd(valuation?.totalUsdCents ?: 0),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = PlexMono),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
         )
         Spacer(Modifier.height(12.dp))
         FlowRow(
@@ -311,6 +344,8 @@ private fun ValuationCard(overview: PortfolioOverview?) {
                 value = Fmt.ars(valuation?.dailyInterestCents ?: 0),
                 accent = Emerald,
                 modifier = Modifier.weight(1f),
+                help = "Estimación de un día: saldo remunerado × TNA ÷ 365, o variación " +
+                    "de la última cotización cuando el activo tiene mercado.",
             )
             StatTile(
                 label = "Ganancia no realizada",
@@ -320,6 +355,8 @@ private fun ValuationCard(overview: PortfolioOverview?) {
                     else -> Rose
                 },
                 modifier = Modifier.weight(1f),
+                help = "Diferencia entre el valor actual de tus activos y lo que pagaste " +
+                    "por ellos. No es plata realizada hasta que vendas la posición.",
             )
         }
     }
@@ -431,59 +468,21 @@ private fun riskColor(band: CarryRiskBand): Color = when (band) {
 }
 
 @Composable
-private fun DollarBreakEvenCard(data: PortfolioOverview?, onOpen: () -> Unit) {
-    val report = data?.breakEven
-    val summary = report?.pesoSummary.orEmpty()
-    SmartCard {
-        SectionHeader(
-            title = "Dólar break-even",
-            subtitle = "MEP que iguala comprar dólares con invertir en pesos",
-        )
-        Spacer(Modifier.height(10.dp))
-        if (summary.isEmpty()) {
-            Text(
-                "Cargá posiciones en pesos para calcular el break-even de la cartera.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            Text(
-                "Promedio ponderado de las posiciones en pesos",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                summary.forEach { point ->
-                    StatTile(
-                        label = "${point.days} días",
-                        value = formatMep(point.breakEvenMepRate),
-                        caption = "MEP ${Fmt.signedPercent(point.requiredDevaluationPercent)}",
-                        accent = Amber,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        OutlinedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Rounded.Calculate, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Ver break-even por instrumento")
-        }
-    }
-}
-
-@Composable
 private fun HoldingRow(
     holding: Holding,
     valueArsCents: Long,
+    mepRate: Double,
     dailyInterestCents: Long,
-    breakEven: InstrumentBreakEven? = null,
     onOpenEvolution: () -> Unit,
     onEdit: () -> Unit,
 ) {
     val color = assetColor(holding.assetType)
+    val safeMep = mepRate.takeIf { it > 0.0 } ?: 1_000.0
+    val valueUsdCents = if (holding.currency == CurrencyCode.USD) {
+        holding.currentValueCents
+    } else {
+        kotlin.math.round(valueArsCents / safeMep).toLong()
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -497,10 +496,16 @@ private fun HoldingRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(holding.symbol, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    PortfolioReconciliationEngine.displayLabel(holding),
+                    style = MaterialTheme.typography.titleSmall.copy(fontFamily = PlexMono),
+                )
                 TagPill(holding.assetType.label, color)
                 if (holding.isTracked) {
                     TagPill(holding.source.label, Sky)
+                }
+                if (PortfolioReconciliationEngine.isManualValuationLocked(holding)) {
+                    TagPill("Manual", Emerald)
                 }
             }
             Text(
@@ -510,7 +515,7 @@ private fun HoldingRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (holding.assetType == AssetType.CEDEAR && holding.currency == CurrencyCode.ARS) {
+            if (PortfolioValuationEngine.isDollarExposure(holding) && holding.currency == CurrencyCode.ARS) {
                 Text(
                     "Computa como USD en rebalanceo 60/40",
                     style = MaterialTheme.typography.bodySmall,
@@ -525,8 +530,8 @@ private fun HoldingRow(
                     color = Amber,
                 )
             }
-            BreakEvenSummaryLine(breakEven)
         }
+        Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 if (holding.currency == CurrencyCode.USD) {
@@ -534,67 +539,57 @@ private fun HoldingRow(
                 } else {
                     Fmt.ars(valueArsCents)
                 },
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleSmall.copy(fontFamily = PlexMono),
                 maxLines = 1,
+                softWrap = false,
             )
             Text(
                 if (holding.currency == CurrencyCode.USD) {
                     "≈ ${Fmt.ars(valueArsCents)}"
                 } else {
-                    "ARS"
+                    "≈ ${Fmt.usd(valueUsdCents)}"
                 },
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = PlexMono),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                softWrap = false,
             )
             if (dailyInterestCents != 0L) {
                 Text(
                     "${Fmt.signedArs(dailyInterestCents)} / día",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = PlexMono),
                     color = if (dailyInterestCents >= 0) Emerald else Rose,
                     maxLines = 1,
+                    softWrap = false,
                 )
             }
         }
         if (holding.isTracked) {
-            IconButton(onClick = onOpenEvolution) {
+            IconButton(
+                onClick = onOpenEvolution,
+                modifier = Modifier.size(34.dp),
+            ) {
                 Icon(
                     Icons.AutoMirrored.Rounded.ShowChart,
                     contentDescription = "Evolución",
                     tint = Emerald,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Rounded.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        IconButton(
+            onClick = onEdit,
+            modifier = Modifier.size(34.dp),
+        ) {
+            Icon(
+                Icons.Rounded.Edit,
+                contentDescription = "Editar",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
-
-@Composable
-private fun BreakEvenSummaryLine(breakEven: InstrumentBreakEven?) {
-    if (breakEven == null) return
-    if (breakEven.isDollarPosition) {
-        Text(
-            "Break-even: ya en dólares",
-            style = MaterialTheme.typography.bodySmall,
-            color = Sky,
-        )
-    } else {
-        Text(
-            "BE " + breakEven.points.joinToString(" · ") {
-                "${it.days}d ${formatMep(it.breakEvenMepRate)}"
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = Amber,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-private fun formatMep(rate: Double?): String =
-    if (rate == null || rate <= 0.0) "—" else Fmt.ars((rate * 100.0).roundToLong())
 
 private fun windowColor(percent: Double?): Color = when {
     percent == null -> Sky

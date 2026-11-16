@@ -63,8 +63,8 @@ data class InterestSourceSummary(
  * [projectedMonthArsCents] is [accrualPerDayArsCents] × [daysConsidered]: the naive monthly
  * projection that the user sees when multiplying the daily tile by the days of the month.
  * [differenceVsProjectionArsCents] is what the accumulated total adds or removes on top of
- * that projection. The market variation of tracked quotes explains most of it; the remainder
- * comes from using current balances/TNA for every historical day, caps and rounding.
+ * that projection. The market variation of tracked quotes and the daily compounding of
+ * [compoundingArsCents] explain it; the remainder comes from caps and rounding.
  */
 data class InterestReconciliation(
     val daysConsidered: Int = 0,
@@ -74,6 +74,8 @@ data class InterestReconciliation(
     val accrualPerDayArsCents: Long = 0L,
     val projectedMonthArsCents: Long = 0L,
     val differenceVsProjectionArsCents: Long = 0L,
+    /** Extra accrual generated because each day's interest is reinvested in the base. */
+    val compoundingArsCents: Long = 0L,
     val unexplainedArsCents: Long = 0L,
     val accrualSources: Int = 0,
     val marketSources: Int = 0,

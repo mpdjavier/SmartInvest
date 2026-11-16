@@ -15,3 +15,26 @@ data class InstallmentRow(
     val creditCardId: Long?,
     val dateEpochDay: Long,
 )
+
+/**
+ * One expense occurrence for search and reports: cash-like expenses appear once,
+ * credit purchases once per installment (with the due month as impact month).
+ */
+data class ExpenseRecordRow(
+    val expenseId: Long,
+    val installmentId: Long?,
+    val description: String,
+    val notes: String,
+    val dateEpochDay: Long,
+    val purchaseMonth: String,
+    val impactMonth: String?,
+    val totalAmountCents: Long,
+    val impactCents: Long?,
+    val categoryId: Long,
+    val paidByMemberId: Long,
+    val paymentMethod: String,
+    val creditCardId: Long?,
+    val installmentNumber: Int?,
+    val installmentCount: Int?,
+    val installmentPaid: Boolean?,
+)

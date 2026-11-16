@@ -10,6 +10,7 @@ import com.smartinvest.domain.usecase.ObservePortfolioOverviewUseCase
 import com.smartinvest.domain.usecase.PortfolioOverview
 import com.smartinvest.domain.repository.AlertsRepository
 import com.smartinvest.domain.repository.InvestmentRepository
+import com.smartinvest.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,6 +29,7 @@ data class DashboardUiState(
     val fxRates: List<FxRate> = emptyList(),
     val isRefreshing: Boolean = false,
     val message: String? = null,
+    val hideAmounts: Boolean = false,
 )
 
 private data class DashboardCore(
@@ -49,6 +51,7 @@ class DashboardViewModel @Inject constructor(
     observeHousehold: ObserveHouseholdSummaryUseCase,
     private val investments: InvestmentRepository,
     private val alertsRepository: AlertsRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val month = YearMonth.now()
@@ -72,7 +75,7 @@ class DashboardViewModel @Inject constructor(
         DashboardExtras(fxRates, isRefreshing, msg)
     }
 
-    val uiState = combine(core, extras) { c, e ->
+    val uiState = combine(core, extras, settingsRepository.settings) { c, e, settings ->
         DashboardUiState(
             isLoading = false,
             overview = c.overview,
@@ -82,6 +85,7 @@ class DashboardViewModel @Inject constructor(
             fxRates = e.fxRates,
             isRefreshing = e.isRefreshing,
             message = e.message,
+            hideAmounts = settings.hideAmounts,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
@@ -104,5 +108,13 @@ class DashboardViewModel @Inject constructor(
 
     fun clearMessage() {
         message.value = null
+    }
+
+    /** Persists the privacy switch; MainActivity mirrors it into [MoneyVisibility]. */
+    fun togglePrivacy() {
+        viewModelScope.launch {
+            val current = settingsRepository.currentSettings()
+            settingsRepository.update(current.copy(hideAmounts = !current.hideAmounts))
+        }
     }
 }

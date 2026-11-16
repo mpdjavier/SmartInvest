@@ -1,6 +1,7 @@
 package com.smartinvest.ui.alerts
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -165,14 +166,19 @@ private fun AlertCard(alert: AppAlert, onRead: () -> Unit) {
                 if (alert.isRead) MaterialTheme.colorScheme.surface
                 else color.copy(alpha = 0.08f),
             )
+            .border(
+                1.dp,
+                if (alert.isRead) MaterialTheme.colorScheme.outline else color.copy(alpha = 0.35f),
+                MaterialTheme.shapes.medium,
+            )
             .clickable(onClick = onRead)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
+                .size(34.dp)
+                .clip(MaterialTheme.shapes.small)
                 .background(color.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center,
         ) {

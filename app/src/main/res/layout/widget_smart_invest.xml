@@ -17,10 +17,10 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.12"
+            android:fontFamily="@font/ibm_plex_mono_semibold"
+            android:letterSpacing="0.14"
             android:text="SMARTINVEST"
-            android:textColor="#7DD3FC"
+            android:textColor="#00FF6A"
             android:textSize="10sp" />
 
         <ImageView
@@ -38,9 +38,9 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:fontFamily="sans-serif-medium"
+        android:fontFamily="@font/ibm_plex_mono_semibold"
         android:text="$ 0,00"
-        android:textColor="#F2F6FA"
+        android:textColor="#E6EBF2"
         android:textSize="27sp" />
 
     <TextView
@@ -48,9 +48,10 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="1dp"
+        android:fontFamily="@font/ibm_plex_mono_regular"
         android:text="US$ 0,00 · MEP —"
-        android:textColor="#8B98A8"
-        android:textSize="11sp" />
+        android:textColor="#8C97A8"
+        android:textSize="10sp" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -70,8 +71,10 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:fontFamily="@font/ibm_plex_mono_medium"
+                android:letterSpacing="0.12"
                 android:text="INTERÉS HOY"
-                android:textColor="#7F8C9B"
+                android:textColor="#7D8797"
                 android:textSize="8sp" />
 
             <TextView
@@ -79,9 +82,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/ibm_plex_mono_semibold"
                 android:text="+ $ 0"
-                android:textColor="#4ADE80"
+                android:textColor="#00FF6A"
                 android:textSize="14sp" />
         </LinearLayout>
 
@@ -97,8 +100,10 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:fontFamily="@font/ibm_plex_mono_medium"
+                android:letterSpacing="0.12"
                 android:text="CUOTAS DEL MES"
-                android:textColor="#7F8C9B"
+                android:textColor="#7D8797"
                 android:textSize="8sp" />
 
             <TextView
@@ -106,9 +111,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/ibm_plex_mono_semibold"
                 android:text="$ 0"
-                android:textColor="#FBBF24"
+                android:textColor="#FFB000"
                 android:textSize="14sp" />
         </LinearLayout>
     </LinearLayout>
@@ -119,9 +124,10 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:ellipsize="end"
+        android:fontFamily="@font/ibm_plex_sans_regular"
         android:maxLines="2"
         android:text="Hogar: sin movimientos este mes"
-        android:textColor="#C9D3DE"
+        android:textColor="#C8D2DF"
         android:textSize="11sp" />
 
     <TextView
@@ -129,7 +135,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:fontFamily="@font/ibm_plex_mono_regular"
         android:text="Actualizado —"
-        android:textColor="#5E6B7A"
+        android:textColor="#7D8797"
         android:textSize="9sp" />
 </LinearLayout>

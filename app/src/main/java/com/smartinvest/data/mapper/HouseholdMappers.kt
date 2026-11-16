@@ -7,9 +7,11 @@ import com.smartinvest.data.local.entity.ExpenseEntity
 import com.smartinvest.data.local.entity.FundMovementEntity
 import com.smartinvest.data.local.entity.MemberEntity
 import com.smartinvest.data.local.entity.SettlementEntity
+import com.smartinvest.data.local.model.ExpenseRecordRow
 import com.smartinvest.data.local.model.InstallmentRow
 import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.ExpensePaymentMethod
+import com.smartinvest.domain.model.ExpenseRecord
 import com.smartinvest.domain.model.FundMovement
 import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
@@ -95,6 +97,24 @@ fun InstallmentRow.toMonthlyItem(): MonthlyExpenseItem = MonthlyExpenseItem(
     installmentCount = count,
     installmentPaid = isPaid,
     creditCardId = creditCardId,
+)
+
+fun ExpenseRecordRow.toDomain(): ExpenseRecord = ExpenseRecord(
+    expenseId = expenseId,
+    installmentId = installmentId,
+    description = description,
+    notes = notes,
+    date = DateUtils.epochDayToDate(dateEpochDay),
+    month = YearMonth.parse(impactMonth ?: purchaseMonth),
+    totalCents = totalAmountCents,
+    impactCents = impactCents ?: totalAmountCents,
+    categoryId = categoryId,
+    paidByMemberId = paidByMemberId,
+    paymentMethod = ExpensePaymentMethod.fromDb(paymentMethod),
+    creditCardId = creditCardId,
+    installmentNumber = installmentNumber,
+    installmentCount = installmentCount,
+    installmentPaid = installmentPaid,
 )
 
 fun FundMovementEntity.toDomain(): FundMovement = FundMovement(

@@ -1,17 +1,31 @@
 package com.smartinvest.ui.navigation
 
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ShoppingBasket
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -20,8 +34,13 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -33,20 +52,27 @@ import com.smartinvest.ui.alerts.AlertsScreen
 import com.smartinvest.ui.analytics.AnalyticsScreen
 import com.smartinvest.ui.dashboard.DashboardScreen
 import com.smartinvest.ui.household.ExpenseEditorScreen
+import com.smartinvest.ui.household.ExpenseReportScreen
+import com.smartinvest.ui.household.ExpenseSearchScreen
 import com.smartinvest.ui.household.FundMovementScreen
 import com.smartinvest.ui.household.HouseholdScreen
 import com.smartinvest.ui.household.PaymentAgendaScreen
 import com.smartinvest.ui.household.ReceiptImportScreen
 import com.smartinvest.ui.importer.ImportScreen
 import com.smartinvest.ui.investments.DailyInterestScreen
-import com.smartinvest.ui.investments.BreakEvenScreen
 import com.smartinvest.ui.investments.HoldingEditorScreen
 import com.smartinvest.ui.investments.InstrumentDetailScreen
 import com.smartinvest.ui.investments.InvestmentsScreen
+import com.smartinvest.ui.investments.PortfolioReconciliationScreen
 import com.smartinvest.ui.planning.EmergencyScreen
 import com.smartinvest.ui.planning.SalaryScreen
 import com.smartinvest.ui.rebalancing.RebalancingScreen
 import com.smartinvest.ui.settings.SettingsScreen
+import com.smartinvest.ui.theme.Amber
+import com.smartinvest.ui.theme.Emerald
+import com.smartinvest.ui.theme.PlexMono
+import com.smartinvest.ui.theme.Surface
+import com.smartinvest.ui.theme.TextSecondary
 import java.time.YearMonth
 
 object Routes {
@@ -66,9 +92,11 @@ object Routes {
     const val DAILY_INTEREST = "daily_interest"
     const val INSTRUMENT_DETAIL = "instrument_detail/{holdingId}"
     const val REBALANCING = "rebalancing"
-    const val BREAK_EVEN = "break_even"
     const val RECEIPT_IMPORT = "receipt_import/{receiptPath}"
     const val PAYMENT_AGENDA = "payment_agenda"
+    const val EXPENSE_SEARCH = "expense_search"
+    const val EXPENSE_REPORT = "expense_report"
+    const val PORTFOLIO_RECONCILIATION = "portfolio_reconciliation"
 
     fun expenseEditor(month: YearMonth, expenseId: Long = 0L): String =
         "expense_editor/$month?expenseId=$expenseId"
@@ -103,9 +131,11 @@ private val secondaryTitles = mapOf(
     Routes.DAILY_INTEREST to "Intereses día a día",
     Routes.INSTRUMENT_DETAIL to "Evolución de instrumentos",
     Routes.REBALANCING to "Asistente macro",
-    Routes.BREAK_EVEN to "Dólar break-even",
     Routes.RECEIPT_IMPORT to "Importar comprobante",
     Routes.PAYMENT_AGENDA to "Agenda de pagos",
+    Routes.EXPENSE_SEARCH to "Buscar gastos",
+    Routes.EXPENSE_REPORT to "Reportes de gastos",
+    Routes.PORTFOLIO_RECONCILIATION to "Ajuste y control de cartera",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,17 +166,35 @@ fun SmartInvestNavHost(
     }
 
     Scaffold(
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (isTopLevel) {
-                NavigationBar {
-                    tabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = route == tab.route,
-                            onClick = { navigateTopLevel(tab.route) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
-                        )
+                Column {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    NavigationBar(
+                        containerColor = Surface,
+                        tonalElevation = 0.dp,
+                    ) {
+                        tabs.forEach { tab ->
+                            NavigationBarItem(
+                                selected = route == tab.route,
+                                onClick = { navigateTopLevel(tab.route) },
+                                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                label = {
+                                    Text(
+                                        tab.label.uppercase(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Emerald,
+                                    selectedTextColor = Emerald,
+                                    indicatorColor = Emerald.copy(alpha = 0.12f),
+                                    unselectedIconColor = TextSecondary,
+                                    unselectedTextColor = TextSecondary,
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -158,16 +206,32 @@ fun SmartInvestNavHost(
                     ?.value
                     ?: "SmartInvest"
                 TopAppBar(
-                    title = { Text(title) },
+                    title = {
+                        Text(
+                            title.uppercase(),
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.12.sp,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Volver")
+                            Icon(
+                                Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Volver",
+                                tint = Amber,
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.background,
+                        containerColor = MaterialTheme.colorScheme.background,
                     ),
                 )
+            } else {
+                BrandBar()
             }
         },
     ) { innerPadding ->
@@ -186,6 +250,9 @@ fun SmartInvestNavHost(
                     onOpenSalary = { navController.navigate(Routes.SALARY) },
                     onOpenEmergency = { navController.navigate(Routes.EMERGENCY) },
                     onOpenAnalytics = { navController.navigate(Routes.ANALYTICS) },
+                    onOpenExpenseSearch = { navController.navigate(Routes.EXPENSE_SEARCH) },
+                    onOpenExpenseReport = { navController.navigate(Routes.EXPENSE_REPORT) },
+                    onOpenPortfolioReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
                 )
             }
 
@@ -198,6 +265,24 @@ fun SmartInvestNavHost(
                     onFundMovement = { month -> navController.navigate(Routes.fundEditor(month)) },
                     onOpenSettings = { navigateTopLevel(Routes.SETTINGS) },
                     onOpenPaymentAgenda = { navController.navigate(Routes.PAYMENT_AGENDA) },
+                    onOpenExpenseSearch = { navController.navigate(Routes.EXPENSE_SEARCH) },
+                    onOpenExpenseReport = { navController.navigate(Routes.EXPENSE_REPORT) },
+                )
+            }
+
+            composable(Routes.EXPENSE_SEARCH) {
+                ExpenseSearchScreen(
+                    onEditExpense = { month, expenseId ->
+                        navController.navigate(Routes.expenseEditor(month, expenseId))
+                    },
+                )
+            }
+
+            composable(Routes.EXPENSE_REPORT) {
+                ExpenseReportScreen(
+                    onEditExpense = { month, expenseId ->
+                        navController.navigate(Routes.expenseEditor(month, expenseId))
+                    },
                 )
             }
 
@@ -215,7 +300,14 @@ fun SmartInvestNavHost(
                     onOpenDailyInterest = { navController.navigate(Routes.DAILY_INTEREST) },
                     onOpenInstrumentDetail = { holdingId -> navController.navigate(Routes.instrumentDetail(holdingId)) },
                     onOpenRebalancing = { navController.navigate(Routes.REBALANCING) },
-                    onOpenBreakEven = { navController.navigate(Routes.BREAK_EVEN) },
+                    onOpenReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
+                )
+            }
+
+            composable(Routes.PORTFOLIO_RECONCILIATION) {
+                PortfolioReconciliationScreen(
+                    onEditHolding = { id -> navController.navigate(Routes.holdingEditor(id)) },
+                    onOpenDailyInterest = { navController.navigate(Routes.DAILY_INTEREST) },
                 )
             }
 
@@ -264,10 +356,6 @@ fun SmartInvestNavHost(
                 DailyInterestScreen()
             }
 
-            composable(Routes.BREAK_EVEN) {
-                BreakEvenScreen()
-            }
-
             composable(Routes.REBALANCING) {
                 RebalancingScreen(onOpenSettings = { navController.navigate(Routes.SETTINGS) })
             }
@@ -309,3 +397,59 @@ fun SmartInvestNavHost(
         }
     }
 }
+
+/**
+ * Slim terminal-style brand bar shown on the four top-level tabs, mirroring the
+ * BondTerminal wordmark strip.
+ */
+@Composable
+private fun BrandBar() {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            Box(
+                Modifier
+                    .size(9.dp)
+                    .background(Emerald),
+            )
+            Spacer(Modifier.width(9.dp))
+            Text(
+                "SMART",
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontFamily = PlexMono,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.16.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                "INVEST",
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontFamily = PlexMono,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.16.sp,
+                ),
+                color = Emerald,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "ARG · TERMINAL",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    }
+}
+

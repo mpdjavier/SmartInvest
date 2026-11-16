@@ -34,7 +34,6 @@ data class CreditCard(
 
 enum class ExpensePaymentMethod(val label: String, val shortLabel: String) {
     CASH("Efectivo", "Efectivo"),
-    DEBIT("Débito", "Débito"),
     TRANSFER("Transferencia", "Transfer."),
     CREDIT("Tarjeta de crédito", "Crédito"),
     COMMON_FUND("Fondo común", "Fondo"),
@@ -74,7 +73,7 @@ data class Installment(
 
 /**
  * A row as it impacts the selected month. For credit purchases [monthlyCents] is
- * the installment amount, never the full purchase. For cash/debit/fund it is the total.
+ * the installment amount, never the full purchase. For cash/transfer/fund it is the total.
  */
 data class MonthlyExpenseItem(
     val expenseId: Long,

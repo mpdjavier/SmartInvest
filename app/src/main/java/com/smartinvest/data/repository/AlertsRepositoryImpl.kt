@@ -172,7 +172,7 @@ class AlertsRepositoryImpl @Inject constructor(
             )?.let(created::add)
         }
 
-        // 5. Card due dates
+        // 5. Card due dates and closing dates
         cardDao.getAll().filter { it.isActive }.forEach { card ->
             val due = CardCycleResolver.nextDueDate(today, card.dueDay)
             val days = DateUtils.daysBetween(today, due)
@@ -185,6 +185,20 @@ class AlertsRepositoryImpl @Inject constructor(
                         message = "Vencimiento ${DateUtils.longDateLabel(due)} · " +
                             "cierre día ${card.closingDay}. Evitá intereses.",
                         dedupeKey = "card_due:${card.id}:$due",
+                    ),
+                )?.let(created::add)
+            }
+            val closing = CardCycleResolver.nextDueDate(today, card.closingDay)
+            val daysToClose = DateUtils.daysBetween(today, closing)
+            if (daysToClose in 0..5) {
+                createAlert(
+                    NewAlert(
+                        type = AlertType.CARD_DUE,
+                        severity = if (daysToClose <= 1) AlertSeverity.WARNING else AlertSeverity.INFO,
+                        title = "Cierre de ${card.name} ${if (daysToClose == 0L) "hoy" else "en $daysToClose días"}",
+                        message = "Próximo cierre ${DateUtils.longDateLabel(closing)} · " +
+                            "vencimiento día ${card.dueDay}.",
+                        dedupeKey = "card_close:${card.id}:$closing",
                     ),
                 )?.let(created::add)
             }

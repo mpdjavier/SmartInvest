@@ -74,6 +74,15 @@ object MarketPresets {
             marketKey = "rava:AO27D",
         ),
         MarketPreset(
+            label = "AO27 (Bono ARS)",
+            symbol = "AO27",
+            name = "Bonar 2027 \$",
+            assetType = AssetType.BOND,
+            currency = CurrencyCode.ARS,
+            quoteUnit = QuoteUnit.PER_100_NOMINAL,
+            marketKey = "rava:AO27",
+        ),
+        MarketPreset(
             label = "SPY (CEDEAR)",
             symbol = "SPY",
             name = "SPDR S&P 500 CEDEAR",

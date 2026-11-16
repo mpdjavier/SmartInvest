@@ -111,4 +111,49 @@ class ReceiptParserTest {
         assertEquals(LocalDate.of(2026, 12, 3), receipt.date)
         assertEquals(2_500_000L, receipt.amountCents)
     }
+
+    @Test
+    fun `parses galicia mastercard black credit card statement with due date next closing and total a pagar`() {
+        val text = """
+            Resumen N° 027032099478
+            Tarjeta Crédito MASTERCARD BLACK
+            NU&EZ,RICARDO JAVIER CONSUMIDOR FINAL CUIT Banco: 30-50000173-5
+            CRIS STOMO LVAREZ 4778, SAN MIGUEL DE TUCUMA, 04000 N° de Socio: 2220604-0-4 Sucursal: 374
+            Resumen de tarjeta de credito MASTERCARD BLACK Página 1 / 5
+            20261112068602202H
+            247.282,15
+            -1,01
+            15-Oct-26 23-Oct-26 12-Nov-26 20-Nov-26 17-Dic-26 28-Dic-26
+             
+            PAGO MINIMO LÍMITES
+            En pesos
+            ${'$'} 16.260,00
+            De compras en un pago y en cuotas
+            ${'$'} 14.000.000,00
+            De financiación
+            ${'$'} 14.000.000,00
+            CONSOLIDADO PESOS DÓLARES
+            SALDO ANTERIOR 483.865,41 -1,01
+            23-Oct-26 SU PAGO -483.865,41 -483.865,41
+             SALDO PENDIENTE 0,00 -1,01
+             TOTAL CONSUMOS DEL MES 244.833,81 0,00
+            SUBTOTAL 244.833,81 -1,01
+            IMPUESTO DE SELLOS 2.448,34
+            TOTAL A PAGAR 247.282,15 -1,01
+        """.trimIndent()
+
+        val receipt = ReceiptParser.parse(text)
+
+        assertEquals(ReceiptKind.CARD_STATEMENT, receipt.kind)
+        assertEquals("MASTERCARD BLACK", receipt.cardName)
+        assertEquals("Resumen MASTERCARD BLACK", receipt.description)
+        assertEquals(LocalDate.of(2026, 11, 20), receipt.dueDate)
+        assertEquals(LocalDate.of(2026, 12, 17), receipt.nextClosingDate)
+        assertEquals(LocalDate.of(2026, 11, 12), receipt.currentClosingDate)
+        assertEquals(LocalDate.of(2026, 12, 28), receipt.nextDueDate)
+        assertEquals(24_728_215L, receipt.amountCents)
+        assertEquals(LocalDate.of(2026, 11, 20), receipt.date)
+        assertEquals("Banco Galicia", receipt.originInstitution)
+        assertEquals("027032099478", receipt.reference)
+    }
 }

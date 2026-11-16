@@ -109,7 +109,7 @@ fun SettingsScreen(
     ) {
         item {
             Column {
-                Text("Ajustes", style = MaterialTheme.typography.titleLarge)
+                Text("Ajustes", style = MaterialTheme.typography.headlineSmall)
                 Text(
                     "Hogar, tarjetas, reglas de alertas y reparto del sueldo",
                     style = MaterialTheme.typography.bodySmall,
@@ -611,7 +611,7 @@ fun SettingsScreen(
                     onClick = viewModel::syncBrokerMovements,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Sincronizar mov. Eco Valores + IEB+ (ADCAP, SPY, S30N6, T15E7, AO27)")
+                    Text("Cargar saldos exactos 14/11/26 + mov. Eco Valores e IEB+")
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(

@@ -2,20 +2,32 @@ package com.smartinvest.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Background = Color(0xFF0B0F14)
-val Surface = Color(0xFF121A24)
-val SurfaceVariant = Color(0xFF18222E)
-val SurfaceElevated = Color(0xFF1C2836)
-val Outline = Color(0xFF24313F)
+/**
+ * BondTerminal-inspired terminal palette.
+ *
+ * Background `hsl(154.29 53.85% 2.55%)`, panels `hsl(212 30.61% 9.61%)` and the
+ * neon green/amber accents are lifted from the reference terminal styling.
+ */
 
-val TextPrimary = Color(0xFFE8EEF5)
-val TextSecondary = Color(0xFF93A4B8)
-val TextMuted = Color(0xFF67788C)
+// Surfaces
+val Background = Color(0xFF030A07)
+val Surface = Color(0xFF0D1318)
+val SurfaceVariant = Color(0xFF111820)
+val SurfaceElevated = Color(0xFF17202A)
+val Outline = Color(0xFF26313A)
+val Hairline = Color(0x24A4B6CC)
 
-val Emerald = Color(0xFF22C55E)
-val EmeraldSoft = Color(0xFF4ADE80)
-val Sky = Color(0xFF38BDF8)
-val Amber = Color(0xFFFBBF24)
-val Rose = Color(0xFFFB7185)
+// Text
+val TextPrimary = Color(0xFFE6EBF2)
+val TextSecondary = Color(0xFF8C97A8)
+val TextMuted = Color(0xFF7D8797)
+
+// Accents
+val Emerald = Color(0xFF00FF6A)
+val EmeraldSoft = Color(0xFF22C55E)
+val EmeraldDim = Color(0xFF00CC55)
+val Sky = Color(0xFF5599FF)
+val Amber = Color(0xFFFFB000)
+val Rose = Color(0xFFFF5C5C)
 val Violet = Color(0xFFA78BFA)
-val Orange = Color(0xFFFB923C)
+val Orange = Color(0xFFFF8A3D)

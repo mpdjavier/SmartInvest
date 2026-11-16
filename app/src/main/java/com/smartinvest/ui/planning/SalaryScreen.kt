@@ -184,7 +184,14 @@ fun SalaryScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text(Fmt.ars(line.amountCents), style = MaterialTheme.typography.titleSmall, color = color)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            Fmt.ars(line.amountCents),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = color,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
                     }
                     val base = if (line.isFixedAmount) {
                         (plan.netSalaryCents).coerceAtLeast(1L)

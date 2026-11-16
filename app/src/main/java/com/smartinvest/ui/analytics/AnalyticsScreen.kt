@@ -29,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartinvest.domain.model.PerformanceWindow
 import com.smartinvest.domain.model.PortfolioSnapshot
+import com.smartinvest.ui.components.HeroAmountText
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.components.KeyValueRow
 import com.smartinvest.ui.components.PortfolioChart
@@ -91,14 +92,16 @@ fun AnalyticsScreen(
         item {
             SmartCard {
                 Text("Patrimonio actual", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    Fmt.ars(overview?.valuation?.totalArsCents ?: 0),
-                    style = MaterialTheme.typography.headlineLarge,
+                Spacer(Modifier.height(4.dp))
+                HeroAmountText(
+                    text = Fmt.ars(overview?.valuation?.totalArsCents ?: 0),
                 )
                 Text(
                     Fmt.usd(overview?.valuation?.totalUsdCents ?: 0),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
         }
@@ -222,12 +225,23 @@ private fun WindowTile(window: PerformanceWindow?, modifier: Modifier = Modifier
             window?.label ?: "—",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
         )
-        Text(Fmt.signedPercent(window?.percent), style = MaterialTheme.typography.titleLarge, color = color)
+        Text(
+            Fmt.signedPercent(window?.percent),
+            style = MaterialTheme.typography.titleLarge,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+        )
         Text(
             window?.gainCents?.let(Fmt::signedArs) ?: "Sin base",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
 }

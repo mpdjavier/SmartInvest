@@ -26,12 +26,14 @@ import com.smartinvest.domain.engine.CardCycleResolver
 import com.smartinvest.domain.engine.InstallmentEngine
 import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.ExpensePaymentMethod
+import com.smartinvest.domain.model.ExpenseRecord
 import com.smartinvest.domain.model.FundMovement
 import com.smartinvest.domain.model.FundMovementType
 import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.model.MonthlyExpenseItem
 import com.smartinvest.domain.model.RegisteredSettlement
+import com.smartinvest.domain.model.YearMonthRange
 import com.smartinvest.domain.repository.EditableExpense
 import com.smartinvest.domain.repository.HouseholdRepository
 import com.smartinvest.domain.repository.NewExpense
@@ -86,6 +88,14 @@ class HouseholdRepositoryImpl @Inject constructor(
             items.sortedWith(compareByDescending<MonthlyExpenseItem> { it.date }.thenByDescending { it.expenseId })
         }.flowOn(io)
     }
+
+    override fun observeExpenseDescriptions(): Flow<List<String>> =
+        expenseDao.observeDescriptions().flowOn(io)
+
+    override fun observeExpenseRecords(range: YearMonthRange): Flow<List<ExpenseRecord>> =
+        expenseDao.observeExpenseRecords(range.from.toString(), range.to.toString())
+            .mapEach { it.toDomain() }
+            .flowOn(io)
 
     override fun observeFundMovements(month: YearMonth): Flow<List<FundMovement>> =
         fundDao.observeForMonth(month.toString())

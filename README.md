@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **83 tests unitarios** pasando con JDK 21 (JBR de Android Studio) y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **95 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -27,7 +27,8 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 
 - Integrantes dinámicos (por defecto **Vos** y **Mamá**), con color e indicador de usuario actual.
 - Categorías editables (supermercado, servicios, expensas, auto, salud, comida, ocio, otros).
-- Gastos en efectivo, débito, transferencia, tarjeta de crédito, **fondo común** o **FCI billetera** (descuenta el saldo del FCI marcado como billetera).
+- Gastos en efectivo, transferencia, tarjeta de crédito, **fondo común** o **FCI billetera** (descuenta el saldo del FCI marcado como billetera). El medio predeterminado es el FCI billetera si está configurado; si no, efectivo.
+- **Sugerencias de descripción**: al escribir los primeros caracteres, propone descripciones de gastos anteriores para cargar compras recurrentes con un toque.
 - **Cuotas**: una compra en N cuotas impacta cada mes solo por el valor de la cuota, nunca por el total.
 - Tarjetas con **cierre y vencimiento manuales**; la primera cuota se imputa según la fecha de compra y el día de cierre.
 - Fondo común: aportes, extracciones y compras pagadas con el fondo, con saldo en tiempo real.
@@ -36,9 +37,19 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - Navegación mensual y edición/eliminación de movimientos.
 - **Importar comprobantes compartidos**: al compartir un PDF o texto desde el banco/billetera, SmartInvest lo recibe, extrae importe, fecha, origen, destino y servicio, y abre una pantalla de revisión editable antes de crear el gasto. Si detecta una **transferencia entre cuentas propias**, lo advierte y no la registra como gasto del hogar salvo confirmación explícita.
 
+### Búsqueda y reportes de gastos
+
+- **Búsqueda libre** (`expense_search`) sobre todos los gastos: descripción, notas, categoría, integrante, tarjeta y medio de pago. Ignora mayúsculas y acentos, así que «nafta» encuentra «Nafta» y «super» encuentra «Súper» o la categoría «Supermercado».
+- **Filtros combinables** por período (este mes, últimos 3 meses, este año o todo el historial), categoría, medio de pago e integrante, con contador de resultados y total del filtro.
+- Las compras en cuotas aparecen **una fila por cuota** con su mes imputado, y se pueden abrir para editarlas.
+- **Reportes** (`expense_report`) con el mismo criterio de imputación mensual: total, promedio por mes, ticket promedio, gastos directos vs. cuotas, mayor gasto, evolución mensual y desglose por categoría, medio de pago e integrante.
+- **Exportación CSV** con fecha, mes imputado, descripción, categoría, integrante, medio de pago, tarjeta, cuota, total de compra, monto del mes y notas. Usa `;` como separador y coma decimal para abrir directo en Excel o Google Sheets.
+- **Resumen compartible** en texto para WhatsApp o e-mail, generado desde el mismo motor que la pantalla.
+- Accesos directos desde **Inicio → Acciones rápidas** y desde **Hogar**.
+
 ### Cartera
 
-- **FCI billetera**: cualquier FCI puede marcarse como cuenta de gastos 24/7. Solo uno queda activo a la vez; los gastos lo usan por defecto y descuentan su valor cargado (al eliminar el gasto se repone).
+- **FCI billetera**: cualquier FCI puede marcarse como cuenta de gastos 24/7. Solo uno queda activo a la vez; si está configurado, los gastos lo usan por defecto y descuentan su valor cargado (al eliminar el gasto se repone). Si no hay FCI billetera, el medio predeterminado es **efectivo** (ya no se ofrece débito).
 - **Plazo de rescate por FCI**: T+0 para money market y **T+1 para Adcap Balanceado III** (rescata a 24 h), configurable con chips en el editor.
 - Activos: LECAP, BONCAP, bonos, FCI, CEDEAR, dólar MEP, cripto y otros, en ARS o USD.
 - **Seguimiento en vivo de instrumentos y FCI**:
@@ -47,12 +58,13 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
   - Presets de 1 toque en el editor de activos + recálculo automático de valuación según cantidad y unidad (`Por unidad / cuotaparte` o `Por 100 nominales`).
 - **Moneda nativa y rendimiento por activo**: una tenencia cargada en USD (por ejemplo `AO27D`) se muestra en **USD**, con la equivalencia en pesos como dato secundario, y cada fila indica cuánto aporta al **interés diario**.
 - **Desglose de intereses día a día** (`daily_interest`): muestra jornada por jornada cuánto generó cada FCI, letra, bono o cuenta y la fórmula exacta usada (`Base × TNA ÷ 365` con tope remunerado, o `Cantidad × (Precio cierre − Precio anterior)` con datos reales de mercado). **El interés diario del panel suma todos los activos con seguimiento automático** (Rava y CAFCI), no solo los FCI: cada tenencia aporta la variación entre sus dos últimas cotizaciones y, si no hay par de precios, se usa su TNA.
-- **Conciliación de intereses**: tarjeta “¿No coinciden los números?” que compara la proyección diaria (TNA actual × días) contra el acumulado real, separa la parte explicada por variación de mercado y muestra el remanente sin explicar (cambios de saldo/TNA, topes y redondeos).
+- **Capitalización diaria**: los intereses de cada jornada se suman a la base del día siguiente. En los FCI, cuando CAFCI todavía no publicó la cuotaparte, el hueco se completa aplicando el factor diario del último intervalo sobre el precio del día anterior, así el valor del FCI y su interés crecen en lugar de repetir siempre el mismo monto base.
+- **Conciliación de intereses**: tarjeta “¿No coinciden los números?” que compara la proyección diaria (TNA actual × días) contra el acumulado real, separa la parte explicada por capitalización y por variación de mercado, y muestra el remanente sin explicar (topes y redondeos).
 - Valoración unificada en pesos usando **dólar MEP** (DolarAPI) con fallback configurable.
-- **Dólar break-even por instrumento** (`break_even`): para cada billetera y activo calcula el **MEP que tendría que alcanzar el dólar a 30, 60 y 120 días** para que comprar dólares convenga más que seguir en el instrumento. Usa la TNA propia o, si falta, la TNA de referencia de la cartera; muestra la **devaluación requerida** y el MEP proyectado con la devaluación mensual esperada de Ajustes. Las posiciones en USD (incluidos CEDEARs) se marcan como cobertura en dólares y no tienen break-even cambiario.
 - Historial de tasas y snapshots diarios del patrimonio.
 - Analítica 7 días / 30 días / YTD, ganancia diaria y mensual, serie para gráfico.
-- **Rebalanceo elástico 60/40** con banda de tolerancia configurable: **los CEDEARs se computan como exposición en dólares aunque estén valuados en pesos**, ya que representan acciones del exterior que se mueven con el USD.
+- **Rebalanceo elástico 60/40** con banda de tolerancia configurable: **tanto los CEDEARs (`SPY`) como los bonos soberanos (`AO27` y `AO27D`) y FCI en dólares (`MP-USD`) se computan como exposición en dólares aunque estén valuados en pesos**, ya que mantienen su valor en moneda dura.
+- **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 14/11/2026 en 1 toque, y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
 - **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
 - Planificador de sueldo y simulador de rescate de emergencia.
 
@@ -80,6 +92,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
   - **Origen y destino** por nombre de banco/billetera (Mercado Pago, Galicia, Santander, BBVA, Nación, Provincia, Ualá, etc.).
   - **Concepto/servicio**: líneas `Pago de …` (por ejemplo `Pago de SM Tucumán CISI`), además de `Empresa`, `Servicio`, `Prestador`, `Comercio`, `Razón social` y `Beneficiario`.
   - **Referencia** (`Operación`, `Código`, `Nro.`), incluido el formato en dos líneas (`Nro° Trans` y el número debajo).
+  - **Resúmenes de tarjeta de crédito** (por ejemplo `MASTERCARD BLACK` de Banco Galicia): detecta automáticamente la **tarjeta**, la **fecha de vencimiento** (`20-Nov-26`), la **fecha de próximo cierre** (`17-Dic-26`) y el **monto a pagar** (`TOTAL A PAGAR 247.282,15`, ignorando límites de compra y pago mínimo). Al confirmar, actualiza los días de cierre/vencimiento de la tarjeta, agenda el vencimiento y el próximo cierre en la **Agenda de pagos** y genera las **alertas de vencimiento y próximo cierre** (con opción de registrar también el pago si ya fue abonado).
 - Pantalla de **revisión editable** con descripción, monto, fecha, categoría, quién pagó y notas.
 - Si el comprobante parece una **transferencia entre cuentas propias**, la app lo advierte y desactiva el guardado como gasto hasta que el usuario lo confirme.
 - Ruta interna: `receipt_import/{receiptPath}`.
@@ -107,10 +120,19 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 
 ### Privacidad de cifras
 
-- **Ajustes → Ocultar cifras** reemplaza todos los montos por `$ ****` / `US$ ****` en Inicio, Hogar, Cartera, analítica y widget.
+- **Ajustes → Ocultar cifras** reemplaza todos los montos por `$ ****` / `US$ ****` en Inicio, Hogar, Cartera, analítica y widget. El mismo interruptor está disponible como **icono de ojo** en la barra superior de Inicio.
+- **Ayudas contextuales**: los valores que pueden prestarse a confusión (ganancia no realizada, interés diario, proyección mensual) tienen un icono **?** que despliega una explicación breve.
 - El estado es global y se guarda en DataStore (`hide_amounts`), así que se mantiene al reiniciar la app.
 - Porcentajes, fechas, cantidades y precios de mercado siguen visibles para no perder contexto.
 - El detalle de las fórmulas del interés diario se oculta cuando el modo está activo.
+
+### Estética de terminal financiero
+
+- Interfaz inspirada en [BondTerminal](https://bondterminal.com/): **IBM Plex Mono** para marca, etiquetas y cifras, e **IBM Plex Sans** para textos largos.
+- Paleta verde-negro: fondo `#030A07`, paneles `#0D1318` / `#111820`, texto `#E6EBF2`, acento verde neón `#00FF6A`, ámbar `#FFB000` y rojo `#FF5C5C`.
+- Tarjetas planas con borde de 1 px, esquinas compactas (2–6 dp), encabezados en mayúsculas con regla ámbar y píldoras rectangulares.
+- Barra superior con wordmark `SMARTINVEST` y barra inferior con etiquetas monoespaciadas; el widget, las notificaciones y el ícono usan la misma paleta.
+- Fuentes IBM Plex empaquetadas en `res/font` bajo licencia SIL OFL (`assets/licenses/IBM_Plex_OFL.txt`).
 
 ---
 
@@ -152,16 +174,18 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `expense_editor/{month}?expenseId={expenseId}` | Alta y edición de gastos (con reversión/imputación automática de medios de pago) |
 | `fund_editor/{month}` | Movimiento del fondo común |
 | `payment_agenda` | Agenda mensual de pagos de servicios (hereda fecha del pago anterior, alertas y pago directo) |
+| `expense_search` | Búsqueda de gastos por texto, período, categoría, medio de pago e integrante |
+| `expense_report` | Reporte de gastos del período con exportación CSV y resumen compartible |
 | `receipt_import/{receiptPath}` | Importación de comprobantes PDF/texto (quita «Pago de», categoría Servicios y rescate en FCI billetera) |
-| `holding_editor/{holdingId}` | Activo (alta/edición, sumar/retirar aportes e importador `.xlsx`/`.xls`/`.csv` de brókers) |
+| `holding_editor/{holdingId}` | Activo (alta/edición, valuación manual fija en ARS/USD, sumar/retirar aportes e importador `.xlsx`/`.xls`/`.csv` de brókers) |
+| `portfolio_reconciliation` | Ajuste manual de saldos en ARS y USD, carga de lista por texto y verificación de cálculos/evolución |
 | `analytics` | Analítica de cartera |
 | `salary` | Repartir sueldo |
 | `emergency` | Rescate de emergencia |
 | `alerts` | Alertas |
 | `import` | Importar datos de SplitHome |
-| `daily_interest` | Intereses día a día y base de cálculo |
+| `daily_interest` | Intereses día a día, capitalización y base de cálculo |
 | `instrument_detail/{holdingId}` | Evolución histórica de instrumentos (Rava) y FCI (CAFCI) |
-| `break_even` | Dólar break-even por instrumento a 30, 60 y 120 días |
 | `rebalancing` | Asistente macro: carry, semáforo y reparto del próximo ingreso |
 
 ---
@@ -211,12 +235,18 @@ app/src/main/java/com/smartinvest/
 app/src/test/java/com/smartinvest/
 ├── core/money/MoneyParserTest.kt
 ├── data/importer/XlsxReaderTest.kt
+├── data/network/MarketClientsTest.kt
 ├── domain/engine/
 │   ├── InstallmentEngineTest.kt
 │   ├── SettlementCalculatorTest.kt
 │   ├── PortfolioValuationTest.kt
+│   ├── DailyInterestEngineTest.kt
+│   ├── ExpenseReportEngineTest.kt
+│   ├── PaymentAgendaEngineTest.kt
+│   ├── PortfolioReconciliationEngineTest.kt
 │   ├── MacroRiskTest.kt
 │   └── PlanningTest.kt
+├── data/importer/ReceiptParserTest.kt
 └── domain/importer/
     └── SplitHomeParserTest.kt
 ```
@@ -240,6 +270,15 @@ app/src/test/java/com/smartinvest/
 - **Vencimiento**: si el día de vencimiento es posterior al de cierre, vence en el mismo mes; si no, vence al mes siguiente.
 - En la base se guarda el cronograma completo (`installments`). Las consultas del mes suman **solo** `installments.amountCents` de las cuotas cuyo `dueMonth` coincide; nunca el total de la compra.
 - Máximo: 60 cuotas.
+
+### Búsqueda y reportes de gastos
+
+- La búsqueda y los reportes trabajan sobre **una fila por impacto mensual**: los gastos en efectivo, transferencia, fondo común y FCI aparecen una vez en su mes; las compras con tarjeta aparecen una vez por cuota, con el **mes de vencimiento** como mes imputado y el **valor de la cuota** como monto.
+- `totalCents` conserva el total de la compra y `impactCents` el monto del mes, así el CSV muestra ambos sin inflar los totales.
+- El filtro de texto normaliza mayúsculas y acentos (`Normalizer.Form.NFD`) y busca en descripción, notas, cuota, categoría, integrante, tarjeta y medio de pago.
+- Los promedios usan los meses **con datos** dentro del período, no la cantidad de meses del calendario.
+- El CSV se genera con BOM UTF-8, separador `;`, coma decimal y escape de campos con `;`, comillas o saltos de línea. Respeta el modo privacidad solo en pantalla: el archivo exporta los valores reales.
+- La descarga usa `ActivityResultContracts.CreateDocument("text/csv")`, sin `FileProvider` ni permisos de almacenamiento.
 
 ### Liquidación del hogar
 
@@ -298,30 +337,18 @@ proyección_mensual = interés_diario × 30
 - **Conciliación del interés del mes**:
 
 ```
-proyección = TNA_por_día_actual × días_del_mes
-diferencia = acumulado_real − proyección
-explicado  = variación_de_mercado (Rava/CAFCI)
-sin_explicar = diferencia − explicado
+base_día_1 = saldo_actual
+base_día_n = base_día_(n-1) + interés_día_(n-1)
+interés_día_n = base_día_n × TNA / 100 / 365
+
+proyección    = interés_día_1 × días_del_mes
+diferencia    = acumulado_real − proyección
+capitalización = acumulado_TNA − proyección
+mercado       = variación_de_cotizaciones (Rava/CAFCI)
+sin_explicar  = diferencia − capitalización − mercado
 ```
 
-El acumulado usa el saldo y la TNA **actuales** para todos los días, porque la app no reconstruye saldos históricos. Por eso la tarjeta de conciliación separa TNA, mercado y remanente.
-
-### Dólar break-even
-
-Para cada billetera o activo se calcula el MEP que iguala el rendimiento del instrumento con comprar dólares hoy y mantenerlos:
-
-```
-break_even(días)       = MEP_actual × (1 + TNA / 100 × días / 365)
-devaluación_requerida  = TNA × días / 365
-MEP_esperado(días)     = MEP_actual × (1 + devaluación_mensual / 100) ^ (días / 30)
-```
-
-- Se usan **30, 60 y 120 días**.
-- Si el dólar termina **por encima** del break-even, comprar dólares rinde más; si termina **por debajo**, el instrumento gana.
-- **TNA**: se usa la propia del instrumento (incluida la del FCI vinculado en una billetera). Si no tiene, se usa la **TNA de referencia** de la cartera. Sin ninguna tasa, el break-even iguala el MEP actual.
-- **Activos en USD y CEDEARs**: ya son cobertura en dólares. Su valor y el de comprar dólares escalan con el mismo MEP futuro, así que no existe un break-even cambiario finito; se informa su rendimiento en dólares.
-- La **devaluación mensual esperada** de Ajustes se usa solo como referencia para proyectar el MEP y marcar si el dólar ya supera el break-even.
-- La convención es de **tasa simple / 365 días**, igual que el resto de la app, y asume que la tasa se mantiene durante todo el plazo.
+El acumulado parte del saldo y la TNA **actuales** y reinvierte los intereses de cada día. Para los FCI sin cotización fresca, el precio se proyecta día a día con el factor del último intervalo CAFCI. La tarjeta de conciliación separa la parte explicada por capitalización, la de mercado y el remanente por topes/redondeos.
 
 ### Analítica
 
@@ -505,7 +532,7 @@ Room, versión 4 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_
 | `members` | integrantes del hogar |
 | `categories` | categorías de gasto |
 | `credit_cards` | tarjetas, cierre y vencimiento |
-| `expenses` | compras y gastos (incluye débito del FCI billetera y su delta para reponer al eliminar) |
+| `expenses` | compras y gastos (incluye el rescate del FCI billetera y su delta para reponer al eliminar) |
 | `installments` | cronograma de cuotas por mes |
 | `fund_movements` | aportes, extracciones y compras del fondo |
 | `settlements` | cierres/pagos manuales de liquidación mensual del hogar |
@@ -614,7 +641,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**83 tests, 0 fallos**) con JDK 21 (JBR de Android Studio) y Android SDK 35. Los APK de debug y release se generan en `app/build/outputs/apk/` (el release queda sin firmar). `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**95 tests, 0 fallos**) con JDK 17 y Android SDK 35. Los APK de debug (~29,1 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -635,15 +662,16 @@ Tests unitarios JVM (sin emulador):
 | `MoneyParserTest` | parseo de importes en formato argentino |
 | `InstallmentEngineTest` | reparto de cuotas y ciclo de tarjeta |
 | `SettlementCalculatorTest` | liquidación, aportes, extracciones, transferencias y saldado manual total/parcial (saldo pendiente) |
-| `PortfolioValuationTest` | valoración ARS/USD, CEDEAR en exposición USD, MEP, topes, interés, variación diaria de un bono USD y tenencias sin cantidad (variación aplicada sobre la valuación) |
-| `DailyInterestEngineTest` | desglose diario por TNA/tope, variación real de cotizaciones (con y sin cantidad), conciliación y TNA tomada del FCI vinculado |
-| `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago) y pago de servicio (Galicia), etiqueta de importe en línea aparte, concepto `Pago de …`, fechas con mes en texto y comprobantes sin datos |
+| `PortfolioValuationTest` | valoración ARS/USD, CEDEAR (`SPY`) y bonos (`AO27`/`AO27D`) en exposición USD, MEP, topes, interés, variación diaria de un bono USD y tenencias sin cantidad |
+| `PortfolioReconciliationEngineTest` | parseo de lista de saldos (14/11/2026), totales nativos ARS/USD, exposición 60/40 con bonos y SPY, precios implícitos, diferencias contra cotización y bloqueo manual |
+| `DailyInterestEngineTest` | desglose diario por TNA/tope, variación real de cotizaciones (con y sin cantidad), conciliación, TNA tomada del FCI vinculado y capitalización diaria en billeteras y FCI sin cotización fresca |
+| `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago), pago de servicio (Galicia), resumen de tarjeta de crédito (`MASTERCARD BLACK` con vencimiento, próximo cierre y total a pagar), fechas con mes en texto y comprobantes sin datos |
 | `MarketClientsTest` | normalización de claves/URLs y parseo HTML de Rava (tabla histórica y encabezado con cierre anterior) y CAFCI |
 | `MacroRiskTest` | bandas de carry, techo por riesgo país, velocidad de la brecha, calendario electoral, histéresis, guardarraíl de liquidez, alcance por riesgo subyacente, vencimientos como flujo y reparto orgánico 100% pesos / 100% dólares |
-| `BreakEvenEngineTest` | break-even a 30/60/120 días con TNA propia y de referencia, posiciones en USD/CEDEAR sin break-even cambiario, MEP proyectado y resumen ponderado |
 | `PlanningTest` | sueldo, rebalanceo y rescate de emergencia |
 | `XlsxReaderTest` | lectura de `.xlsx`: shared strings, inline strings, números y celdas salteadas |
 | `SplitHomeParserTest` | hojas Gastos/Fondo, pagadores, cuotas, fechas y totales |
+| `ExpenseReportEngineTest` | búsqueda por texto/categoría/medio/integrante, totales y promedios, agrupaciones, top de gastos y exportación CSV con escape |
 | `FormattersTest` | enmascarado de montos en modo privacidad (ARS/USD/compactos/firmados) y restauración al desactivarlo |
 
 ---

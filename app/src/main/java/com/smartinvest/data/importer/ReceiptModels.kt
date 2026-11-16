@@ -5,15 +5,17 @@ import java.time.LocalDate
 enum class ReceiptKind(val label: String) {
     EXPENSE("Gasto / pago"),
     TRANSFER("Transferencia"),
+    CARD_STATEMENT("Resumen de tarjeta"),
     UNKNOWN("Sin clasificar"),
 }
 
 /**
- * Result of reading a bank / wallet receipt.
+ * Result of reading a bank / wallet receipt or a credit card statement.
  *
  * All fields are suggestions: the import screen lets the user fix anything before
- * creating the household expense. [likelyOwnTransfer] only warns when both ends look
- * like the same person's accounts; the user confirms it explicitly.
+ * saving. For [ReceiptKind.CARD_STATEMENT], [dueDate], [nextClosingDate] and
+ * [amountCents] (Total a pagar) are extracted so the app can schedule the due-date
+ * and next-closing alerts and register the statement amount.
  */
 data class ParsedReceipt(
     val kind: ReceiptKind,
@@ -27,6 +29,11 @@ data class ParsedReceipt(
     val likelyOwnTransfer: Boolean,
     val warnings: List<String>,
     val rawText: String,
+    val cardName: String? = null,
+    val dueDate: LocalDate? = null,
+    val nextClosingDate: LocalDate? = null,
+    val currentClosingDate: LocalDate? = null,
+    val nextDueDate: LocalDate? = null,
 ) {
     val canSave: Boolean get() = amountCents != null && amountCents > 0 && date != null && description.isNotBlank()
 

@@ -70,6 +70,7 @@ import com.smartinvest.ui.components.AmountInput
 import com.smartinvest.ui.components.ChipRow
 import com.smartinvest.ui.components.DateField
 import com.smartinvest.ui.components.EmptyState
+import com.smartinvest.ui.components.HeroAmountText
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.components.MonthSelector
 import com.smartinvest.ui.components.SectionHeader
@@ -373,7 +374,7 @@ class PaymentAgendaViewModel @Inject constructor(
         val method = if (draft.useWalletFci && wallet != null) {
             ExpensePaymentMethod.WALLET_FCI
         } else {
-            ExpensePaymentMethod.DEBIT
+            ExpensePaymentMethod.CASH
         }
 
         viewModelScope.launch {
@@ -522,16 +523,21 @@ fun PaymentAgendaScreen(
                             "TOTAL AGENDADO EN EL MES",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
                         )
-                        Text(
-                            Fmt.ars(summary?.totalScheduledCents ?: 0L),
-                            style = MaterialTheme.typography.headlineMedium,
+                        Spacer(Modifier.height(4.dp))
+                        HeroAmountText(
+                            text = Fmt.ars(summary?.totalScheduledCents ?: 0L),
                         )
                     }
-                    Button(onClick = viewModel::startNewItem) {
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = viewModel::startNewItem,
+                        modifier = Modifier.height(42.dp),
+                    ) {
                         Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Agregar")
+                        Text("Agregar", maxLines = 1, softWrap = false)
                     }
                 }
                 ThinDivider()
@@ -640,12 +646,15 @@ private fun PaymentAgendaRowCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Spacer(Modifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {
                 if (row.amountCents > 0L) {
                     Text(
                         Fmt.ars(row.amountCents),
                         style = MaterialTheme.typography.titleMedium,
                         color = if (row.isPaid) Emerald else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
                 Spacer(Modifier.height(4.dp))

@@ -52,6 +52,7 @@ import com.smartinvest.domain.model.InterestSourceSummary
 import com.smartinvest.domain.repository.InvestmentRepository
 import com.smartinvest.domain.usecase.ObserveInterestBreakdownUseCase
 import com.smartinvest.ui.components.EmptyState
+import com.smartinvest.ui.components.HeroAmountText
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.components.KeyValueRow
 import com.smartinvest.ui.components.MonthSelector
@@ -210,23 +211,25 @@ fun DailyInterestScreen(
         item {
             SmartCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "ACUMULADO EN EL MES",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            Fmt.signedArs(breakdown?.totalArsCents ?: 0L),
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = signedColor(breakdown?.totalArsCents ?: 0L),
-                        )
-                    }
+                    Text(
+                        "ACUMULADO EN EL MES",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.width(8.dp))
                     TagPill(
                         text = if (breakdown?.hasMarketData == true) "Con datos de mercado" else "TNA / 365",
                         color = if (breakdown?.hasMarketData == true) Sky else Emerald,
                     )
                 }
+                Spacer(Modifier.height(6.dp))
+                HeroAmountText(
+                    text = Fmt.signedArs(breakdown?.totalArsCents ?: 0L),
+                    color = signedColor(breakdown?.totalArsCents ?: 0L),
+                )
                 ThinDivider()
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatTile(
@@ -235,6 +238,8 @@ fun DailyInterestScreen(
                         caption = "${breakdown?.days?.size ?: 0} días con devengamiento",
                         accent = signedColor(breakdown?.averageDailyArsCents ?: 0L),
                         modifier = Modifier.weight(1f),
+                        help = "Acumulado del mes dividido por la cantidad de días con " +
+                            "devengamiento. Los intereses se reinvierten día a día.",
                     )
                     StatTile(
                         label = "Fuentes activas",
@@ -242,6 +247,8 @@ fun DailyInterestScreen(
                         caption = "Billeteras y activos",
                         accent = Sky,
                         modifier = Modifier.weight(1f),
+                        help = "Cantidad de billeteras, FCI y activos que generaron intereses " +
+                            "en el período seleccionado.",
                     )
                 }
             }
@@ -251,7 +258,9 @@ fun DailyInterestScreen(
             InfoBanner(
                 "Cómo se calcula cada línea:\n" +
                     "· Billeteras y activos con TNA: Base remunerada (hasta el tope) × TNA ÷ 365.\n" +
-                    "· Instrumentos con cotización real (Rava / CAFCI): Cantidad × (Precio cierre − Precio anterior).",
+                    "· Los intereses de cada día se suman a la base del día siguiente (capitalización diaria).\n" +
+                    "· FCI con cotización real (Rava / CAFCI): Cantidad × (Precio cierre − Precio anterior). " +
+                    "Si CAFCI aún no publicó, se proyecta con el factor diario del último intervalo.",
                 color = Sky,
             )
         }
@@ -342,6 +351,11 @@ private fun InterestReconciliationCard(reconciliation: InterestReconciliation) {
             valueColor = signedColor(reconciliation.differenceVsProjectionArsCents),
         )
         KeyValueRow(
+            "Explicado por capitalización",
+            Fmt.signedArs(reconciliation.compoundingArsCents),
+            valueColor = Emerald,
+        )
+        KeyValueRow(
             "Explicado por mercado",
             Fmt.signedArs(reconciliation.marketTotalArsCents),
             valueColor = Sky,
@@ -409,16 +423,21 @@ private fun InterestSourceCard(source: InterestSourceSummary) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 Fmt.signedArs(source.totalArsCents),
                 style = MaterialTheme.typography.titleSmall,
                 color = signedColor(source.totalArsCents),
+                maxLines = 1,
+                softWrap = false,
             )
             Text(
                 "${Fmt.signedArs(source.averageDailyArsCents)} / día",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -432,11 +451,16 @@ private fun DailyInterestDayCard(day: DailyInterestDay) {
                 Fmt.longDate(day.date),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.width(8.dp))
             Text(
                 Fmt.signedArs(day.totalArsCents),
                 style = MaterialTheme.typography.titleMedium,
                 color = signedColor(day.totalArsCents),
+                maxLines = 1,
+                softWrap = false,
             )
         }
         ThinDivider()
@@ -462,10 +486,13 @@ private fun InterestLineRow(line: InterestLine) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.width(8.dp))
             Text(
                 Fmt.signedArs(line.dailyArsCents),
                 style = MaterialTheme.typography.titleSmall,
                 color = signedColor(line.dailyArsCents),
+                maxLines = 1,
+                softWrap = false,
             )
         }
         Spacer(Modifier.height(2.dp))

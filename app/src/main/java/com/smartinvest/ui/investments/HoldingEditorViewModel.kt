@@ -5,15 +5,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartinvest.core.money.MoneyFormatter
 import com.smartinvest.core.money.MoneyParser
+import com.smartinvest.core.time.DateUtils
 import com.smartinvest.data.network.MarketKeyParser
 import com.smartinvest.data.network.MarketPreset
 import com.smartinvest.domain.engine.BrokerImportSummary
 import com.smartinvest.domain.engine.BrokerMovementImporter
+import com.smartinvest.domain.engine.PortfolioReconciliationEngine
+import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.QuoteUnit
 import com.smartinvest.domain.repository.InvestmentRepository
+import com.smartinvest.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
+import kotlin.math.roundToLong
 
 data class HoldingForm(
     val id: Long = 0,
@@ -31,6 +36,11 @@ data class HoldingForm(
     val assetType: AssetType = AssetType.LECAP,
     val currency: CurrencyCode = CurrencyCode.ARS,
     val valueText: String = "",
+    val altCurrencyValueText: String = "",
+    val manualValuationLocked: Boolean = true,
+    val mepRate: Double = 1_000.0,
+    val latestQuotePrice: Double? = null,
+    val latestQuoteDate: LocalDate? = null,
     val costText: String = "",
     val deltaAmountText: String = "",
     val tnaText: String = "",
@@ -52,6 +62,7 @@ data class HoldingForm(
 @HiltViewModel
 class HoldingEditorViewModel @Inject constructor(
     private val investments: InvestmentRepository,
+    private val settingsRepository: SettingsRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -65,17 +76,29 @@ class HoldingEditorViewModel @Inject constructor(
     )
 
     init {
-        if (holdingId > 0) {
-            viewModelScope.launch {
+        viewModelScope.launch {
+            val fxRates = runCatching { investments.observeFxRates().first() }.getOrDefault(emptyList())
+            val fallbackMep = runCatching { settingsRepository.currentSettings().fallbackMepRate }.getOrDefault(1_000.0)
+            val (mep, _) = PortfolioValuationEngine.mepRate(fxRates, fallbackMep)
+            val allQuotes = runCatching { investments.observeAllQuotes().first() }.getOrDefault(emptyList())
+
+            if (holdingId > 0) {
                 val holding = investments.observeHoldings().first().firstOrNull { it.id == holdingId }
                 if (holding == null) {
-                    form.update { it.copy(isLoading = false, error = "El activo ya no existe") }
+                    form.update { it.copy(isLoading = false, mepRate = mep, error = "El activo ya no existe") }
                 } else {
-                    form.update { fromHolding(holding) }
+                    val latestQuote = PortfolioValuationEngine.quotesFor(holding, allQuotes).lastOrNull()
+                    form.update {
+                        fromHolding(holding).copy(
+                            mepRate = mep,
+                            latestQuotePrice = latestQuote?.price,
+                            latestQuoteDate = latestQuote?.date,
+                        )
+                    }
                 }
+            } else {
+                form.update { it.copy(isLoading = false, mepRate = mep) }
             }
-        } else {
-            form.update { it.copy(isLoading = false) }
         }
     }
 
@@ -90,7 +113,61 @@ class HoldingEditorViewModel @Inject constructor(
         )
     }
     fun setCurrency(value: CurrencyCode) = form.update { it.copy(currency = value, error = null) }
-    fun setValue(value: String) = form.update { it.copy(valueText = value, error = null) }
+    fun setValue(value: String) = form.update {
+        it.copy(
+            valueText = value,
+            manualValuationLocked = if (value.isNotBlank()) true else it.manualValuationLocked,
+            error = null,
+        )
+    }
+    fun setAltCurrencyValue(value: String) = form.update { it.copy(altCurrencyValueText = value, error = null) }
+    fun setManualValuationLocked(locked: Boolean) = form.update {
+        it.copy(manualValuationLocked = locked, error = null)
+    }
+
+    fun convertAltCurrencyToValue() {
+        val current = form.value
+        val altCents = MoneyParser.parseToCents(current.altCurrencyValueText)
+        if (altCents == null || altCents <= 0L) {
+            form.update { it.copy(error = "Ingresá un monto válido en la moneda alternativa") }
+            return
+        }
+        val mep = current.mepRate.takeIf { it > 0.0 } ?: 1_000.0
+        val convertedCents = if (current.currency == CurrencyCode.ARS) {
+            // Alt currency is USD -> convert to ARS
+            (altCents * mep).roundToLong()
+        } else {
+            // Alt currency is ARS -> convert to USD
+            (altCents / mep).roundToLong()
+        }
+        form.update {
+            it.copy(
+                valueText = centsInput(convertedCents),
+                altCurrencyValueText = "",
+                manualValuationLocked = true,
+                error = null,
+            )
+        }
+    }
+
+    fun applyCalculatedValuation() {
+        val current = form.value
+        val qty = current.quantityText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+        val price = current.latestQuotePrice ?: 0.0
+        if (qty <= 0.0 || price <= 0.0) {
+            form.update { it.copy(error = "Configurá cantidad y sincronizá la cotización para calcular") }
+            return
+        }
+        val factor = if (current.quoteUnit == QuoteUnit.PER_100_NOMINAL) 0.01 else 1.0
+        val calcCents = (price * factor * qty * 100.0).roundToLong()
+        form.update {
+            it.copy(
+                valueText = centsInput(calcCents),
+                manualValuationLocked = false,
+                error = null,
+            )
+        }
+    }
     fun setCost(value: String) = form.update { it.copy(costText = value, error = null) }
     fun setDeltaAmount(value: String) = form.update { it.copy(deltaAmountText = value, error = null) }
     fun setTna(value: String) = form.update { it.copy(tnaText = value, error = null) }
@@ -297,6 +374,12 @@ class HoldingEditorViewModel @Inject constructor(
         }
         val tna = current.tnaText.trim().replace(',', '.').toDoubleOrNull()
 
+        val finalNotes = PortfolioReconciliationEngine.withManualValuationLock(
+            notes = current.notes.trim(),
+            locked = current.manualValuationLocked && value > 0L,
+            date = DateUtils.today(),
+        )
+
         val holding = Holding(
             id = current.id,
             symbol = current.symbol.trim().uppercase(),
@@ -307,7 +390,7 @@ class HoldingEditorViewModel @Inject constructor(
             costCents = cost,
             tnaPercent = tna,
             maturityDate = current.maturity,
-            notes = current.notes.trim(),
+            notes = finalNotes,
             marketKey = normalizedKey,
             source = MarketKeyParser.sourceFor(normalizedKey),
             quantity = quantity,
@@ -323,6 +406,7 @@ class HoldingEditorViewModel @Inject constructor(
                 if (normalizedKey.isNotBlank()) {
                     runCatching { investments.syncMarketQuotes() }
                 }
+                runCatching { investments.refreshSnapshot() }
             }
                 .onSuccess { form.update { it.copy(isSaving = false, saved = true) } }
                 .onFailure { error ->
@@ -352,6 +436,8 @@ class HoldingEditorViewModel @Inject constructor(
         assetType = holding.assetType,
         currency = holding.currency,
         valueText = centsInput(holding.currentValueCents),
+        manualValuationLocked = PortfolioReconciliationEngine.isManualValuationLocked(holding) ||
+            holding.currentValueCents > 0L,
         costText = if (holding.costCents > 0) centsInput(holding.costCents) else "",
         tnaText = holding.tnaPercent?.takeIf { it > 0.0 }?.toString()?.replace('.', ',') ?: "",
         maturity = holding.maturityDate,

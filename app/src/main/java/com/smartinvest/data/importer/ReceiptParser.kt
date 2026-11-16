@@ -6,7 +6,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Tolerant, dependency-free text parser for bank and wallet receipts.
+ * Tolerant, dependency-free text parser for bank / wallet receipts and credit card statements.
  *
  * Receipts differ a lot between issuers, so the parser never fails: it extracts what it
  * can and returns warnings for the rest. The import screen always shows every value as
@@ -23,13 +23,32 @@ object ReceiptParser {
         """\b(importe|monto|total(?:\s+a\s+pagar)?|pagado)\b\s*[^\d\n]{0,10}(\d[0-9.,]*)""",
         FLAGS,
     )
+    private val totalAPagarRegex = Regex(
+        """\btotal\s+a\s+pagar\b\s*[:\$]?\s*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2}|\d+[.,]\d{2})""",
+        FLAGS,
+    )
+    private val standaloneFormattedAmountRegex = Regex(
+        """^\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})+,[0-9]{2})\s*$""",
+    )
+    private val cardHeaderRegex = Regex(
+        """(?:tarjeta\s+(?:de\s+)?cr[eé]dito|resumen\s+de\s+tarjeta\s+de\s+cr[eé]dito)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ0-9 ]+?)(?:\s+p[aá]gina\b|\s*$)""",
+        FLAGS,
+    )
+    private val resumenNumberRegex = Regex(
+        """\bresumen\s+n[°ºo.]*\s*([0-9]{6,})\b""",
+        FLAGS,
+    )
     /** Label alone on a line: "Por un importe de" / "Importe" / "Monto". */
     private val amountLabelOnlyRegex = Regex(
-        """^\s*(?:por\s+un\s+)?(importe|monto|total)(?:\s+a\s+pagar)?(?:\s+de)?\s*:?\s*$""",
+        """^\s*(?:por\s+un\s+)?(importe|monto|total)(?:\s+a\s+pagar|\s+en\s+pesos)?(?:\s+de)?\s*:?\s*$""",
         FLAGS,
     )
     private val singleIdRegex = Regex("""^[A-Za-z0-9][A-Za-z0-9\-]{3,}$""")
     private val dateDmyRegex = Regex("""\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b""")
+    private val dateHyphenMonthRegex = Regex(
+        """\b(\d{1,2})[-/]([a-zA-ZáéíóúÁÉÍÓÚ]{3,10})[-/](\d{2,4})\b""",
+        FLAGS,
+    )
     private val dateTextRegex = Regex(
         """\b(\d{1,2})\s*(?:de\s+)?([a-zA-ZáéíóúÁÉÍÓÚ]+)\s*(?:de\s+)?(\d{4})\b""",
         FLAGS,
@@ -59,18 +78,33 @@ object ReceiptParser {
     )
 
     private val monthNames = mapOf(
+        "ene" to 1,
         "enero" to 1,
+        "feb" to 2,
         "febrero" to 2,
+        "mar" to 3,
         "marzo" to 3,
+        "abr" to 4,
         "abril" to 4,
+        "may" to 5,
         "mayo" to 5,
+        "jun" to 6,
         "junio" to 6,
+        "jul" to 7,
         "julio" to 7,
+        "ago" to 8,
         "agosto" to 8,
+        "sep" to 9,
+        "set" to 9,
+        "sept" to 9,
         "septiembre" to 9,
         "setiembre" to 9,
+        "oct" to 10,
         "octubre" to 10,
+        "nov" to 11,
         "noviembre" to 11,
+        "dic" to 12,
+        "dec" to 12,
         "diciembre" to 12,
     )
 
@@ -82,7 +116,7 @@ object ReceiptParser {
         KnownInstitution("Personal Pay", listOf("personal pay", "personalpay")),
         KnownInstitution("Naranja X", listOf("naranja x", "naranjax")),
         KnownInstitution("Brubank", listOf("brubank")),
-        KnownInstitution("Banco Galicia", listOf("banco de galicia", "banco galicia", "galicia")),
+        KnownInstitution("Banco Galicia", listOf("banco de galicia", "banco galicia", "bancogalicia", "galicia", "30-50000173-5")),
         KnownInstitution("Banco Santander", listOf("santander")),
         KnownInstitution("BBVA", listOf("bbva", "banco francés", "banco frances")),
         KnownInstitution("Banco Nación", listOf("banco nación", "banco nacion", "bna")),
@@ -101,13 +135,24 @@ object ReceiptParser {
         KnownInstitution("Portfolio Personal", listOf("portfolio personal", "ppi")),
     )
 
+    private data class StatementCycleDates(
+        val currentClosingDate: LocalDate? = null,
+        val dueDate: LocalDate? = null,
+        val nextClosingDate: LocalDate? = null,
+        val nextDueDate: LocalDate? = null,
+    )
+
     fun parse(rawText: String): ParsedReceipt {
         val normalizedText = rawText.replace('\u00A0', ' ')
         val lines = normalizedText.lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
-        val kind = detectKind(normalizedText)
+        val kind = detectKind(normalizedText, lines)
+        if (kind == ReceiptKind.CARD_STATEMENT) {
+            return parseCardStatement(rawText, normalizedText, lines)
+        }
+
         val amount = extractAmount(lines)
         val date = extractDate(lines)
         val originLine = labeledLine(lines, "origen") ?: labeledLine(lines, "cuenta origen")
@@ -180,9 +225,190 @@ object ReceiptParser {
         )
     }
 
-    private fun detectKind(text: String): ReceiptKind {
-        val normalized = text.lowercase(Locale.forLanguageTag("es-AR"))
+    private fun parseCardStatement(
+        rawText: String,
+        normalizedText: String,
+        lines: List<String>,
+    ): ParsedReceipt {
+        val cardName = extractCardName(lines, normalizedText)
+        val institution = institutionIn(normalizedText)
+        val amount = extractStatementAmount(lines, normalizedText)
+        val cycle = extractStatementCycleDates(lines)
+        val dueDate = cycle.dueDate ?: extractDate(lines)
+        val nextClosingDate = cycle.nextClosingDate
+        val reference = resumenNumberRegex.find(normalizedText)?.groupValues?.getOrNull(1)
+            ?: extractReference(lines)
+        val description = if (!cardName.isNullOrBlank()) {
+            "Resumen $cardName"
+        } else {
+            "Resumen de tarjeta"
+        }
+
+        val warnings = buildList {
+            if (amount == null) add("No se detectó el monto a pagar del resumen. Ingresalo manualmente.")
+            if (dueDate == null) add("No se detectó la fecha de vencimiento. Elegila manualmente.")
+            if (nextClosingDate == null) add("No se detectó la fecha de próximo cierre. Podés elegirla manualmente.")
+            add("Se registrarán las alertas de vencimiento y próximo cierre junto con el monto a pagar.")
+        }
+
+        return ParsedReceipt(
+            kind = ReceiptKind.CARD_STATEMENT,
+            description = description,
+            amountCents = amount,
+            date = dueDate,
+            originInstitution = institution,
+            destinationInstitution = null,
+            serviceName = cardName,
+            reference = reference,
+            likelyOwnTransfer = false,
+            warnings = warnings,
+            rawText = rawText,
+            cardName = cardName,
+            dueDate = dueDate,
+            nextClosingDate = nextClosingDate,
+            currentClosingDate = cycle.currentClosingDate,
+            nextDueDate = cycle.nextDueDate,
+        )
+    }
+
+    private fun extractCardName(lines: List<String>, fullText: String): String? {
+        for (line in lines) {
+            val match = cardHeaderRegex.find(line) ?: continue
+            val candidate = match.groupValues.getOrNull(1)?.trim().orEmpty()
+            if (candidate.isNotBlank()) return candidate.uppercase(localeAr)
+        }
+        val knownBrands = listOf(
+            "MASTERCARD BLACK",
+            "MASTERCARD PLATINUM",
+            "MASTERCARD GOLD",
+            "MASTERCARD",
+            "VISA SIGNATURE",
+            "VISA PLATINUM",
+            "VISA GOLD",
+            "VISA",
+            "AMERICAN EXPRESS",
+            "AMEX",
+        )
+        val upper = fullText.uppercase(localeAr)
+        return knownBrands.firstOrNull { it in upper }
+    }
+
+    private fun extractStatementAmount(lines: List<String>, fullText: String): Long? {
+        // 1. Explicit "TOTAL A PAGAR 247.282,15" line.
+        for (line in lines) {
+            totalAPagarRegex.find(line)?.groupValues?.getOrNull(1)?.let(::amountCents)?.let {
+                if (it > 0L) return it
+            }
+        }
+        totalAPagarRegex.find(fullText)?.groupValues?.getOrNull(1)?.let(::amountCents)?.let {
+            if (it > 0L) return it
+        }
+
+        // 2. "Total en pesos" or "Total a pagar" followed by the amount on the next line.
+        lines.forEachIndexed { idx, line ->
+            val lower = line.lowercase(localeAr)
+            if (lower == "total en pesos" || lower == "total a pagar") {
+                for (offset in 1..3) {
+                    val next = lines.getOrNull(idx + offset) ?: break
+                    standaloneFormattedAmountRegex.find(next)?.groupValues?.getOrNull(1)?.let(::amountCents)?.let {
+                        if (it > 0L) return it
+                    }
+                }
+            }
+        }
+
+        // 3. Standalone formatted amount right before the 6-date billing cycle line (Galicia hero box).
+        val cycleIdx = lines.indexOfFirst { findAllDatesInLine(it).size >= 4 }
+        if (cycleIdx > 0) {
+            for (i in 0 until cycleIdx) {
+                standaloneFormattedAmountRegex.find(lines[i])?.groupValues?.getOrNull(1)?.let(::amountCents)?.let {
+                    if (it > 0L) return it
+                }
+            }
+        }
+
+        return extractAmount(lines)
+    }
+
+    private fun extractStatementCycleDates(lines: List<String>): StatementCycleDates {
+        // 1. Look for a 6-date billing cycle line:
+        //    [0] Cierre anterior, [1] Vencimiento anterior, [2] Cierre actual,
+        //    [3] Vencimiento actual, [4] Próximo cierre, [5] Próximo vencimiento.
+        for (line in lines) {
+            val dates = findAllDatesInLine(line)
+            if (dates.size >= 6) {
+                return StatementCycleDates(
+                    currentClosingDate = dates[2],
+                    dueDate = dates[3],
+                    nextClosingDate = dates[4],
+                    nextDueDate = dates[5],
+                )
+            }
+            if (dates.size == 4) {
+                return StatementCycleDates(
+                    currentClosingDate = dates[0],
+                    dueDate = dates[1],
+                    nextClosingDate = dates[2],
+                    nextDueDate = dates[3],
+                )
+            }
+        }
+
+        // 2. Look for labeled dates ("Vencimiento actual", "Vencimiento", "Próximo cierre").
+        var dueDate: LocalDate? = null
+        var nextClosing: LocalDate? = null
+        var currentClosing: LocalDate? = null
+        lines.forEachIndexed { idx, line ->
+            val lower = line.lowercase(localeAr)
+            val dateHere = parseDateIn(line) ?: lines.getOrNull(idx + 1)?.let(::parseDateIn)
+            if (dateHere != null) {
+                when {
+                    ("próximo cierre" in lower || "proximo cierre" in lower || "cierre próximo" in lower || "cierre proximo" in lower) && nextClosing == null ->
+                        nextClosing = dateHere
+                    ("vencimiento actual" in lower || ("vencimiento" in lower && "anterior" !in lower && "próximo" !in lower && "proximo" !in lower)) && dueDate == null ->
+                        dueDate = dateHere
+                    ("cierre actual" in lower || ("cierre" in lower && "anterior" !in lower && "próximo" !in lower && "proximo" !in lower)) && currentClosing == null ->
+                        currentClosing = dateHere
+                }
+            }
+        }
+        return StatementCycleDates(
+            currentClosingDate = currentClosing,
+            dueDate = dueDate,
+            nextClosingDate = nextClosing,
+        )
+    }
+
+    private fun findAllDatesInLine(line: String): List<LocalDate> {
+        val results = mutableListOf<Pair<Int, LocalDate>>()
+        dateHyphenMonthRegex.findAll(line).forEach { match ->
+            val day = match.groupValues[1].toIntOrNull() ?: return@forEach
+            val month = monthNumber(match.groupValues[2]) ?: return@forEach
+            val yearRaw = match.groupValues[3].toIntOrNull() ?: return@forEach
+            val year = if (yearRaw < 100) 2000 + yearRaw else yearRaw
+            safeDate(day, month, year)?.let { results += match.range.first to it }
+        }
+        dateDmyRegex.findAll(line).forEach { match ->
+            if (results.any { it.first == match.range.first }) return@forEach
+            val day = match.groupValues[1].toIntOrNull() ?: return@forEach
+            val month = match.groupValues[2].toIntOrNull() ?: return@forEach
+            val yearRaw = match.groupValues[3].toIntOrNull() ?: return@forEach
+            val year = if (yearRaw < 100) 2000 + yearRaw else yearRaw
+            safeDate(day, month, year)?.let { results += match.range.first to it }
+        }
+        return results.sortedBy { it.first }.map { it.second }
+    }
+
+    private fun detectKind(text: String, lines: List<String>): ReceiptKind {
+        val normalized = text.lowercase(localeAr)
+        val hasStatementKeywords = "resumen de tarjeta" in normalized ||
+            "tarjeta crédito" in normalized ||
+            "tarjeta de crédito" in normalized ||
+            "tarjeta de credito" in normalized ||
+            ("total a pagar" in normalized && ("pago minimo" in normalized || "pago mínimo" in normalized || "detalle del consumo" in normalized || "cuotas a vencer" in normalized))
+        val hasSixDateCycle = lines.any { findAllDatesInLine(it).size >= 6 }
         return when {
+            hasStatementKeywords || hasSixDateCycle -> ReceiptKind.CARD_STATEMENT
             "transferencia" in normalized -> ReceiptKind.TRANSFER
             listOf("comprobante de pago", "pago de servicio", "importe", "factura", "servicio")
                 .any { it in normalized } -> ReceiptKind.EXPENSE
@@ -254,7 +480,7 @@ object ReceiptParser {
 
     private fun extractDate(lines: List<String>): LocalDate? {
         val preferred = lines.firstOrNull {
-            val lower = it.lowercase(Locale.forLanguageTag("es-AR"))
+            val lower = it.lowercase(localeAr)
             "fecha" in lower || "emisión" in lower || "emision" in lower
         }
         val candidates = listOfNotNull(preferred) + lines
@@ -279,6 +505,14 @@ object ReceiptParser {
             val month = match.groupValues[2].toIntOrNull() ?: return@let
             val year = match.groupValues[3].toIntOrNull() ?: return@let
             safeDate(day, month, if (year < 100) 2000 + year else year)?.let { return it }
+        }
+        dateHyphenMonthRegex.find(text)?.let { match ->
+            val month = monthNumber(match.groupValues[2]) ?: return@let
+            safeDate(
+                match.groupValues[1].toIntOrNull() ?: return@let,
+                month,
+                match.groupValues[3].toIntOrNull()?.let { if (it < 100) 2000 + it else it } ?: return@let,
+            )?.let { return it }
         }
         dateMonthNameRegex.find(text)?.let { match ->
             val month = monthNumber(match.groupValues[2]) ?: return@let
@@ -328,23 +562,24 @@ object ReceiptParser {
     }
 
     private fun monthNumber(raw: String): Int? {
-        val key = raw.lowercase(Locale.forLanguageTag("es-AR"))
+        val key = raw.lowercase(localeAr)
             .replace("á", "a")
             .replace("é", "e")
             .replace("í", "i")
             .replace("ó", "o")
             .replace("ú", "u")
-        return monthNames[key]
+            .trimEnd('.')
+        return monthNames[key] ?: monthNames[key.take(3)]
     }
 
     private fun labeledLine(lines: List<String>, label: String): String? =
         lines.firstOrNull { line ->
-            val lower = line.lowercase(Locale.forLanguageTag("es-AR"))
+            val lower = line.lowercase(localeAr)
             lower.startsWith(label) || lower.contains("$label:")
         }
 
     private fun institutionIn(text: String): String? {
-        val lower = text.lowercase(Locale.forLanguageTag("es-AR"))
+        val lower = text.lowercase(localeAr)
         return institutions.firstOrNull { known ->
             known.aliases.any { alias -> lower.contains(alias) }
         }?.canonical

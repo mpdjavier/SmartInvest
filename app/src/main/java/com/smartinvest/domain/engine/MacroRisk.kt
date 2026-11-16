@@ -78,7 +78,6 @@ object MacroRiskEngine {
         AssetType.LECAP,
         AssetType.BONCAP,
         AssetType.FCI,
-        AssetType.BOND,
         AssetType.OTHER,
     )
 
@@ -106,6 +105,7 @@ object MacroRiskEngine {
 
         holdings.filter {
             it.currency == CurrencyCode.ARS &&
+                !PortfolioValuationEngine.isDollarExposure(it) &&
                 it.assetType in PESO_CARRY_TYPES &&
                 (it.tnaPercent ?: 0.0) > 0.0 &&
                 it.currentValueCents > 0L
@@ -454,7 +454,7 @@ object MacroRiskEngine {
             .sumOf { it.valueArsCents }
         val holdingLiquid = valuation.holdings
             .filter {
-                it.holding.currency == CurrencyCode.ARS &&
+                !PortfolioValuationEngine.isDollarExposure(it.holding) &&
                     isLiquidForOverweight(it.holding, horizon)
             }
             .sumOf { it.valueArsCents }
@@ -694,7 +694,7 @@ object OrganicRebalancePlanner {
             .map { it.holding }
             .filter { holding ->
                 val maturity = holding.maturityDate
-                holding.currency == CurrencyCode.ARS &&
+                !PortfolioValuationEngine.isDollarExposure(holding) &&
                     holding.currentValueCents > 0L &&
                     maturity != null &&
                     !maturity.isBefore(today) &&

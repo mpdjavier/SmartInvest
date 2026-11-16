@@ -23,9 +23,11 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Savings
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.AlertDialog
@@ -75,6 +77,7 @@ import com.smartinvest.ui.components.TagPill
 import com.smartinvest.ui.components.ThinDivider
 import com.smartinvest.ui.theme.Amber
 import com.smartinvest.ui.theme.Emerald
+import com.smartinvest.ui.theme.PlexMono
 import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.util.Fmt
@@ -88,6 +91,8 @@ fun HouseholdScreen(
     onFundMovement: (YearMonth) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPaymentAgenda: () -> Unit = {},
+    onOpenExpenseSearch: () -> Unit = {},
+    onOpenExpenseReport: () -> Unit = {},
     viewModel: HouseholdViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -133,31 +138,67 @@ fun HouseholdScreen(
 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Button(
                         onClick = { onNewExpense(state.month) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Nuevo gasto")
+                        Text("Nuevo gasto", maxLines = 1, softWrap = false)
                     }
                     OutlinedButton(
                         onClick = { onFundMovement(state.month) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
                     ) {
                         Icon(Icons.Rounded.Savings, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Fondo")
+                        Text("Fondo", maxLines = 1, softWrap = false)
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = onOpenExpenseSearch,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                    ) {
+                        Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Buscar gastos", maxLines = 1, softWrap = false)
+                    }
+                    OutlinedButton(
+                        onClick = onOpenExpenseReport,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                    ) {
+                        Icon(Icons.Rounded.Description, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reportes", maxLines = 1, softWrap = false)
                     }
                 }
                 OutlinedButton(
                     onClick = onOpenPaymentAgenda,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
                 ) {
                     Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Agenda de pagos y vencimientos")
+                    Text("Agenda de pagos y vencimientos", maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -301,24 +342,18 @@ private fun SettlementCard(
     onAdvanceMonth: () -> Unit,
 ) {
     SmartCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Liquidación del mes", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "Contribuciones netas ${Fmt.ars(summary.totalNetContributionsCents)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            val (pillText, pillColor) = when {
-                // A registered close does not hide a still-pending balance (partial payment).
-                summary.mainTransfer != null -> "Saldo pendiente" to Amber
-                summary.isMonthClosed -> "Mes saldado" to Emerald
-                summary.isBalanced -> "Equilibrado" to Emerald
-                else -> "A transferir" to Amber
-            }
-            TagPill(pillText, pillColor)
+        val (pillText, pillColor) = when {
+            // A registered close does not hide a still-pending balance (partial payment).
+            summary.mainTransfer != null -> "Saldo pendiente" to Amber
+            summary.isMonthClosed -> "Mes saldado" to Emerald
+            summary.isBalanced -> "Equilibrado" to Emerald
+            else -> "A transferir" to Amber
         }
+        SectionHeader(
+            title = "Liquidación del mes",
+            subtitle = "Contribuciones netas ${Fmt.ars(summary.totalNetContributionsCents)}",
+            action = { TagPill(pillText, pillColor) },
+        )
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatTile(
@@ -717,8 +752,8 @@ private fun ExpenseCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
+                        .size(38.dp)
+                        .clip(MaterialTheme.shapes.small)
                         .background(categoryColor.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -744,33 +779,41 @@ private fun ExpenseCard(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         Fmt.ars(expense.monthlyCents),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = PlexMono),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (expense.isInstallment) {
                         Text(
                             "Total ${Fmt.ars(expense.totalCents)}",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = PlexMono),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                IconButton(onClick = onEdit) {
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(32.dp),
+                ) {
                     Icon(
                         Icons.Rounded.Edit,
                         contentDescription = "Editar",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
                     )
                 }
-                IconButton(onClick = onDelete) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(32.dp),
+                ) {
                     Icon(
                         Icons.Rounded.DeleteOutline,
                         contentDescription = "Eliminar",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
                     )
                 }
             }
@@ -842,8 +885,8 @@ private fun FundMovementCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
+                    .size(34.dp)
+                    .clip(MaterialTheme.shapes.small)
                     .background(color.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -868,8 +911,9 @@ private fun FundMovementCard(
             Spacer(Modifier.width(8.dp))
             Text(
                 "$sign ${Fmt.ars(movement.amountCents)}",
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleSmall.copy(fontFamily = PlexMono),
                 maxLines = 1,
+                softWrap = false,
                 color = color,
             )
             if (movement.expenseId == null) {
@@ -913,7 +957,7 @@ private fun CardsCard(cards: List<CreditCard>, onOpenSettings: () -> Unit) {
                     Box(
                         modifier = Modifier
                             .size(34.dp)
-                            .clip(CircleShape)
+                            .clip(MaterialTheme.shapes.small)
                             .background(colorFromHex(card.colorHex, Amber).copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center,
                     ) {

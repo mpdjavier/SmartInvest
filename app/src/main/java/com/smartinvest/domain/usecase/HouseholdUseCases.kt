@@ -1,7 +1,6 @@
 package com.smartinvest.domain.usecase
 
 import com.smartinvest.domain.engine.DailyInterestEngine
-import com.smartinvest.domain.engine.DollarBreakEvenEngine
 import com.smartinvest.domain.engine.MacroRiskEngine
 import com.smartinvest.domain.engine.PortfolioAnalyticsEngine
 import com.smartinvest.domain.engine.PortfolioValuationEngine
@@ -10,7 +9,6 @@ import com.smartinvest.domain.engine.SettlementCalculator
 import com.smartinvest.domain.model.AppSettings
 import com.smartinvest.domain.model.CarryRiskAssessment
 import com.smartinvest.domain.model.DailyInterestBreakdown
-import com.smartinvest.domain.model.DollarBreakEvenReport
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HouseholdSummary
@@ -78,7 +76,6 @@ data class PortfolioOverview(
     val settings: AppSettings,
     val macro: CarryRiskAssessment,
     val referencePesoRatePercent: Double,
-    val breakEven: DollarBreakEvenReport,
 )
 
 private data class PortfolioInputs(
@@ -113,14 +110,6 @@ class ObservePortfolioOverviewUseCase @Inject constructor(
             )
             val analytics = PortfolioAnalyticsEngine.calculate(valuation, data.snapshots, today)
             val referenceRate = MacroRiskEngine.referencePesoRate(data.wallets, data.holdings, currentSettings)
-            val breakEven = DollarBreakEvenEngine.calculate(
-                wallets = data.wallets,
-                holdings = data.holdings,
-                fxRates = data.fx,
-                fallbackMepRate = currentSettings.fallbackMepRate,
-                referenceTnaPercent = referenceRate,
-                monthlyDevaluationPercent = currentSettings.monthlyDevaluationPercent,
-            )
             val investable = MacroRiskEngine.investableValuation(valuation, currentSettings)
             val macro = MacroRiskEngine.assess(
                 valuation = investable,
@@ -140,7 +129,6 @@ class ObservePortfolioOverviewUseCase @Inject constructor(
                 settings = currentSettings,
                 macro = macro,
                 referencePesoRatePercent = referenceRate,
-                breakEven = breakEven,
             )
         }
     }

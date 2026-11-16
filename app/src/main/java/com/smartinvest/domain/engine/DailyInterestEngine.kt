@@ -65,17 +65,40 @@ object DailyInterestEngine {
             )
         }
 
+        // Daily compounding: every day's earnings are reinvested, so the next day's
+        // base is the previous balance plus the interest already accrued in the month.
+        val walletAccruedCents = mutableMapOf<Long, Long>()
+        val holdingTnaAccruedCents = mutableMapOf<Long, Long>()
+
+        // FCI prices filled forward from the last CAFCI quote. This is what makes the
+        // base grow day after day instead of repeating the same one-day variation.
+        val fciDailyPrices: Map<Long, Map<LocalDate, Double>> = holdings
+            .filter { holding ->
+                (holding.assetType == AssetType.FCI || holding.source == MarketSource.CAFCI) &&
+                    holding.id !in linkedHoldingIds &&
+                    (holding.tnaPercent ?: 0.0) <= 0.0 &&
+                    holding.marketKey.isNotBlank()
+            }
+            .associate { holding ->
+                holding.id to buildFciDailyPrices(
+                    series = PortfolioValuationEngine.quotesFor(holding, quotes),
+                    days = daysInMonth,
+                )
+            }
+
         val dayRows = daysInMonth.map { date ->
             val lines = mutableListOf<InterestLine>()
 
             activeWallets.forEach { wallet ->
                 val tna = wallet.effectiveTnaPercent(holdings)
+                val accrued = walletAccruedCents[wallet.id] ?: 0L
+                val compoundedBalance = wallet.balanceCents + accrued
                 val baseNative = InterestCalculator.remuneratedBalance(
-                    wallet.balanceCents,
+                    compoundedBalance,
                     wallet.remuneratedCapCents,
                 )
                 val dailyNative = InterestCalculator.dailyInterestCents(
-                    wallet.balanceCents,
+                    compoundedBalance,
                     tna,
                     wallet.remuneratedCapCents,
                 )
@@ -91,8 +114,15 @@ object DailyInterestEngine {
                         tnaPercent = tna,
                         dailyNativeCents = dailyNative,
                         dailyArsCents = dailyArs,
-                        explanation = walletFormula(wallet, tna, baseNative, mep),
+                        explanation = walletFormula(
+                            wallet = wallet,
+                            tna = tna,
+                            baseNative = baseNative,
+                            mep = mep,
+                            compounded = accrued > 0L,
+                        ),
                     )
+                    walletAccruedCents[wallet.id] = accrued + dailyNative
                 }
             }
 
@@ -127,13 +157,20 @@ object DailyInterestEngine {
                     emptyList()
                 }
                 val latestPrice = series.lastOrNull()?.price ?: 0.0
-                val quotePair = resolveQuotePairForDate(
-                    holding = holding,
-                    isFci = isFci,
-                    linkedHoldingIds = linkedHoldingIds,
-                    series = series,
-                    date = date,
-                )
+                val fciPrices = if (isFci) fciDailyPrices[holding.id] else null
+                val quotePair = if (!fciPrices.isNullOrEmpty()) {
+                    val previous = fciPrices[date.minusDays(1)]
+                    val current = fciPrices[date]
+                    if (previous != null && current != null) previous to current else null
+                } else {
+                    resolveQuotePairForDate(
+                        holding = holding,
+                        isFci = isFci,
+                        linkedHoldingIds = linkedHoldingIds,
+                        series = series,
+                        date = date,
+                    )
+                }
                 val prevPrice = quotePair?.first
                 val currPrice = quotePair?.second
                 val deltaNative = if (prevPrice != null && currPrice != null) {
@@ -166,13 +203,15 @@ object DailyInterestEngine {
                 } else if (
                     holding.id !in linkedHoldingIds &&
                     (holding.tnaPercent ?: 0.0) > 0.0 &&
-                    holding.currentValueCents > 0L
+                    effectiveValueCents > 0L
                 ) {
                     val tna = holding.tnaPercent ?: 0.0
-                    val dailyNative = InterestCalculator.dailyInterestCents(holding.currentValueCents, tna)
+                    val accrued = holdingTnaAccruedCents[holding.id] ?: 0L
+                    val compoundedValue = effectiveValueCents + accrued
+                    val dailyNative = InterestCalculator.dailyInterestCents(compoundedValue, tna)
                     if (dailyNative != 0L) {
                         val dailyArs = toArs(dailyNative, holding.currency, mep)
-                        val basisArs = toArs(holding.currentValueCents, holding.currency, mep)
+                        val basisArs = toArs(compoundedValue, holding.currency, mep)
                         lines += InterestLine(
                             sourceId = "holding:${holding.id}",
                             sourceName = label,
@@ -182,8 +221,15 @@ object DailyInterestEngine {
                             tnaPercent = tna,
                             dailyNativeCents = dailyNative,
                             dailyArsCents = dailyArs,
-                            explanation = holdingTnaFormula(holding, tna, mep),
+                            explanation = holdingTnaFormula(
+                                holding = holding,
+                                tna = tna,
+                                mep = mep,
+                                basisNative = compoundedValue,
+                                compounded = accrued > 0L,
+                            ),
                         )
+                        holdingTnaAccruedCents[holding.id] = accrued + dailyNative
                     }
                 } else if (
                     series.size < 2 &&
@@ -243,7 +289,10 @@ object DailyInterestEngine {
         val daysConsidered = daysInMonth.size
         val projectedMonth = accrualPerDay * daysConsidered
         val differenceVsProjection = totalArs - projectedMonth
-        val unexplained = differenceVsProjection - marketTotal
+        // Extra accrual produced by reinvesting each day's interest. It explains part of
+        // the gap against the naive "first day × days" projection.
+        val compounding = accrualTotal - projectedMonth
+        val unexplained = differenceVsProjection - marketTotal - compounding
         val accrualSources = accrualLines.map { it.sourceId }.distinct().size
         val marketSources = marketLines.map { it.sourceId }.distinct().size
 
@@ -255,6 +304,7 @@ object DailyInterestEngine {
             accrualPerDayArsCents = accrualPerDay,
             projectedMonthArsCents = projectedMonth,
             differenceVsProjectionArsCents = differenceVsProjection,
+            compoundingArsCents = compounding,
             unexplainedArsCents = unexplained,
             accrualSources = accrualSources,
             marketSources = marketSources,
@@ -266,6 +316,7 @@ object DailyInterestEngine {
                 marketTotal = marketTotal,
                 accrualSources = accrualSources,
                 marketSources = marketSources,
+                compounding = compounding,
                 unexplained = unexplained,
                 missingSources = missingMarketSources.toList(),
                 marketOverridesTna = marketOverridesTna.toList(),
@@ -289,15 +340,24 @@ object DailyInterestEngine {
         marketTotal: Long,
         accrualSources: Int,
         marketSources: Int,
+        compounding: Long,
         unexplained: Long,
         missingSources: List<String>,
         marketOverridesTna: List<String>,
     ): List<String> = buildList {
         if (accrualSources > 0) {
             add(
-                "TNA: $accrualSources ${if (accrualSources == 1) "fuente" else "fuentes"} × " +
-                    "${formatArs(accrualPerDay)} / día × $daysConsidered días = ${formatArs(projectedMonth)}. " +
-                    "Se usa el saldo y la TNA actuales para todos los días, no el saldo histórico.",
+                "TNA: $accrualSources ${if (accrualSources == 1) "fuente" else "fuentes"} con " +
+                    "capitalización diaria. Primer día ${formatArs(accrualPerDay)} / día × " +
+                    "$daysConsidered días = ${formatArs(projectedMonth)}; al reinvertir los " +
+                    "intereses el acumulado suma ${formatArs(compounding)} extra.",
+            )
+        }
+        if (marketSources > 0) {
+            add(
+                "Los FCI sin cotización publicada se completan día a día con el factor diario " +
+                    "del último intervalo CAFCI. Así el valor de la cuotaparte y la base de " +
+                    "cálculo crecen con los intereses, en lugar de repetir el mismo monto.",
             )
         }
         if (marketSources > 0) {
@@ -343,6 +403,54 @@ object DailyInterestEngine {
 
     private fun toArs(cents: Long, currency: CurrencyCode, mep: Double): Long =
         if (currency == CurrencyCode.ARS) cents else (cents * mep).roundToLong()
+
+    /**
+     * Fills a day-by-day price series for an FCI from the stored CAFCI quotes.
+     *
+     * Real quotes anchor the series. Days without a published quote are filled with
+     * the daily factor of the surrounding interval, applied **on top of the previous
+     * day's price**, so the quoted value and therefore the interest base compound
+     * forward instead of repeating the same one-day jump.
+     */
+    private fun buildFciDailyPrices(
+        series: List<InstrumentQuote>,
+        days: List<LocalDate>,
+    ): Map<LocalDate, Double> {
+        if (days.isEmpty()) return emptyMap()
+        val sorted = series.filter { it.price > 0.0 }.sortedBy { it.date }
+        if (sorted.size < 2) return emptyMap()
+        val byDate = sorted.associateBy { it.date }
+        val monthStart = days.first()
+        val firstDate = sorted.first().date
+
+        fun dailyFactor(date: LocalDate): Double {
+            val nextIdx = sorted.indexOfFirst { it.date.isAfter(date) }
+            val next = if (nextIdx >= 0) sorted[nextIdx] else sorted.last()
+            val previous = if (nextIdx > 0) sorted[nextIdx - 1] else sorted[sorted.size - 2]
+            if (previous.price <= 0.0 || next.price <= 0.0) return 1.0
+            val span = ChronoUnit.DAYS.between(previous.date, next.date).coerceAtLeast(1L)
+            return (next.price / previous.price).pow(1.0 / span.toDouble())
+        }
+
+        val prices = sortedMapOf<LocalDate, Double>()
+        if (firstDate.isBefore(monthStart)) {
+            val seed = sorted.lastOrNull { it.date.isBefore(monthStart) }?.price ?: sorted.first().price
+            prices[monthStart.minusDays(1)] = seed
+        }
+
+        days.forEach { date ->
+            val real = byDate[date]
+            if (real != null) {
+                prices[date] = real.price
+            } else if (date.isAfter(firstDate)) {
+                val base = prices[date.minusDays(1)]
+                    ?: sorted.lastOrNull { it.date.isBefore(date) }?.price
+                    ?: sorted.first().price
+                prices[date] = base * dailyFactor(date)
+            }
+        }
+        return prices
+    }
 
     /**
      * Resolves the `(prevPrice, currPrice)` pair for [holding] on [date].
@@ -402,13 +510,13 @@ object DailyInterestEngine {
     private fun holdingLabel(holding: Holding, duplicateSymbols: Set<String>): String {
         val base = holding.symbol.ifBlank { holding.name }
         if (holding.symbol.trim().uppercase() !in duplicateSymbols) return base
-        val detail = holding.notes.trim().ifBlank {
-            holding.name.trim().takeIf {
-                it.isNotBlank() &&
-                    !it.equals(holding.symbol.trim(), ignoreCase = true) &&
-                    !it.equals("Letra del Tesoro ${holding.symbol.trim()}", ignoreCase = true)
-            }.orEmpty()
-        }
+        val tag = PortfolioReconciliationEngine.accountTag(holding)
+        if (tag.isNotBlank()) return "$base ($tag)"
+        val detail = holding.name.trim().takeIf {
+            it.isNotBlank() &&
+                !it.equals(holding.symbol.trim(), ignoreCase = true) &&
+                !it.equals("Letra del Tesoro ${holding.symbol.trim()}", ignoreCase = true)
+        }.orEmpty()
         return if (detail.isNotBlank()) "$base ($detail)" else base
     }
 
@@ -475,7 +583,13 @@ object DailyInterestEngine {
             String.format(localeAr, "%.2f", qty)
         }
 
-    private fun walletFormula(wallet: Wallet, tna: Double, baseNative: Long, mep: Double): String = buildString {
+    private fun walletFormula(
+        wallet: Wallet,
+        tna: Double,
+        baseNative: Long,
+        mep: Double,
+        compounded: Boolean = false,
+    ): String = buildString {
         append("Base ")
         append(formatNative(baseNative, wallet.currency))
         if (wallet.remuneratedCapCents > 0 && wallet.balanceCents > wallet.remuneratedCapCents) {
@@ -486,6 +600,7 @@ object DailyInterestEngine {
         append(" × TNA ")
         append(formatRate(tna))
         if (wallet.linkedHoldingId != null) append(" (FCI vinculado)")
+        if (compounded) append(" · intereses reinvertidos")
         append(" ÷ 365")
         if (wallet.currency == CurrencyCode.USD) {
             append(" · MEP ")
@@ -493,9 +608,16 @@ object DailyInterestEngine {
         }
     }
 
-    private fun holdingTnaFormula(holding: Holding, tna: Double, mep: Double): String = buildString {
+    private fun holdingTnaFormula(
+        holding: Holding,
+        tna: Double,
+        mep: Double,
+        basisNative: Long = holding.currentValueCents,
+        compounded: Boolean = false,
+    ): String = buildString {
         append("Valuación ")
-        append(formatNative(holding.currentValueCents, holding.currency))
+        append(formatNative(basisNative, holding.currency))
+        if (compounded) append(" (con intereses acumulados)")
         append(" × TNA ")
         append(formatRate(tna))
         append(" ÷ 365")

@@ -12,6 +12,7 @@ import com.smartinvest.data.local.entity.FundMovementEntity
 import com.smartinvest.data.local.entity.InstallmentEntity
 import com.smartinvest.data.local.entity.MemberEntity
 import com.smartinvest.data.local.entity.SettlementEntity
+import com.smartinvest.data.local.model.ExpenseRecordRow
 import com.smartinvest.data.local.model.InstallmentRow
 import kotlinx.coroutines.flow.Flow
 
@@ -141,6 +142,48 @@ interface ExpenseDao {
 
     @Query("SELECT * FROM expenses ORDER BY dateEpochDay DESC, id DESC")
     fun observeAll(): Flow<List<ExpenseEntity>>
+
+    /**
+     * Distinct descriptions ordered by most recent use. Used to suggest the expense
+     * description while the user types, so recurring purchases only need a few letters.
+     */
+    @Query(
+        """
+        SELECT description FROM expenses
+        WHERE description != ''
+        GROUP BY description
+        ORDER BY MAX(dateEpochDay) DESC
+        """,
+    )
+    fun observeDescriptions(): Flow<List<String>>
+
+    @Query(
+        """
+        SELECT e.id AS expenseId,
+               i.id AS installmentId,
+               e.description AS description,
+               e.notes AS notes,
+               e.dateEpochDay AS dateEpochDay,
+               e.month AS purchaseMonth,
+               CASE WHEN e.paymentMethod = 'CREDIT' THEN i.dueMonth ELSE e.month END AS impactMonth,
+               e.totalAmountCents AS totalAmountCents,
+               CASE WHEN e.paymentMethod = 'CREDIT' THEN i.amountCents ELSE e.totalAmountCents END AS impactCents,
+               e.categoryId AS categoryId,
+               e.paidByMemberId AS paidByMemberId,
+               e.paymentMethod AS paymentMethod,
+               e.creditCardId AS creditCardId,
+               i.number AS installmentNumber,
+               i.count AS installmentCount,
+               i.isPaid AS installmentPaid
+        FROM expenses e
+        LEFT JOIN installments i
+            ON i.expenseId = e.id AND e.paymentMethod = 'CREDIT'
+        WHERE (e.paymentMethod != 'CREDIT' AND e.month BETWEEN :fromMonth AND :toMonth)
+           OR (e.paymentMethod = 'CREDIT' AND i.dueMonth BETWEEN :fromMonth AND :toMonth)
+        ORDER BY e.dateEpochDay DESC, e.id DESC, i.number ASC
+        """,
+    )
+    fun observeExpenseRecords(fromMonth: String, toMonth: String): Flow<List<ExpenseRecordRow>>
 
     @Query("SELECT * FROM expenses ORDER BY id ASC")
     suspend fun getAll(): List<ExpenseEntity>

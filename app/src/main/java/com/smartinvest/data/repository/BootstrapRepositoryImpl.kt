@@ -2,8 +2,10 @@ package com.smartinvest.data.repository
 
 import androidx.room.withTransaction
 import com.smartinvest.core.time.DateUtils
+import com.smartinvest.data.backup.AppBackupManager
 import com.smartinvest.data.local.AppDatabase
 import com.smartinvest.data.local.dao.CategoryDao
+import com.smartinvest.data.local.dao.HoldingDao
 import com.smartinvest.data.local.dao.MemberDao
 import com.smartinvest.data.local.dao.RateHistoryDao
 import com.smartinvest.data.local.dao.WalletDao
@@ -27,66 +29,74 @@ class BootstrapRepositoryImpl @Inject constructor(
     private val memberDao: MemberDao,
     private val categoryDao: CategoryDao,
     private val walletDao: WalletDao,
+    private val holdingDao: HoldingDao,
     private val rateHistoryDao: RateHistoryDao,
+    private val backupManager: AppBackupManager,
     private val settings: SettingsRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : BootstrapRepository {
 
     override suspend fun seedIfNeeded() = withContext(io) {
-        if (settings.isInitialized()) return@withContext
-
-        db.withTransaction {
-            if (memberDao.count() == 0) {
-                memberDao.insert(
-                    MemberEntity(
-                        name = "Vos",
-                        isCurrentUser = true,
-                        colorHex = "#22C55E",
-                        isActive = true,
-                    ),
-                )
-                memberDao.insert(
-                    MemberEntity(
-                        name = "Mamá",
-                        isCurrentUser = false,
-                        colorHex = "#A78BFA",
-                        isActive = true,
-                    ),
-                )
-            }
-
-            if (categoryDao.count() == 0) {
-                defaultCategories().forEachIndexed { index, (name, emoji, color) ->
-                    categoryDao.insert(
-                        CategoryEntity(
-                            name = name,
-                            emoji = emoji,
-                            colorHex = color,
-                            sortOrder = index,
+        if (!settings.isInitialized()) {
+            db.withTransaction {
+                if (memberDao.count() == 0) {
+                    memberDao.insert(
+                        MemberEntity(
+                            name = "Vos",
+                            isCurrentUser = true,
+                            colorHex = "#22C55E",
+                            isActive = true,
+                        ),
+                    )
+                    memberDao.insert(
+                        MemberEntity(
+                            name = "Mamá",
+                            isCurrentUser = false,
+                            colorHex = "#A78BFA",
+                            isActive = true,
                         ),
                     )
                 }
-            }
 
-            if (walletDao.count() == 0) {
-                val today = DateUtils.today()
-                seededWallets().forEach { wallet ->
-                    val id = walletDao.upsert(wallet)
-                    if (wallet.tnaPercent > 0) {
-                        rateHistoryDao.upsert(
-                            RateHistoryEntity(
-                                walletId = id,
-                                dateEpochDay = today.toEpochDay(),
-                                tnaPercent = wallet.tnaPercent,
-                                source = wallet.rateSource,
+                if (categoryDao.count() == 0) {
+                    defaultCategories().forEachIndexed { index, (name, emoji, color) ->
+                        categoryDao.insert(
+                            CategoryEntity(
+                                name = name,
+                                emoji = emoji,
+                                colorHex = color,
+                                sortOrder = index,
                             ),
                         )
                     }
                 }
+
+                if (walletDao.count() == 0) {
+                    val today = DateUtils.today()
+                    seededWallets().forEach { wallet ->
+                        val id = walletDao.upsert(wallet)
+                        if (wallet.tnaPercent > 0) {
+                            rateHistoryDao.upsert(
+                                RateHistoryEntity(
+                                    walletId = id,
+                                    dateEpochDay = today.toEpochDay(),
+                                    tnaPercent = wallet.tnaPercent,
+                                    source = wallet.rateSource,
+                                ),
+                            )
+                        }
+                    }
+                }
             }
+
+            settings.markInitialized()
         }
 
-        settings.markInitialized()
+        // Apply the 14/11/2026 portfolio balances once if not yet present in holdings.
+        val existingHoldings = holdingDao.getAll()
+        if (existingHoldings.none { it.notes.contains("14/11/2026") }) {
+            runCatching { backupManager.syncExportedBrokerHoldings() }
+        }
     }
 
     private fun defaultCategories(): List<Triple<String, String, String>> = listOf(

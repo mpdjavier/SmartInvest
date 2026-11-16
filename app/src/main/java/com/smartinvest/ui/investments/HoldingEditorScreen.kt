@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smartinvest.core.money.MoneyParser
 import com.smartinvest.data.network.MarketPresets
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
@@ -46,13 +47,17 @@ import com.smartinvest.ui.components.ChipRow
 import com.smartinvest.ui.components.DateField
 import com.smartinvest.ui.components.DropdownField
 import com.smartinvest.ui.components.InfoBanner
+import com.smartinvest.ui.components.KeyValueRow
 import com.smartinvest.ui.components.SectionHeader
 import com.smartinvest.ui.components.SmartCard
+import com.smartinvest.ui.theme.Amber
+import com.smartinvest.ui.theme.Emerald
 import com.smartinvest.ui.theme.Rose
 import com.smartinvest.ui.theme.Sky
 import com.smartinvest.ui.util.Fmt
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlin.math.roundToLong
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,14 +137,15 @@ fun HoldingEditorScreen(
     ) {
         InfoBanner(
             "Cargá el activo manualmente o usá un preset con seguimiento real desde Rava / CAFCI. " +
-                "Los CEDEARs cuentan como exposición en dólares en el rebalanceo aunque coticen en pesos.",
+                "Tanto los CEDEARs (SPY) como los bonos soberanos (AO27 y AO27D) cuentan como " +
+                "exposición dolarizada en el rebalanceo aunque coticen en pesos.",
             color = Sky,
         )
 
         SmartCard {
             SectionHeader(
                 title = "Presets con datos reales",
-                subtitle = "Rava (S30N6, AO27D, SPY) y CAFCI (Adcap III, Mercado Fondo ARS/USD)",
+                subtitle = "Rava (S30N6, T15E7, AO27, AO27D, SPY) y CAFCI (Adcap III, Mercado Fondo ARS/USD)",
             )
             Spacer(Modifier.height(8.dp))
             ChipRow(
@@ -297,12 +303,90 @@ fun HoldingEditorScreen(
             }
         }
 
-        AmountInput(
-            value = state.valueText,
-            onValueChange = viewModel::setValue,
-            label = "Valuación actual (se recalcula si indicás cantidad y fuente)",
-            prefix = if (state.currency == CurrencyCode.USD) "US$" else "$",
-        )
+        SmartCard {
+            SectionHeader(
+                title = "Valuación exacta hoy (en ${state.currency.symbol} y conversión)",
+                subtitle = "Fijá el monto exacto que disponés hoy para comparar evolución y verificar cálculos",
+            )
+            Spacer(Modifier.height(8.dp))
+            AmountInput(
+                value = state.valueText,
+                onValueChange = viewModel::setValue,
+                label = "Valuación actual exacta (${state.currency.symbol})",
+                prefix = if (state.currency == CurrencyCode.USD) "US$" else "$",
+            )
+            val currentCents = MoneyParser.parseToCents(state.valueText) ?: 0L
+            val mep = state.mepRate.takeIf { it > 0.0 } ?: 1_000.0
+            if (currentCents > 0L) {
+                Spacer(Modifier.height(6.dp))
+                val equivText = if (state.currency == CurrencyCode.ARS) {
+                    val usdCents = (currentCents / mep).roundToLong()
+                    "Equivalente al MEP (${Fmt.ars((mep * 100.0).roundToLong())}): ${Fmt.usd(usdCents)}"
+                } else {
+                    val arsCents = (currentCents * mep).roundToLong()
+                    "Equivalente al MEP (${Fmt.ars((mep * 100.0).roundToLong())}): ${Fmt.ars(arsCents)}"
+                }
+                Text(
+                    equivText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Sky,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Fijar cifra exacta manual", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Impide que la sincronización de Rava/CAFCI pise tu saldo real cargado hoy.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.manualValuationLocked,
+                    onCheckedChange = viewModel::setManualValuationLocked,
+                )
+            }
+            val qty = state.quantityText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+            val quotePrice = state.latestQuotePrice
+            if (qty > 0.0 && quotePrice != null && quotePrice > 0.0) {
+                val factor = if (state.quoteUnit == QuoteUnit.PER_100_NOMINAL) 0.01 else 1.0
+                val calcCents = (quotePrice * factor * qty * 100.0).roundToLong()
+                val diffCents = currentCents - calcCents
+                Spacer(Modifier.height(8.dp))
+                KeyValueRow(
+                    "Calculado por cotización (${state.latestQuoteDate?.let(Fmt::shortDate) ?: "mercado"})",
+                    if (state.currency == CurrencyCode.USD) Fmt.usd(calcCents) else Fmt.ars(calcCents),
+                )
+                if (currentCents > 0L) {
+                    KeyValueRow(
+                        "Diferencia (Real − Calculado)",
+                        if (state.currency == CurrencyCode.USD) Fmt.signedUsd(diffCents) else Fmt.signedArs(diffCents),
+                        valueColor = if (diffCents == 0L) Emerald else Amber,
+                    )
+                }
+                TextButton(onClick = viewModel::applyCalculatedValuation) {
+                    Text("Usar valor calculado por cotización")
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            val altCurrency = if (state.currency == CurrencyCode.ARS) CurrencyCode.USD else CurrencyCode.ARS
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                AmountInput(
+                    value = state.altCurrencyValueText,
+                    onValueChange = viewModel::setAltCurrencyValue,
+                    label = "Cargar desde ${altCurrency.symbol}",
+                    prefix = if (altCurrency == CurrencyCode.USD) "US$" else "$",
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = viewModel::convertAltCurrencyToValue) {
+                    Text("Convertir")
+                }
+            }
+        }
 
         SmartCard {
             SectionHeader(

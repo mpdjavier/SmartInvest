@@ -191,7 +191,14 @@ private fun RedemptionLegRow(leg: RedemptionLeg) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(Fmt.ars(leg.amountCents), style = MaterialTheme.typography.titleSmall, color = color)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            Fmt.ars(leg.amountCents),
+            style = MaterialTheme.typography.titleSmall,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 
@@ -204,15 +211,22 @@ private fun SourceRow(source: LiquiditySource) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(source.name, style = MaterialTheme.typography.titleSmall)
+            Text(source.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
             Text(
                 source.note,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
+        Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
-            Text(Fmt.ars(source.availableCents), style = MaterialTheme.typography.titleSmall)
+            Text(
+                Fmt.ars(source.availableCents),
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                softWrap = false,
+            )
             TagPill(source.tier.label, tierColor(source.tier))
         }
     }

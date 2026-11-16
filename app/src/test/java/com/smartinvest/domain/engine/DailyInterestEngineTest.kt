@@ -460,9 +460,116 @@ class DailyInterestEngineTest {
             today = today,
         )
 
-        // 100.000 ARS at 40% TNA = 109,59 ARS/day -> 10.959 cents/day * 2 days.
+        // Day 1: 100.000 ARS at 40% TNA = 10.959 cents. Day 2 starts from 100.109,59
+        // and earns 10.971 cents, so the total compounds to 21.930 cents.
         assertEquals(2, breakdown.days.size)
-        assertEquals(21_918L, breakdown.totalArsCents)
+        assertEquals(21_930L, breakdown.totalArsCents)
+        assertEquals(10_959L, breakdown.reconciliation.accrualPerDayArsCents)
+        assertEquals(12L, breakdown.reconciliation.compoundingArsCents)
         assertTrue(breakdown.days.first().lines.first().explanation.contains("FCI vinculado"))
+        assertTrue(breakdown.days.first().lines.first().explanation.contains("reinvertidos"))
+    }
+
+    @Test
+    fun `wallet interest compounds day after day instead of using a fixed base`() {
+        val month = YearMonth.of(2026, 11)
+        val today = LocalDate.of(2026, 11, 4)
+        val wallet = Wallet(
+            id = 3,
+            name = "Cuenta remunerada",
+            institution = "Banco",
+            type = WalletType.WALLET,
+            currency = CurrencyCode.ARS,
+            balanceCents = 1_000_000_00L,
+            tnaPercent = 36.5,
+            remuneratedCapCents = 0L,
+            isActive = true,
+            rateSource = "test",
+            rateUpdatedAt = null,
+            liquidityPriority = 2,
+            notes = "",
+        )
+
+        val breakdown = DailyInterestEngine.build(
+            month = month,
+            wallets = listOf(wallet),
+            holdings = emptyList(),
+            fxRates = emptyList(),
+            quotes = emptyList(),
+            fallbackMepRate = 1_000.0,
+            today = today,
+        )
+
+        val chronological = breakdown.days.sortedBy { it.date }
+        val firstDay = chronological.first().lines.first()
+        val lastDay = chronological.last().lines.first()
+        assertTrue("el interés diario debe crecer", lastDay.dailyArsCents > firstDay.dailyArsCents)
+        assertTrue("la base debe incorporar intereses", lastDay.basisCents > firstDay.basisCents)
+        assertTrue(breakdown.totalArsCents > firstDay.dailyArsCents * chronological.size)
+        assertTrue(breakdown.reconciliation.compoundingArsCents > 0L)
+        assertTrue(breakdown.reconciliation.isFullyExplained)
+    }
+
+    @Test
+    fun `FCI without fresh CAFCI quotes compounds the base forward`() {
+        val month = YearMonth.of(2026, 11)
+        val today = LocalDate.of(2026, 11, 5)
+        val fci = Holding(
+            id = 30,
+            symbol = "ADCAP-BAL2",
+            name = "Adcap Balanceado II",
+            assetType = AssetType.FCI,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 1_010_000_00L,
+            costCents = 1_000_000_00L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "",
+            marketKey = "cafci:1402:4069",
+            source = MarketSource.CAFCI,
+            quantity = 0.0,
+            quoteUnit = QuoteUnit.PER_UNIT,
+        )
+        val quotes = listOf(
+            InstrumentQuote(
+                marketKey = "cafci:1402:4069",
+                symbol = "FCI-1402",
+                source = MarketSource.CAFCI,
+                price = 100.0,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                date = LocalDate.of(2026, 11, 1),
+                fetchedAt = 1L,
+            ),
+            InstrumentQuote(
+                marketKey = "cafci:1402:4069",
+                symbol = "FCI-1402",
+                source = MarketSource.CAFCI,
+                price = 101.0,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                date = LocalDate.of(2026, 11, 2),
+                fetchedAt = 2L,
+            ),
+        )
+
+        val breakdown = DailyInterestEngine.build(
+            month = month,
+            wallets = emptyList(),
+            holdings = listOf(fci),
+            fxRates = emptyList(),
+            quotes = quotes,
+            fallbackMepRate = 1_000.0,
+            today = today,
+        )
+
+        val chronological = breakdown.days.sortedBy { it.date }
+        // No line on 01/11 because there is no previous quote; 02/11 anchors the series.
+        assertEquals(4, chronological.size)
+        val firstLine = chronological.first().lines.first()
+        val lastLine = chronological.last().lines.first()
+        assertTrue("la base debe crecer", lastLine.basisCents > firstLine.basisCents)
+        assertTrue("el interés debe crecer", lastLine.dailyArsCents > firstLine.dailyArsCents)
+        assertEquals(LocalDate.of(2026, 11, 5), chronological.last().date)
     }
 }

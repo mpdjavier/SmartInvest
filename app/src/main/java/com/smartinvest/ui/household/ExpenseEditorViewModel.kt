@@ -31,6 +31,8 @@ data class ExpenseEditorData(
     val cards: List<CreditCard> = emptyList(),
     val fundBalanceCents: Long = 0,
     val walletHoldings: List<Holding> = emptyList(),
+    /** Descriptions already used, most recent first, for autocomplete. */
+    val previousDescriptions: List<String> = emptyList(),
 )
 
 data class ExpenseForm(
@@ -40,7 +42,7 @@ data class ExpenseForm(
     val date: LocalDate,
     val categoryId: Long? = null,
     val paidByMemberId: Long? = null,
-    val paymentMethod: ExpensePaymentMethod = ExpensePaymentMethod.DEBIT,
+    val paymentMethod: ExpensePaymentMethod = ExpensePaymentMethod.CASH,
     val cardId: Long? = null,
     val walletHoldingId: Long? = null,
     val installments: Int = 1,
@@ -84,14 +86,25 @@ class ExpenseEditorViewModel @Inject constructor(
     private var latestData = ExpenseEditorData()
     private var defaultsApplied = false
 
-    private val dataFlow = combine(
+    private val baseDataFlow = combine(
         repository.observeMembers(),
         repository.observeCategories(includeArchived = false),
         repository.observeCards(includeInactive = false),
+    ) { members, categories, cards ->
+        ExpenseEditorData(members = members, categories = categories, cards = cards)
+    }
+
+    private val dataFlow = combine(
+        baseDataFlow,
         repository.observeFundBalance(),
         investments.observeWalletHoldings(),
-    ) { members, categories, cards, fundBalance, walletHoldings ->
-        ExpenseEditorData(members, categories, cards, fundBalance, walletHoldings)
+        repository.observeExpenseDescriptions(),
+    ) { base, fundBalance, walletHoldings, previousDescriptions ->
+        base.copy(
+            fundBalanceCents = fundBalance,
+            walletHoldings = walletHoldings,
+            previousDescriptions = previousDescriptions,
+        )
     }
 
     val uiState = combine(dataFlow, form) { data, currentForm ->
