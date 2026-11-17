@@ -66,6 +66,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - **Rebalanceo elástico 60/40** con banda de tolerancia configurable: **tanto los CEDEARs (`SPY`) como los bonos soberanos (`AO27` y `AO27D`) y FCI en dólares (`MP-USD`) se computan como exposición en dólares aunque estén valuados en pesos**, ya que mantienen su valor en moneda dura.
 - **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 16/11/2026 en 1 toque (saldos **y** cantidades de AO27D, ADCAP-BAL3, MP-ARS y MP-USD, para que los 9 activos se actualicen solos), y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
 - **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
+- **Comparador REM de corto plazo** (`rem`): usa las medianas del **Relevamiento de Expectativas de Mercado** del BCRA (IPC mensual, tipo de cambio oficial y TAMAR) para proyectar letras, bonos CER, dollar linked y tasa en pesos, y las compara contra un **crawling peg ficticio** configurable (1% mensual por defecto). Cada instrumento se proyecta hasta su vencimiento o hasta el horizonte elegido, **nunca más allá de abril de 2027** por el calendario electoral. Muestra retorno nominal, mensual, real, en dólares, break-even de devaluación y veredicto (conviene / empata / no conviene). El REM de octubre 2026 viene embebido y se puede **actualizar importando el XLSX oficial del BCRA**; TIR, TNA y vencimientos se editan a mano.
 - **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): compara el universo Eco Valores o **las 2.300+ clases del catálogo completo**, con la rentabilidad y la estabilidad como parámetros independientes. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. En el seguimiento las métricas salen de la serie diaria en ventanas de 30/90/180/365 días; en el catálogo completo se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
 - Planificador de sueldo y simulador de rescate de emergencia.
 
@@ -189,6 +190,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `daily_interest` | Intereses día a día, capitalización y base de cálculo |
 | `instrument_detail/{holdingId}` | Evolución histórica de instrumentos (Rava) y FCI (CAFCI) |
 | `rebalancing` | Asistente macro: carry, semáforo y reparto del próximo ingreso |
+| `rem` | Comparador REM: instrumentos de corto plazo contra un crawling peg ficticio, horizonte máximo abril 2027 |
 
 ---
 
@@ -227,7 +229,7 @@ app/src/main/java/com/smartinvest/
 │   ├── investments/
 │   ├── navigation/       # Routes + NavHost
 │   ├── planning/         # sueldo, emergencia, LiquiditySources
-│   ├── rebalancing/      # asistente macro y rebalanceo orgánico
+│   ├── rebalancing/      # asistente macro, comparador REM y rebalanceo orgánico
 │   ├── settings/
 │   ├── theme/
 │   └── util/             # Fmt, colorFromHex
@@ -436,6 +438,49 @@ brecha hasta la meta ajustada (por ejemplo, 10 pp ≈ 2,4 meses con un ahorro de
 puede estar en instrumentos con vencimiento ≤ 6 meses o de rescate T+0/24 h. Si hay
 sobrepeso en instrumentos largos, la UI lo marca para revisar.
 
+### Comparador REM de corto plazo
+
+Fuente: **REM del BCRA** (medianas). El horizonte se recorta a `min(horizonte pedido,
+abril 2027, último mes del REM importado)`:
+
+```
+meses        = días(hoy → fecha_horizonte) / 30,4375
+factor_peg   = (1 + peg_mensual / 100) ^ meses
+fecha_efectiva(instrumento) = min(vencimiento, fecha_horizonte)
+```
+
+Proyección del retorno nominal en pesos según el tipo de instrumento:
+
+| Tipo | Factor de retorno en ARS |
+| --- | --- |
+| Tasa fija (LECAP/BONCAP) con TIR | `(1 + TIR)^años` |
+| Tasa fija / TNA nominal | `(1 + TNA / 365)^días` |
+| Bono CER | `inflación_REM × (1 + TIR_real)^años` |
+| Dollar linked | `FX_REM(destino) / FX_REM(hoy) × (1 + spread)^años` |
+| Bono USD | `FX_REM(destino) / FX_REM(hoy) × (1 + TIR_USD)^años` |
+
+Métricas por fila:
+
+```
+retorno_nominal_%  = (factor − 1) × 100
+retorno_mensual_%  = factor^(1/meses) − 1
+retorno_real_%     = factor / inflación_REM − 1
+retorno_USD_%      = factor / devaluación_REM − 1
+exceso_vs_peg_pp   = (factor / factor_peg − 1) × 100
+break_even_%       = factor^(1/meses) − 1     // devaluación mensual que empata
+```
+
+- **Ranking por exceso sobre el crawling peg** (`exceso_vs_peg_pp`), no por retorno bruto: así un instrumento indexado no gana solo por tener más inflación o devaluación.
+- **Veredicto**: 🟢 conviene si el exceso es ≥ +0,5 pp, 🔴 no conviene si es ≤ −0,5 pp, 🟡 empata en el medio.
+- **FX del REM**: cada valor mensual se trata como promedio del mes y se interpola linealmente día a día, así el retorno en dólares no salta de un mes a otro.
+- **Inflación del REM**: se acumula mes a mes y los meses parciales se devengan por fracción de días.
+- Si el REM importado no llega al horizonte, se usa el último dato disponible y la UI lo advierte; si no hay tipo de cambio, se omite el retorno en USD y también se advierte.
+- El REM de **octubre de 2026** (publicado el 05/11/2026) viene embebido: IPC mensual nov-26 a abr-27 = 1,70 / 1,84 / 1,70 / 1,60 / 1,70 / 1,66 y FX = 1558,48 / 1590,00 / 1618,83 / 1649,18 / 1676,89 / 1701,54.
+- **Importación del XLSX oficial**: el parser lee las hojas de resultados del BCRA, toma la **mediana** de los bloques «Precios minoristas (IPC)», «Tipo de cambio nominal» y «Tasa de interés (TAMAR)», convierte las fechas seriales de Excel y descarta las filas anuales o de «próximos 12/24 meses».
+- La configuración completa (snapshot + instrumentos + peg + horizonte) se guarda como JSON en `AppSettings.remConfigJson` y entra en el backup.
+- El comparador **no ejecuta órdenes ni constituye asesoramiento financiero**.
+
+
 
 ### Reparto de sueldo
 
@@ -547,7 +592,7 @@ Room, versión 4 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_
 | `salary_plans` | planes de sueldo guardados (5 líneas: liquidez, carry, tasa fija, MEP y bonos) |
 | `alerts` | alertas generadas |
 
-Los ajustes (pesos del sueldo, umbrales, tolerancia, MEP de fallback, devaluación mensual esperada, TNA de referencia en pesos, notificaciones) viven en **DataStore Preferences**.
+Los ajustes (pesos del sueldo, umbrales, tolerancia, MEP de fallback, devaluación mensual esperada, TNA de referencia en pesos, notificaciones) viven en **DataStore Preferences**. También guardan ahí su JSON la agenda de pagos (`paymentAgendaJson`), el seguimiento de FCI (`fundWatchlistJson`) y el comparador REM (`remConfigJson`), y los tres se incluyen en el backup.
 
 ### Datos iniciales
 
@@ -566,6 +611,7 @@ En el primer arranque se crean:
 - **Rava Bursátil** (`https://www.rava.com/perfil/{TICKER}`) para precio actual y tabla de cierres históricos de letras, bonos y CEDEARs (`S30N6`, `AO27D`, `SPY`, etc.).
 - **CAFCI** (`https://estadisticas.cafci.org.ar/fondos/{FONDO}?clase={CLASE}`) para valor de cuotaparte y rendimientos históricos de FCI (ej. Adcap Balanceado III `1402/4070`, Mercado Fondo ARS `798/1982`, Mercado Fondo USD `1522/4557`).
 - **compararfondos.com.ar** (`https://compararfondos.com.ar/api/fondos` y `/api/fondo/{clase}`) para el catálogo completo y la serie diaria de cuotapartes del evaluador de estabilidad. API pública, sin clave, con atribución obligatoria a compararfondos.com.ar (datos CAFCI/CNV).
+- **BCRA – REM** (`https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/informes/relevamiento-expectativas-mercado-tablas-{AAAA-MM}.xlsx`) para actualizar las expectativas de IPC, tipo de cambio y TAMAR del comparador de corto plazo.
 
 ---
 
@@ -644,7 +690,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**130 tests, 0 fallos, 19 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**138 tests, 0 fallos, 21 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -672,6 +718,8 @@ Tests unitarios JVM (sin emulador):
 | `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago), pago de servicio (Galicia), resumen de tarjeta de crédito (`MASTERCARD BLACK` con vencimiento, próximo cierre y total a pagar), fechas con mes en texto y comprobantes sin datos |
 | `MarketClientsTest` | normalización de claves/URLs y parseo HTML de Rava (tabla histórica y encabezado con cierre anterior) y CAFCI |
 | `MacroRiskTest` | bandas de carry, techo por riesgo país, velocidad de la brecha, calendario electoral, histéresis, guardarraíl de liquidez, alcance por riesgo subyacente, vencimientos como flujo y reparto orgánico 100% pesos / 100% dólares |
+| `RemComparisonEngineTest` | proyección de tasa fija vs. crawling peg, dollar linked cuando el FX del REM corre más rápido, recorte del horizonte a abril 2027, ausencia de FX sin crash y bono CER con inflación del REM |
+| `RemXlsxParserTest` | medianas mensuales de IPC, FX y TAMAR del XLSX del BCRA, fecha de publicación derivada del título y conversión de fechas seriales |
 | `PlanningTest` | sueldo, rebalanceo y rescate de emergencia |
 | `XlsxReaderTest` | lectura de `.xlsx`: shared strings, inline strings, números y celdas salteadas |
 | `SplitHomeParserTest` | hojas Gastos/Fondo, pagadores, cuotas, fechas y totales |

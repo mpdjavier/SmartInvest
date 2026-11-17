@@ -68,6 +68,7 @@ import com.smartinvest.ui.investments.PortfolioReconciliationScreen
 import com.smartinvest.ui.planning.EmergencyScreen
 import com.smartinvest.ui.planning.SalaryScreen
 import com.smartinvest.ui.rebalancing.RebalancingScreen
+import com.smartinvest.ui.rebalancing.RemScreen
 import com.smartinvest.ui.settings.SettingsScreen
 import com.smartinvest.ui.theme.Amber
 import com.smartinvest.ui.theme.Emerald
@@ -93,6 +94,7 @@ object Routes {
     const val DAILY_INTEREST = "daily_interest"
     const val INSTRUMENT_DETAIL = "instrument_detail/{holdingId}"
     const val REBALANCING = "rebalancing"
+    const val REM = "rem"
     const val RECEIPT_IMPORT = "receipt_import/{receiptPath}"
     const val PAYMENT_AGENDA = "payment_agenda"
     const val EXPENSE_SEARCH = "expense_search"
@@ -133,6 +135,7 @@ private val secondaryTitles = mapOf(
     Routes.DAILY_INTEREST to "Intereses día a día",
     Routes.INSTRUMENT_DETAIL to "Evolución de instrumentos",
     Routes.REBALANCING to "Asistente macro",
+    Routes.REM to "Comparador REM",
     Routes.RECEIPT_IMPORT to "Importar comprobante",
     Routes.PAYMENT_AGENDA to "Agenda de pagos",
     Routes.EXPENSE_SEARCH to "Buscar gastos",
@@ -365,7 +368,14 @@ fun SmartInvestNavHost(
             }
 
             composable(Routes.REBALANCING) {
-                RebalancingScreen(onOpenSettings = { navController.navigate(Routes.SETTINGS) })
+                RebalancingScreen(
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenRem = { navController.navigate(Routes.REM) },
+                )
+            }
+
+            composable(Routes.REM) {
+                RemScreen()
             }
 
             composable(

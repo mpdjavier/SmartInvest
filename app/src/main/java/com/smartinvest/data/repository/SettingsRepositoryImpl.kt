@@ -57,6 +57,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val hideAmounts = booleanPreferencesKey("hide_amounts")
         val paymentAgenda = stringPreferencesKey("payment_agenda_json")
         val fundWatchlist = stringPreferencesKey("fund_watchlist_json")
+        val remConfig = stringPreferencesKey("rem_config_json")
     }
 
     override val settings: Flow<AppSettings> = context.settingsDataStore.data
@@ -95,6 +96,7 @@ class SettingsRepositoryImpl @Inject constructor(
             prefs[Keys.hideAmounts] = settings.hideAmounts
             prefs[Keys.paymentAgenda] = settings.paymentAgendaJson
             prefs[Keys.fundWatchlist] = settings.fundWatchlistJson
+            prefs[Keys.remConfig] = settings.remConfigJson
             prefs[Keys.initialized] = true
         }
     }
@@ -141,5 +143,6 @@ class SettingsRepositoryImpl @Inject constructor(
         hideAmounts = this[Keys.hideAmounts] ?: false,
         paymentAgendaJson = this[Keys.paymentAgenda] ?: "",
         fundWatchlistJson = this[Keys.fundWatchlist] ?: "",
+        remConfigJson = this[Keys.remConfig] ?: "",
     )
 }

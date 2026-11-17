@@ -56,6 +56,8 @@ data class AppSettings(
     val paymentAgendaJson: String = "",
     /** Serialized JSON list of FCI class names followed in the stability evaluator. */
     val fundWatchlistJson: String = "",
+    /** Serialized REM snapshot, instrument assumptions and crawling-peg benchmark. */
+    val remConfigJson: String = "",
 ) {
     val previousCarryBand: CarryRiskBand?
         get() = previousCarryBandName

@@ -79,6 +79,7 @@ data class BackupSettingsDto(
     val hideAmounts: Boolean = false,
     val paymentAgendaJson: String = "",
     val fundWatchlistJson: String = "",
+    val remConfigJson: String = "",
 )
 
 @Serializable
@@ -342,6 +343,7 @@ class AppBackupManager @Inject constructor(
                 hideAmounts = s.hideAmounts,
                 paymentAgendaJson = s.paymentAgendaJson,
                 fundWatchlistJson = s.fundWatchlistJson,
+                remConfigJson = s.remConfigJson,
             ),
             members = memberDao.getAll().map {
                 BackupMemberDto(it.id, it.name, it.isCurrentUser, it.colorHex, it.isActive)
@@ -528,6 +530,7 @@ class AppBackupManager @Inject constructor(
                 hideAmounts = s.hideAmounts,
                 paymentAgendaJson = s.paymentAgendaJson,
                 fundWatchlistJson = s.fundWatchlistJson,
+                remConfigJson = s.remConfigJson,
             ),
         )
 

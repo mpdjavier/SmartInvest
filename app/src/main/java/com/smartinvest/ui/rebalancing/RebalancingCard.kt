@@ -63,6 +63,7 @@ import kotlin.math.roundToLong
 @Composable
 fun RebalancingScreen(
     onOpenSettings: () -> Unit,
+    onOpenRem: () -> Unit,
     viewModel: RebalancingViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -120,6 +121,26 @@ fun RebalancingScreen(
                 context = state.context,
                 onOpenSettings = onOpenSettings,
             )
+        }
+
+        item {
+            SmartCard {
+                SectionHeader(
+                    title = "Comparador REM",
+                    subtitle = "¿Letra, bono CER, dollar linked o tasa en pesos?",
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Proyecta instrumentos de corto plazo con las medianas del REM y los compara " +
+                        "contra un crawling peg ficticio del 1% mensual. Horizonte máximo: abril de 2027.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = onOpenRem) {
+                    Text("Abrir comparador REM")
+                }
+            }
         }
 
         item {
