@@ -197,19 +197,21 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.spacedBy(18.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        val dailyInterest = overview.analytics.dailyInterestCents
+                        val monthlyInterest = overview.analytics.monthlyInterestCents
                         StatTile(
                             label = "Interés / día",
-                            value = Fmt.ars(overview.analytics.dailyInterestCents),
+                            value = Fmt.signedArs(dailyInterest),
                             caption = "Día a día",
-                            accent = EmeraldSoft,
+                            accent = if (dailyInterest >= 0) EmeraldSoft else Rose,
                             help = "Interés del día calculado con la misma metodología de Intereses día a día " +
                                 "(capitalización diaria y variación de cuotapartes/mercado).",
                         )
                         StatTile(
                             label = "Proyección mes",
-                            value = Fmt.ars(overview.analytics.monthlyInterestCents),
+                            value = Fmt.signedArs(monthlyInterest),
                             caption = "Prom. × 30d",
-                            accent = Sky,
+                            accent = if (monthlyInterest >= 0) Sky else Rose,
                             help = "Promedio de los intereses diarios del mes multiplicado por 30 días.",
                         )
                         StatTile(
@@ -369,9 +371,10 @@ private fun HeroCard(
                     else -> Rose
                 },
             )
+            val dailyInterest = valuation?.dailyInterestCents ?: 0L
             MetricPill(
-                text = "Interés hoy ${Fmt.signedArs(valuation?.dailyInterestCents ?: 0)}",
-                color = EmeraldSoft,
+                text = "Interés hoy ${Fmt.signedArs(dailyInterest)}",
+                color = if (dailyInterest >= 0) EmeraldSoft else Rose,
             )
             if (valuation?.unrealizedGainCents != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -152,8 +152,19 @@ fun AnalyticsScreen(
                     onAction = onOpenDailyInterest,
                 )
                 ThinDivider()
-                KeyValueRow("Interés estimado por día", Fmt.ars(overview?.analytics?.dailyInterestCents ?: 0), valueColor = Emerald, strong = true)
-                KeyValueRow("Interés por mes (prom. × 30)", Fmt.ars(overview?.analytics?.monthlyInterestCents ?: 0), valueColor = Emerald)
+                val dailyEstimated = overview?.analytics?.dailyInterestCents ?: 0L
+                val monthlyEstimated = overview?.analytics?.monthlyInterestCents ?: 0L
+                KeyValueRow(
+                    "Interés estimado por día",
+                    Fmt.signedArs(dailyEstimated),
+                    valueColor = if (dailyEstimated >= 0) Emerald else Rose,
+                    strong = true,
+                )
+                KeyValueRow(
+                    "Interés por mes (prom. × 30)",
+                    Fmt.signedArs(monthlyEstimated),
+                    valueColor = if (monthlyEstimated >= 0) Emerald else Rose,
+                )
                 KeyValueRow(
                     "Ganancia últimos 30 días",
                     Fmt.signedArs(overview?.analytics?.trailing30dGainCents ?: 0),
@@ -235,10 +246,15 @@ private fun WindowTile(window: PerformanceWindow?, modifier: Modifier = Modifier
             maxLines = 1,
             softWrap = false,
         )
+        val gainCents = window?.gainCents
         Text(
-            window?.gainCents?.let(Fmt::signedArs) ?: "Sin base",
+            gainCents?.let(Fmt::signedArs) ?: "Sin base",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (gainCents != null && gainCents < 0L) {
+                Rose
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             maxLines = 1,
             softWrap = false,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,

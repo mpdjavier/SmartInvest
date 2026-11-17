@@ -150,7 +150,7 @@ fun PortfolioReconciliationScreen(
             SmartCard {
                 SectionHeader(
                     title = "Carga rápida de saldos",
-                    subtitle = "Aplicá tu lista del 14/11/2026 o pegá una lista actualizada",
+                    subtitle = "Aplicá la lista del 16/11/2026 o pegá una lista actualizada",
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(
@@ -165,7 +165,7 @@ fun PortfolioReconciliationScreen(
                             .weight(1f)
                             .height(44.dp),
                     ) {
-                        Text("Cargar lista 14/11/26", maxLines = 1, softWrap = false)
+                        Text("Cargar lista 16/11/26", maxLines = 1, softWrap = false)
                     }
                     OutlinedButton(
                         onClick = { showBulkPaste = !showBulkPaste },
@@ -389,7 +389,11 @@ private fun ExposureAndCalculationCheckCard(
         KeyValueRow(
             "Diferencia (Real − Calculado)",
             Fmt.signedArs(report.totalDiffArsCents),
-            valueColor = if (abs(report.totalDiffArsCents) <= 100L) Emerald else Amber,
+            valueColor = when {
+                abs(report.totalDiffArsCents) <= 100L -> Emerald
+                report.totalDiffArsCents > 0L -> Amber
+                else -> Rose
+            },
             strong = true,
         )
         if (report.totalTrackedCostArsCents > 0L) {
@@ -602,7 +606,11 @@ private fun HoldingReconciliationCard(
                         KeyValueRow(
                             "Diferencia (Real − Calculado)",
                             diffText,
-                            valueColor = if (abs(diff) <= 100L) Emerald else Amber,
+                            valueColor = when {
+                                abs(diff) <= 100L -> Emerald
+                                diff > 0L -> Amber
+                                else -> Rose
+                            },
                             strong = abs(diff) > 100L,
                         )
                         if (abs(diff) > 0L) {

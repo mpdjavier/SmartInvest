@@ -36,7 +36,7 @@ class PortfolioReconciliationEngineTest {
 
         val mpUsd = requireNotNull(byLabel["MP-USD"])
         assertEquals(7_111_63L, mpUsd.valueCents)
-        assertEquals(CurrencyCode.ARS, mpUsd.currency)
+        assertEquals(CurrencyCode.USD, mpUsd.currency)
 
         val adcap = requireNotNull(byLabel["ADCAP-BAL3"])
         assertEquals(74_814_083_00L, adcap.valueCents)
@@ -61,6 +61,96 @@ class PortfolioReconciliationEngineTest {
         assertEquals(3_817_398_24L, s30Ieb.valueCents)
         assertEquals(2_964_509.0, s30Ieb.quantity, 0.001)
         assertEquals(3_653_297_51L, s30Ieb.costCents)
+    }
+
+    @Test
+    fun `parses 2026-11-16 portfolio list with updated balances and withdrawals`() {
+        val parsed = PortfolioReconciliationEngine.presetHoldings2026_11_16()
+        assertEquals(9, parsed.size)
+
+        val byLabel = parsed.associateBy { it.displayLabel }
+
+        val ao27d = requireNotNull(byLabel["AO27D (GALICIA)"])
+        assertEquals(20_796_11L, ao27d.valueCents)
+        assertEquals(CurrencyCode.USD, ao27d.currency)
+
+        val s30Galicia = requireNotNull(byLabel["S30N6 (GALICIA)"])
+        assertEquals(4_065_344_32L, s30Galicia.valueCents)
+        assertEquals(CurrencyCode.ARS, s30Galicia.currency)
+
+        val mpArs = requireNotNull(byLabel["MP-ARS"])
+        assertEquals(359_921_06L, mpArs.valueCents)
+        assertEquals(CurrencyCode.ARS, mpArs.currency)
+        assertTrue(mpArs.isWallet)
+
+        val mpUsd = requireNotNull(byLabel["MP-USD"])
+        assertEquals(7_112_67L, mpUsd.valueCents)
+        assertEquals(CurrencyCode.USD, mpUsd.currency)
+
+        val adcap = requireNotNull(byLabel["ADCAP-BAL3"])
+        assertEquals(74_876_721_78L, adcap.valueCents)
+
+        val t15 = requireNotNull(byLabel["T15E7 (IEB)"])
+        assertEquals(782_363_16L, t15.valueCents)
+
+        val ao27 = requireNotNull(byLabel["AO27 (IEB)"])
+        assertEquals(782_154_10L, ao27.valueCents)
+
+        val spy = requireNotNull(byLabel["SPY (IEB)"])
+        assertEquals(13_970_880_00L, spy.valueCents)
+
+        val s30Ieb = requireNotNull(byLabel["S30N6 (IEB)"])
+        assertEquals(3_820_184_88L, s30Ieb.valueCents)
+    }
+
+    @Test
+    fun `reconciles 2026-11-16 balances to the spreadsheet totals at MEP 1500`() {
+        val specs = PortfolioReconciliationEngine.presetHoldings2026_11_16()
+        val holdings = specs.mapIndexed { idx, spec ->
+            Holding(
+                id = (idx + 1).toLong(),
+                symbol = spec.symbol,
+                name = spec.name,
+                assetType = spec.assetType,
+                currency = spec.currency,
+                currentValueCents = spec.valueCents,
+                costCents = spec.costCents,
+                tnaPercent = null,
+                maturityDate = spec.maturityDate,
+                notes = PortfolioReconciliationEngine.composeNotes(
+                    existingNotes = "",
+                    accountTag = spec.accountTag,
+                    movementsBlock = "",
+                    manualLocked = true,
+                    manualDate = LocalDate.of(2026, 11, 16),
+                ),
+                marketKey = spec.marketKey,
+                source = spec.source,
+                quantity = spec.quantity,
+                quoteUnit = spec.quoteUnit,
+                isWallet = spec.isWallet,
+                settlementDays = spec.settlementDays,
+            )
+        }
+
+        val report = PortfolioReconciliationEngine.buildReport(
+            holdings = holdings,
+            quotes = emptyList(),
+            mepRate = 1_500.0,
+        )
+
+        // Direct ARS sum = 4.065.344,32 + 359.921,06 + 74.876.721,78 + 782.363,16 + 782.154,10 + 13.970.880,00 + 3.820.184,88
+        assertEquals(98_657_569_30L, report.nativeArsTotalCents)
+        // Direct USD sum = 20.796,11 (AO27D) + 7.112,67 (MP-USD)
+        assertEquals(27_908_78L, report.nativeUsdTotalCents)
+        // Total in ARS at MEP 1.500 = 98.657.569,30 + (27.908,78 × 1.500)
+        assertEquals(140_520_739_30L, report.totalArsCents)
+        assertEquals(9_368_049L, report.totalUsdCents)
+
+        val dollarLabels = report.items.filter { it.isDollarExposure }.map { it.holding.symbol }.toSet()
+        assertEquals(setOf("AO27D", "AO27", "SPY", "MP-USD"), dollarLabels)
+        assertTrue(report.items.all { it.isManualLocked })
+        assertTrue(report.items.all { it.manualDate == LocalDate.of(2026, 11, 16) })
     }
 
     @Test
@@ -146,10 +236,10 @@ class PortfolioReconciliationEngineTest {
             mepRate = 1_500.0,
         )
 
-        // Direct ARS sum = 4.061.874,52 + 615.166,58 + 7.111,63 + 74.814.083,00 + 781.899,42 + 778.787,10 + 14.165.760,00 + 3.817.398,24 = 99.042.080,49 ARS
-        assertEquals(99_042_080_49L, report.nativeArsTotalCents)
-        // Direct USD sum = 20.796,11 USD
-        assertEquals(20_796_11L, report.nativeUsdTotalCents)
+        // Direct ARS sum (MP-USD is USD) = 4.061.874,52 + 615.166,58 + 74.814.083,00 + 781.899,42 + 778.787,10 + 14.165.760,00 + 3.817.398,24 = 99.034.968,86 ARS
+        assertEquals(99_034_968_86L, report.nativeArsTotalCents)
+        // Direct USD sum = 20.796,11 (AO27D) + 7.111,63 (MP-USD) = 27.907,74 USD
+        assertEquals(27_907_74L, report.nativeUsdTotalCents)
 
         // Pure peso exposure = ADCAP-BAL3 + S30N6 (GALICIA) + S30N6 (IEB) + T15E7 + MP-ARS = 84.090.421,76 ARS
         assertEquals(84_090_421_76L, report.pesoExposureArsCents)

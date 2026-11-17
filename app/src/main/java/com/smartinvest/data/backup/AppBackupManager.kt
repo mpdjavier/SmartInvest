@@ -743,15 +743,15 @@ class AppBackupManager @Inject constructor(
 
     /**
      * Applies all exported movements from Eco Valores (`Adcap Balanceado III`) and IEB+
-     * (`SPY`, `S30N6`, `T15E7`, `AO27`) together with the exact balances as of 14/11/2026
+     * (`SPY`, `S30N6`, `T15E7`, `AO27`) together with the exact balances as of 16/11/2026
      * (`AO27D (GALICIA)`, `S30N6 (GALICIA)`, `MP-ARS`, `MP-USD`, `ADCAP-BAL3`, `T15E7`,
-     * `AO27`, `SPY`, `S30N6 (IEB)`).
+     * `AO27`, `SPY`, `S30N6 (IEB)`), including the MP-ARS withdrawal and accrued yield.
      */
     suspend fun syncExportedBrokerHoldings(): String =
         applyHoldingAdjustments(
-            adjustments = PortfolioReconciliationEngine.presetHoldings2026_11_14(),
+            adjustments = PortfolioReconciliationEngine.presetHoldings2026_11_16(),
             lockManual = true,
-            date = LocalDate.of(2026, 11, 14),
+            date = LocalDate.of(2026, 11, 16),
         )
 
     /**
@@ -844,7 +844,7 @@ class AppBackupManager @Inject constructor(
                 updatedCount++
             }
 
-            seedReferenceQuotesFor2026_11_14()
+            seedReferenceQuotesFor2026_11_16()
         }
 
         runCatching { investmentRepository.syncMarketQuotes() }
@@ -894,7 +894,7 @@ class AppBackupManager @Inject constructor(
         return candidates.first()
     }
 
-    private suspend fun seedReferenceQuotesFor2026_11_14() {
+    private suspend fun seedReferenceQuotesFor2026_11_16() {
         val now = System.currentTimeMillis()
         val nov11 = LocalDate.of(2026, 11, 11).toEpochDay()
         val nov12 = LocalDate.of(2026, 11, 12).toEpochDay()
@@ -978,6 +978,46 @@ class AppBackupManager @Inject constructor(
                 currency = CurrencyCode.ARS,
                 quoteUnit = QuoteUnit.PER_100_NOMINAL,
                 dateEpochDay = nov14,
+                fetchedAt = now,
+            ),
+            InstrumentQuoteEntity(
+                marketKey = "rava:SPY",
+                symbol = "SPY",
+                source = MarketSource.RAVA,
+                price = 20790.0,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_UNIT,
+                dateEpochDay = LocalDate.of(2026, 11, 16).toEpochDay(),
+                fetchedAt = now,
+            ),
+            InstrumentQuoteEntity(
+                marketKey = "rava:S30N6",
+                symbol = "S30N6",
+                source = MarketSource.RAVA,
+                price = 128.87,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_100_NOMINAL,
+                dateEpochDay = LocalDate.of(2026, 11, 16).toEpochDay(),
+                fetchedAt = now,
+            ),
+            InstrumentQuoteEntity(
+                marketKey = "rava:T15E7",
+                symbol = "T15E7",
+                source = MarketSource.RAVA,
+                price = 155.212,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_100_NOMINAL,
+                dateEpochDay = LocalDate.of(2026, 11, 16).toEpochDay(),
+                fetchedAt = now,
+            ),
+            InstrumentQuoteEntity(
+                marketKey = "rava:AO27",
+                symbol = "AO27",
+                source = MarketSource.RAVA,
+                price = 162610.0,
+                currency = CurrencyCode.ARS,
+                quoteUnit = QuoteUnit.PER_100_NOMINAL,
+                dateEpochDay = LocalDate.of(2026, 11, 16).toEpochDay(),
                 fetchedAt = now,
             ),
         )

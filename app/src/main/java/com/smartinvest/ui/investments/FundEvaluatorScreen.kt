@@ -934,8 +934,16 @@ private fun FundMetricsCard(evaluation: FundEvaluation) {
             subtitle = "Ventana ${windowLabel(evaluation.windowDays)} · ${metrics.observations} observaciones",
         )
         Spacer(Modifier.height(8.dp))
-        KeyValueRow("Peor día", Fmt.signedPercent(metrics.worstDayPercent), valueColor = Rose)
-        KeyValueRow("Mejor día", Fmt.signedPercent(metrics.bestDayPercent), valueColor = Emerald)
+        KeyValueRow(
+            "Peor día",
+            Fmt.signedPercent(metrics.worstDayPercent),
+            valueColor = returnColor(metrics.worstDayPercent),
+        )
+        KeyValueRow(
+            "Mejor día",
+            Fmt.signedPercent(metrics.bestDayPercent),
+            valueColor = returnColor(metrics.bestDayPercent),
+        )
         KeyValueRow("Días positivos", Fmt.percent(metrics.positiveDayRatioPercent), valueColor = Emerald)
         KeyValueRow(
             "Score de estabilidad",
@@ -1170,14 +1178,26 @@ private fun CatalogResultRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                catalogSubtitle(entry),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    catalogSubtitle(entry),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                entry.return365?.let { ret ->
+                    Text(
+                        " · 12m ${Fmt.signedPercent(ret)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = returnColor(ret),
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            }
         }
         IconButton(onClick = onAdd, modifier = Modifier.size(38.dp)) {
             Icon(Icons.Rounded.Add, contentDescription = "Agregar ${entry.name}", tint = Emerald)
@@ -1221,10 +1241,6 @@ private fun catalogSubtitle(entry: FundCatalogEntry): String = buildString {
     }
     append(" · ")
     append(entry.currency)
-    entry.return365?.let {
-        append(" · 12m ")
-        append(Fmt.signedPercent(it))
-    }
 }
 
 private fun typeLabel(type: String): String = when (type.uppercase()) {

@@ -470,6 +470,57 @@ class PortfolioValuationTest {
         assertFalse(overdue.toDomain().notifyPush)
     }
 
+    @Test
+    fun `manual valuation keeps the loaded balance until a newer quote arrives`() {
+        val holding = Holding(
+            id = 1,
+            symbol = "S30N6",
+            name = "Letra del Tesoro S30N6 (GALICIA)",
+            assetType = AssetType.LECAP,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 4_065_344_32L,
+            costCents = 4_065_344_32L,
+            tnaPercent = null,
+            maturityDate = LocalDate.of(2026, 11, 30),
+            notes = "[ajuste manual: 16/11/2026]",
+            marketKey = "rava:S30N6",
+            source = MarketSource.RAVA,
+            quantity = 3_154_364.0,
+            quoteUnit = QuoteUnit.PER_100_NOMINAL,
+        )
+        val quotesUntil16 = listOf(
+            quote("rava:S30N6", "S30N6", 128.77, LocalDate.of(2026, 11, 14)),
+            quote("rava:S30N6", "S30N6", 128.87, LocalDate.of(2026, 11, 16)),
+        )
+
+        val sameDay = PortfolioValuationEngine.calculate(
+            wallets = emptyList(),
+            holdings = listOf(holding),
+            fxRates = emptyList(),
+            fallbackMepRate = 1_500.0,
+            quotes = quotesUntil16,
+            today = LocalDate.of(2026, 11, 16),
+        )
+        // The manually loaded balance from the 16/11 spreadsheet wins over the same-day close.
+        assertEquals(4_065_344_32L, sameDay.holdings.first().valueArsCents)
+
+        val nextDay = PortfolioValuationEngine.calculate(
+            wallets = emptyList(),
+            holdings = listOf(holding),
+            fxRates = emptyList(),
+            fallbackMepRate = 1_500.0,
+            quotes = quotesUntil16 + quote(
+                "rava:S30N6",
+                "S30N6",
+                130.0,
+                LocalDate.of(2026, 11, 17),
+            ),
+            today = LocalDate.of(2026, 11, 17),
+        )
+        // A close after the manual-lock date updates the valuation to the current market value.
+        assertEquals(holding.valueCentsFor(130.0), nextDay.holdings.first().valueArsCents)
+    }
+
     private fun quote(
         marketKey: String,
         symbol: String,

@@ -239,10 +239,13 @@ class InvestmentRepositoryImpl @Inject constructor(
                 instrumentQuoteDao.upsertAll(entities)
                 instrumentQuoteDao.deleteForMarketAfter(effectiveKey, result.latestDate.toEpochDay())
                 storedQuotes += entities.size
+                val isLocked = PortfolioReconciliationEngine.isManualValuationLocked(holding)
+                val manualDate = PortfolioReconciliationEngine.manualValuationDate(holding)
+                val isLockedForDate = isLocked && (manualDate == null || !result.latestDate.isAfter(manualDate))
                 if (
                     holding.quantity > 0.0 &&
                     result.latestPrice > 0.0 &&
-                    !PortfolioReconciliationEngine.isManualValuationLocked(holding)
+                    !isLockedForDate
                 ) {
                     val newValue = holding.valueCentsFor(result.latestPrice)
                     holdingDao.updateValuation(holding.id, newValue, result.name)
@@ -314,9 +317,12 @@ class InvestmentRepositoryImpl @Inject constructor(
             holdingDao.getAll()
                 .map { it.toDomain() }
                 .filter {
+                    val isLocked = PortfolioReconciliationEngine.isManualValuationLocked(it)
+                    val manualDate = PortfolioReconciliationEngine.manualValuationDate(it)
+                    val isLockedForDate = isLocked && (manualDate == null || !fetched.latestDate.isAfter(manualDate))
                     MarketKeyParser.normalize(it.marketKey) == normalized &&
                         it.quantity > 0.0 &&
-                        !PortfolioReconciliationEngine.isManualValuationLocked(it)
+                        !isLockedForDate
                 }
                 .forEach { h ->
                     holdingDao.updateValuation(h.id, h.valueCentsFor(fetched.latestPrice), fetched.name)

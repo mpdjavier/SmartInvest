@@ -253,8 +253,9 @@ fun InvestmentsScreen(
             val valuations = overview?.valuation?.holdings.orEmpty()
             val mepRate = overview?.valuation?.mepRate ?: 1_000.0
             items(state.holdings.size) { index ->
-                val holding = state.holdings[index]
-                val valuation = valuations.firstOrNull { it.holding.id == holding.id }
+                val rawHolding = state.holdings[index]
+                val valuation = valuations.firstOrNull { it.holding.id == rawHolding.id }
+                val holding = valuation?.holding ?: rawHolding
                 HoldingRow(
                     holding = holding,
                     valueArsCents = valuation?.valueArsCents ?: holding.currentValueCents,
@@ -353,10 +354,11 @@ private fun ValuationCard(overview: PortfolioOverview?) {
         }
         ThinDivider()
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val dailyInterest = valuation?.dailyInterestCents ?: 0L
             StatTile(
                 label = "Interés / día",
-                value = Fmt.ars(valuation?.dailyInterestCents ?: 0),
-                accent = Emerald,
+                value = Fmt.signedArs(dailyInterest),
+                accent = if (dailyInterest >= 0) Emerald else Rose,
                 modifier = Modifier.weight(1f),
                 help = "Interés del día calculado con la metodología de Intereses día a día " +
                     "(capitalización diaria y variación de cuotapartes/mercado).",
@@ -586,7 +588,7 @@ private fun HoldingRow(
                 Icon(
                     Icons.AutoMirrored.Rounded.ShowChart,
                     contentDescription = "Evolución",
-                    tint = Emerald,
+                    tint = if (dailyInterestCents >= 0) Emerald else Rose,
                     modifier = Modifier.size(18.dp),
                 )
             }

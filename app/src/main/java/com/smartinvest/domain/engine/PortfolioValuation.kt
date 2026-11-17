@@ -120,14 +120,29 @@ object PortfolioValuationEngine {
         }
 
         val holdingValuations = holdings.map { holding ->
-            val valueArs = if (holding.currency == CurrencyCode.ARS) {
-                holding.currentValueCents
+            val manualDate = PortfolioReconciliationEngine.manualValuationDate(holding)
+            // Only closes up to today are valid for the current valuation. A quote dated in
+            // the future must never override the balance loaded for today.
+            val series = quotesFor(holding, quotes).filter { !it.date.isAfter(today) }
+            val latestQuote = series.lastOrNull()
+            val effectiveNativeCents = if (
+                holding.quantity > 0.0 &&
+                latestQuote != null &&
+                latestQuote.price > 0.0 &&
+                (manualDate == null || latestQuote.date.isAfter(manualDate))
+            ) {
+                holding.valueCentsFor(latestQuote.price)
             } else {
-                (holding.currentValueCents * mep).roundToLong()
+                holding.currentValueCents
+            }
+            val valueArs = if (holding.currency == CurrencyCode.ARS) {
+                effectiveNativeCents
+            } else {
+                (effectiveNativeCents * mep).roundToLong()
             }
             val dailyArs = lineBySourceId["holding:${holding.id}"] ?: 0L
             HoldingValuation(
-                holding = holding,
+                holding = holding.copy(currentValueCents = effectiveNativeCents),
                 valueArsCents = valueArs,
                 dailyInterestCents = dailyArs,
             )

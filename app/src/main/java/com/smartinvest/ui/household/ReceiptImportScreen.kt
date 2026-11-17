@@ -471,7 +471,7 @@ fun ReceiptImportScreen(
                                 KeyValueRow(
                                     "Rescate automático al confirmar",
                                     "− ${Fmt.ars(parsedAmountCents)}",
-                                    valueColor = Amber,
+                                    valueColor = Rose,
                                 )
                                 KeyValueRow(
                                     "Saldo luego del rescate",

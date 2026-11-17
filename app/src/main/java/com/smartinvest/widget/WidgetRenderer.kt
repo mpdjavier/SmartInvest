@@ -35,7 +35,16 @@ object WidgetRenderer {
                 R.id.widget_total_usd,
                 "${money(data.totalUsdCents, hidden, Currency.USD)} · MEP $mep$estimated",
             )
-            setTextViewText(R.id.widget_interest, "+ ${money(data.dailyInterestCents, hidden, Currency.ARS)}")
+            val dailyInterest = data.dailyInterestCents
+            val interestSign = if (dailyInterest >= 0) "+" else "−"
+            setTextViewText(
+                R.id.widget_interest,
+                "$interestSign ${money(kotlin.math.abs(dailyInterest), hidden, Currency.ARS)}",
+            )
+            setTextColor(
+                R.id.widget_interest,
+                if (dailyInterest >= 0) 0xFF00FF6A.toInt() else 0xFFFF453A.toInt(),
+            )
             setTextViewText(
                 R.id.widget_installments,
                 "${money(data.installmentsCents, hidden, Currency.ARS)} · ${data.installmentsCount} cuotas",

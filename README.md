@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **121 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **124 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -64,7 +64,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - Historial de tasas y snapshots diarios del patrimonio.
 - Analítica 7 días / 30 días / YTD, ganancia diaria y mensual, serie para gráfico.
 - **Rebalanceo elástico 60/40** con banda de tolerancia configurable: **tanto los CEDEARs (`SPY`) como los bonos soberanos (`AO27` y `AO27D`) y FCI en dólares (`MP-USD`) se computan como exposición en dólares aunque estén valuados en pesos**, ya que mantienen su valor en moneda dura.
-- **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 14/11/2026 en 1 toque, y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
+- **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 16/11/2026 en 1 toque, y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
 - **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
 - **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): compara el universo Eco Valores o **las 2.300+ clases del catálogo completo**, con la rentabilidad y la estabilidad como parámetros independientes. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. En el seguimiento las métricas salen de la serie diaria en ventanas de 30/90/180/365 días; en el catálogo completo se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
 - Planificador de sueldo y simulador de rescate de emergencia.
@@ -644,7 +644,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**121 tests, 0 fallos, 18 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,1 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**124 tests, 0 fallos, 18 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -666,7 +666,7 @@ Tests unitarios JVM (sin emulador):
 | `InstallmentEngineTest` | reparto de cuotas y ciclo de tarjeta |
 | `SettlementCalculatorTest` | liquidación, aportes, extracciones, transferencias y saldado manual total/parcial (saldo pendiente) |
 | `PortfolioValuationTest` | valoración ARS/USD, CEDEAR (`SPY`) y bonos (`AO27`/`AO27D`) en exposición USD, MEP, topes, interés, variación diaria de un bono USD y tenencias sin cantidad |
-| `PortfolioReconciliationEngineTest` | parseo de lista de saldos (14/11/2026), totales nativos ARS/USD, exposición 60/40 con bonos y SPY, precios implícitos, diferencias contra cotización y bloqueo manual |
+| `PortfolioReconciliationEngineTest` | parseo de listas de saldos (14/11/2026 y 16/11/2026), totales nativos ARS/USD, reconciliación de la planilla 16/11 a MEP 1.500, exposición 60/40 con bonos y SPY, precios implícitos, diferencias contra cotización y bloqueo manual |
 | `DailyInterestEngineTest` | desglose diario por TNA/tope, variación real de cotizaciones (con y sin cantidad), conciliación, TNA tomada del FCI vinculado y capitalización diaria en billeteras y FCI sin cotización fresca |
 | `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago), pago de servicio (Galicia), resumen de tarjeta de crédito (`MASTERCARD BLACK` con vencimiento, próximo cierre y total a pagar), fechas con mes en texto y comprobantes sin datos |
 | `MarketClientsTest` | normalización de claves/URLs y parseo HTML de Rava (tabla histórica y encabezado con cierre anterior) y CAFCI |

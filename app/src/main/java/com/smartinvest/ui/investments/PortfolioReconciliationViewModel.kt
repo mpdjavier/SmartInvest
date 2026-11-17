@@ -32,7 +32,7 @@ data class PortfolioReconciliationUiState(
     val report: PortfolioReconciliationReport = PortfolioReconciliationReport(),
     val drafts: Map<Long, HoldingDraftEdit> = emptyMap(),
     val mepInputText: String = "",
-    val bulkPasteText: String = PortfolioReconciliationEngine.DEFAULT_2026_11_14_LIST.trim(),
+    val bulkPasteText: String = PortfolioReconciliationEngine.DEFAULT_2026_11_16_LIST.trim(),
     val isWorking: Boolean = false,
     val message: String? = null,
 ) {
@@ -55,7 +55,7 @@ class PortfolioReconciliationViewModel @Inject constructor(
 
     private val drafts = MutableStateFlow<Map<Long, HoldingDraftEdit>>(emptyMap())
     private val mepInput = MutableStateFlow("")
-    private val bulkPaste = MutableStateFlow(PortfolioReconciliationEngine.DEFAULT_2026_11_14_LIST.trim())
+    private val bulkPaste = MutableStateFlow(PortfolioReconciliationEngine.DEFAULT_2026_11_16_LIST.trim())
     private val working = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 

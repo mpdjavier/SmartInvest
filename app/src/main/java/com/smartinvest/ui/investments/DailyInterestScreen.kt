@@ -360,17 +360,21 @@ private fun InterestReconciliationCard(reconciliation: InterestReconciliation) {
         KeyValueRow(
             "Explicado por capitalización",
             Fmt.signedArs(reconciliation.compoundingArsCents),
-            valueColor = Emerald,
+            valueColor = signedColor(reconciliation.compoundingArsCents),
         )
         KeyValueRow(
             "Explicado por mercado",
             Fmt.signedArs(reconciliation.marketTotalArsCents),
-            valueColor = Sky,
+            valueColor = signedColor(reconciliation.marketTotalArsCents),
         )
         KeyValueRow(
             "Sin explicar",
             Fmt.signedArs(reconciliation.unexplainedArsCents),
-            valueColor = if (reconciliation.isFullyExplained) Emerald else Amber,
+            valueColor = when {
+                reconciliation.isFullyExplained -> Emerald
+                reconciliation.unexplainedArsCents < 0L -> Rose
+                else -> Amber
+            },
         )
         if (reconciliation.notes.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
@@ -442,7 +446,11 @@ private fun InterestSourceCard(source: InterestSourceSummary) {
             Text(
                 "${Fmt.signedArs(source.averageDailyArsCents)} / día",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (source.averageDailyArsCents < 0L) {
+                    Rose
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 1,
                 softWrap = false,
             )

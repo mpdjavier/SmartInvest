@@ -362,7 +362,11 @@ fun HoldingEditorScreen(
                     KeyValueRow(
                         "Diferencia (Real − Calculado)",
                         if (state.currency == CurrencyCode.USD) Fmt.signedUsd(diffCents) else Fmt.signedArs(diffCents),
-                        valueColor = if (diffCents == 0L) Emerald else Amber,
+                        valueColor = when {
+                            diffCents == 0L -> Emerald
+                            diffCents > 0L -> Amber
+                            else -> Rose
+                        },
                     )
                 }
                 TextButton(onClick = viewModel::applyCalculatedValuation) {

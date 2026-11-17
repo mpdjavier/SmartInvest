@@ -92,9 +92,9 @@ class BootstrapRepositoryImpl @Inject constructor(
             settings.markInitialized()
         }
 
-        // Apply the 14/11/2026 portfolio balances once if not yet present in holdings.
+        // Apply the 16/11/2026 portfolio balances if not yet present in holdings.
         val existingHoldings = holdingDao.getAll()
-        if (existingHoldings.none { it.notes.contains("14/11/2026") }) {
+        if (existingHoldings.none { it.notes.contains("16/11/2026") }) {
             runCatching { backupManager.syncExportedBrokerHoldings() }
         }
     }

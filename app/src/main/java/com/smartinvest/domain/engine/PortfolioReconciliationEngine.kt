@@ -122,12 +122,24 @@ object PortfolioReconciliationEngine {
 AO27D (GALICIA) 20796.11 USD
 S30N6 (GALICIA) 4061874.52 ARS
 MP-ARS 615166.58 ARS
-MP-USD 7111.63 ARS
+MP-USD 7111.63 USD
 ADCAP-BAL3 74814083 ARS
 T15E7 781899.42 ARS
 AO27 778787.10 ARS
 SPY 14165760 ARS
 S30N6 (IEB) 3817398.24 ARS
+"""
+
+    const val DEFAULT_2026_11_16_LIST: String = """
+AO27D (GALICIA) 20796.11 USD
+S30N6 (GALICIA) 4065344.32 ARS
+MP-ARS 359921.06 ARS
+MP-USD 7112.67 USD
+ADCAP-BAL3 74876721.78 ARS
+T15E7 782363.16 ARS
+AO27 782154.10 ARS
+SPY 13970880 ARS
+S30N6 (IEB) 3820184.88 ARS
 """
 
     fun isManualValuationLocked(holding: Holding): Boolean =
@@ -204,6 +216,13 @@ S30N6 (IEB) 3817398.24 ARS
         parseAdjustmentText(DEFAULT_2026_11_14_LIST)
 
     /**
+     * Exact 9 holdings from the user's 16/11/2026 update, with current valuations from
+     * brokers, bank and wallets (including the MP-ARS withdrawal + accrued yield).
+     */
+    fun presetHoldings2026_11_16(): List<ParsedHoldingAdjustment> =
+        parseAdjustmentText(DEFAULT_2026_11_16_LIST)
+
+    /**
      * Parses a multi-line list of manual balances (`TICKER (CUENTA) MONTO ARS/USD`).
      */
     fun parseAdjustmentText(rawText: String): List<ParsedHoldingAdjustment> {
@@ -227,7 +246,8 @@ S30N6 (IEB) 3817398.24 ARS
                 val currency = when {
                     rawCurr in setOf("USD", "U\$S", "US\$", "DOLARES", "DÓLARES") -> CurrencyCode.USD
                     rawCurr in setOf("ARS", "\$", "PESOS") -> CurrencyCode.ARS
-                    rawSymbol.endsWith("D") && rawSymbol != "MP-USD" -> CurrencyCode.USD
+                    rawSymbol == "MP-USD" || rawSymbol.endsWith("USD") -> CurrencyCode.USD
+                    rawSymbol.endsWith("D") -> CurrencyCode.USD
                     else -> CurrencyCode.ARS
                 }
 
@@ -400,7 +420,7 @@ S30N6 (IEB) 3817398.24 ARS
             symbol = "MP-USD",
             accountTag = accountTag,
             valueCents = valueCents,
-            currency = currency,
+            currency = CurrencyCode.USD,
             assetType = AssetType.FCI,
             name = "Mercado Fondo Dólares",
             marketKey = "cafci:1522:4557",
