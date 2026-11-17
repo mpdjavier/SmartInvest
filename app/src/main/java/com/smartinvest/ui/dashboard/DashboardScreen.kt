@@ -103,6 +103,7 @@ fun DashboardScreen(
     onOpenExpenseSearch: () -> Unit = {},
     onOpenExpenseReport: () -> Unit = {},
     onOpenPortfolioReconciliation: () -> Unit = {},
+    onOpenRem: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -301,6 +302,11 @@ fun DashboardScreen(
                         onClick = onOpenPortfolioReconciliation,
                         label = { Text("Ajustar saldos") },
                         leadingIcon = { Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(17.dp)) },
+                    )
+                    AssistChip(
+                        onClick = onOpenRem,
+                        label = { Text("Comparador REM") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(17.dp)) },
                     )
                 }
             }

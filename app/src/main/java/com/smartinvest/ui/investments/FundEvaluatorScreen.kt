@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartinvest.domain.engine.FundStabilityEngine
+import com.smartinvest.domain.model.EcoValoresFunds
 import com.smartinvest.domain.model.FundBenchmarkComparison
 import com.smartinvest.domain.model.FundCatalogEntry
 import com.smartinvest.domain.model.FundEvaluation
@@ -128,10 +129,11 @@ fun FundEvaluatorScreen(
 
         item {
             InfoBanner(
-                text = "Ordená por rentabilidad, por estabilidad o por caída, y poné un piso " +
-                    "de estabilidad opcional. Podés acotar el análisis con un rango de fechas y " +
-                    "superponer dos FCI para comparar la misma serie. Cuotapartes de CAFCI/CNV " +
-                    "vía compararfondos.com.ar.",
+                text = "Por defecto se muestran las clases A que ofrece Eco Valores. Cambiá a " +
+                    "«Todo el catálogo» para ampliar la búsqueda a fondos de otras sociedades. " +
+                    "Podés ordenar por rentabilidad, estabilidad o caída, acotar el análisis con un " +
+                    "rango de fechas y superponer dos FCI. Cuotapartes de CAFCI/CNV vía " +
+                    "compararfondos.com.ar.",
                 color = Sky,
             )
         }
@@ -215,10 +217,10 @@ fun FundEvaluatorScreen(
 
         item {
             SectionHeader(
-                title = if (state.universe == FundUniverse.WATCHLIST) {
-                    "Ranking del seguimiento"
-                } else {
-                    "Ranking de todo el catálogo"
+                title = when (state.universe) {
+                    FundUniverse.WATCHLIST -> "Ranking del seguimiento"
+                    FundUniverse.ECO_VALORES -> "Ranking de Eco Valores"
+                    FundUniverse.CATALOG -> "Ranking de todo el catálogo"
                 },
                 subtitle = rankingSubtitle(state),
                 actionLabel = if (state.universe == FundUniverse.WATCHLIST) "Restaurar" else null,
@@ -230,11 +232,20 @@ fun FundEvaluatorScreen(
             )
         }
 
-        if (state.universe == FundUniverse.CATALOG && state.ranked.isNotEmpty()) {
+        if (state.universe != FundUniverse.WATCHLIST && state.ranked.isNotEmpty()) {
             item {
                 Text(
-                    "Tocá una clase para cargar su historial diario, ver el gráfico y simular. " +
-                        "El ranking usa las métricas de 90 días publicadas en el catálogo.",
+                    if (state.universe == FundUniverse.ECO_VALORES) {
+                        "Tocá una clase para cargar su historial diario, ver el gráfico y simular. " +
+                            "El ranking usa las métricas de 90 días publicadas en el catálogo. Son " +
+                            "${EcoValoresFunds.CATALOG_NAMES.size} de las " +
+                            "${EcoValoresFunds.CLASE_A_TOTAL} clases A de la planilla de Eco Valores: " +
+                            "las otras ${EcoValoresFunds.NOT_PUBLISHED.size} todavía no están " +
+                            "publicadas en compararfondos.com.ar."
+                    } else {
+                        "Tocá una clase para cargar su historial diario, ver el gráfico y simular. " +
+                            "El ranking usa las métricas de 90 días publicadas en el catálogo."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

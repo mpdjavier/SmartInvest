@@ -79,6 +79,7 @@ fun InvestmentsScreen(
     onOpenRebalancing: () -> Unit = {},
     onOpenReconciliation: () -> Unit = {},
     onOpenFundEvaluator: () -> Unit = {},
+    onOpenRem: () -> Unit = {},
     viewModel: InvestmentsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -300,6 +301,22 @@ fun InvestmentsScreen(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                     ) {
                         Text("Rescate", maxLines = 1, softWrap = false)
+                    }
+                    OutlinedButton(
+                        onClick = onOpenRebalancing,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Macro", maxLines = 1, softWrap = false)
+                    }
+                    OutlinedButton(
+                        onClick = onOpenRem,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("REM", maxLines = 1, softWrap = false)
                     }
                 }
             }

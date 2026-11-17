@@ -415,6 +415,9 @@ object FundStabilityEngine {
     fun matchesFilter(evaluation: FundEvaluation, filter: FundFilterOption): Boolean =
         when (filter) {
             FundFilterOption.ALL -> true
+            FundFilterOption.CLASE_A ->
+                evaluation.name.contains("Clase A", ignoreCase = true) ||
+                    evaluation.name.contains("Class A", ignoreCase = true)
             FundFilterOption.NO_DRAWDOWN ->
                 evaluation.stability.hasData && evaluation.metrics.maxDrawdownPercent >= -0.01
             FundFilterOption.CONSISTENT ->

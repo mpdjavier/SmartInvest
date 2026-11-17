@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.engine.FundStabilityEngine
+import com.smartinvest.domain.model.EcoValoresFunds
 import com.smartinvest.domain.model.FundBenchmarkComparison
 import com.smartinvest.domain.model.FundCatalogEntry
 import com.smartinvest.domain.model.FundData
@@ -39,11 +40,11 @@ data class FundEvaluatorUiState(
     val evaluations: List<FundEvaluation> = emptyList(),
     val ranked: List<FundEvaluation> = emptyList(),
     val benchmark: FundEvaluation? = null,
-    val universe: FundUniverse = FundUniverse.WATCHLIST,
+    val universe: FundUniverse = FundUniverse.ECO_VALORES,
     val windowDays: Int = FundStabilityEngine.DEFAULT_WINDOW,
     val horizon: FundReturnHorizon = FundReturnHorizon.YEAR,
     val sort: FundSortOption = FundSortOption.STABILITY,
-    val filter: FundFilterOption = FundFilterOption.ALL,
+    val filter: FundFilterOption = FundFilterOption.CLASE_A,
     /** Optional stability floor in the 0..100 scale. 0 means "no minimum". */
     val minStability: Double = 0.0,
     val query: String = "",
@@ -92,6 +93,9 @@ class FundEvaluatorViewModel @Inject constructor(
     private var catalogEvaluations: List<FundEvaluation> = emptyList()
     private var catalogEvaluationsHorizon: FundReturnHorizon? = null
     private var catalogEvaluationsRef: List<FundCatalogEntry>? = null
+    private var ecoEvaluations: List<FundEvaluation> = emptyList()
+    private var ecoEvaluationsHorizon: FundReturnHorizon? = null
+    private var ecoEvaluationsRef: List<FundCatalogEntry>? = null
 
     init {
         load(force = false)
@@ -116,7 +120,7 @@ class FundEvaluatorViewModel @Inject constructor(
             )
         }
         when {
-            universe == FundUniverse.CATALOG && _uiState.value.catalog.isEmpty() ->
+            universe != FundUniverse.WATCHLIST && _uiState.value.catalog.isEmpty() ->
                 _uiState.update {
                     it.copy(message = "El catálogo todavía no está disponible. Actualizá e intentá de nuevo.")
                 }
@@ -443,15 +447,15 @@ class FundEvaluatorViewModel @Inject constructor(
             it.name.equals(FundStabilityEngine.BENCHMARK_NAME, ignoreCase = true)
         }
 
-        val catalogEvaluations = if (state.universe == FundUniverse.CATALOG) {
-            cachedCatalogEvaluations(state.catalog, state.horizon)
-        } else {
-            emptyList()
+        val catalogEvaluations = when (state.universe) {
+            FundUniverse.ECO_VALORES -> cachedEcoEvaluations(state.catalog, state.horizon)
+            FundUniverse.CATALOG -> cachedCatalogEvaluations(state.catalog, state.horizon)
+            FundUniverse.WATCHLIST -> emptyList()
         }
 
         val pool = when (state.universe) {
             FundUniverse.WATCHLIST -> followedEvaluations
-            FundUniverse.CATALOG -> catalogEvaluations
+            FundUniverse.ECO_VALORES, FundUniverse.CATALOG -> catalogEvaluations
         }.filterNot {
             it.name.equals(FundStabilityEngine.BENCHMARK_NAME, ignoreCase = true)
         }.filter {
@@ -529,6 +533,26 @@ class FundEvaluatorViewModel @Inject constructor(
         catalogEvaluations = built
         catalogEvaluationsHorizon = horizon
         catalogEvaluationsRef = catalog
+        return built
+    }
+
+    /**
+     * Subset of the catalog restricted to the Clase A funds offered by Eco
+     * Valores. The full catalog stays cached so switching to «Todo el catálogo»
+     * does not rebuild the 2.300+ evaluations.
+     */
+    private fun cachedEcoEvaluations(
+        catalog: List<FundCatalogEntry>,
+        horizon: FundReturnHorizon,
+    ): List<FundEvaluation> {
+        if (ecoEvaluationsRef === catalog && ecoEvaluationsHorizon == horizon) {
+            return ecoEvaluations
+        }
+        val built = cachedCatalogEvaluations(catalog, horizon)
+            .filter { EcoValoresFunds.matches(it.name) }
+        ecoEvaluations = built
+        ecoEvaluationsHorizon = horizon
+        ecoEvaluationsRef = catalog
         return built
     }
 

@@ -177,12 +177,18 @@ enum class FundSortOption(val label: String, val shortLabel: String) {
 
 enum class FundFilterOption(val label: String) {
     ALL("Todos"),
+    CLASE_A("Clase A"),
     NO_DRAWDOWN("Sin caídas"),
     CONSISTENT("Días + ≥ 90%"),
 }
 
-/** Where the ranking comes from: the curated watchlist or the full catalog. */
+/**
+ * Where the ranking comes from: the classes offered by Eco Valores (default,
+ * useful because the rest of the catalog is not reachable from that broker), the
+ * curated watchlist, or the full catalog.
+ */
 enum class FundUniverse(val label: String) {
+    ECO_VALORES("Eco Valores"),
     WATCHLIST("Seguimiento"),
     CATALOG("Todo el catálogo"),
 }

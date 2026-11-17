@@ -259,6 +259,7 @@ fun SmartInvestNavHost(
                     onOpenExpenseSearch = { navController.navigate(Routes.EXPENSE_SEARCH) },
                     onOpenExpenseReport = { navController.navigate(Routes.EXPENSE_REPORT) },
                     onOpenPortfolioReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
+                    onOpenRem = { navController.navigate(Routes.REM) },
                 )
             }
 
@@ -308,6 +309,7 @@ fun SmartInvestNavHost(
                     onOpenRebalancing = { navController.navigate(Routes.REBALANCING) },
                     onOpenReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
                     onOpenFundEvaluator = { navController.navigate(Routes.FUND_EVALUATOR) },
+                    onOpenRem = { navController.navigate(Routes.REM) },
                 )
             }
 
