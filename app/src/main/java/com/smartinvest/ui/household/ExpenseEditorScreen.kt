@@ -24,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -248,6 +249,21 @@ fun ExpenseEditorScreen(
                 selected = form.paymentMethod,
                 label = { it.shortLabel },
                 onSelect = viewModel::setPaymentMethod,
+            )
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Recurrente", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Se repite todos los meses en el calendario de pagos.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = form.isRecurring,
+                onCheckedChange = viewModel::setRecurring,
             )
         }
 

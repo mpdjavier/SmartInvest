@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **130 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **150 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -29,6 +29,8 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - Categorías editables (supermercado, servicios, expensas, auto, salud, comida, ocio, otros).
 - Gastos en efectivo, transferencia, tarjeta de crédito, **fondo común** o **FCI billetera** (descuenta el saldo del FCI marcado como billetera). El medio predeterminado es el FCI billetera si está configurado; si no, efectivo.
 - **Sugerencias de descripción**: al escribir los primeros caracteres, propone descripciones de gastos anteriores para cargar compras recurrentes con un toque.
+- **Gastos recurrentes**: el interruptor **«Recurrente»** del editor marca el gasto para que se proyecte todos los meses en el calendario de pagos.
+- **Calendario de pagos**: grilla mensual con indicador en los días que tienen uno o más pagos; al tocar un día se listan sus pagos recurrentes/agendados. Los pagos registrados desde Hogar se tildan solos y los demás se pueden tildar a mano (se guarda en `manualPaidMonths` de la agenda).
 - **Cuotas**: una compra en N cuotas impacta cada mes solo por el valor de la cuota, nunca por el total.
 - Tarjetas con **cierre y vencimiento manuales**; la primera cuota se imputa según la fecha de compra y el día de cierre.
 - Fondo común: aportes, extracciones y compras pagadas con el fondo, con saldo en tiempo real.
@@ -176,6 +178,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `expense_editor/{month}?expenseId={expenseId}` | Alta y edición de gastos (con reversión/imputación automática de medios de pago) |
 | `fund_editor/{month}` | Movimiento del fondo común |
 | `payment_agenda` | Agenda mensual de pagos de servicios (hereda fecha del pago anterior, alertas y pago directo) |
+| `payment_calendar` | Calendario mensual de pagos recurrentes (grilla con indicadores, detalle por día y tildado manual/automático) |
 | `expense_search` | Búsqueda de gastos por texto, período, categoría, medio de pago e integrante |
 | `expense_report` | Reporte de gastos del período con exportación CSV y resumen compartible |
 | `receipt_import/{receiptPath}` | Importación de comprobantes PDF/texto (quita «Pago de», categoría Servicios y rescate en FCI billetera) |
@@ -709,7 +712,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**148 tests, 0 fallos, 22 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**150 tests, 0 fallos, 22 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -734,6 +737,7 @@ Tests unitarios JVM (sin emulador):
 | `PortfolioValuationTest` | valoración ARS/USD, CEDEAR (`SPY`) y bonos (`AO27`/`AO27D`) en exposición USD, MEP, topes, interés, variación diaria de un bono USD y tenencias sin cantidad |
 | `PortfolioReconciliationEngineTest` | parseo de listas de saldos (14/11/2026 y 16/11/2026), totales nativos ARS/USD, reconciliación de la planilla 16/11 a MEP 1.500, cantidades del preset 16/11 que reproducen los saldos al cierre, exposición 60/40 con bonos y SPY, precios implícitos, diferencias contra cotización y bloqueo manual |
 | `DailyInterestEngineTest` | desglose diario por TNA/tope, variación real de cotizaciones (con y sin cantidad), conciliación, TNA tomada del FCI vinculado y capitalización diaria en billeteras y FCI sin cotización fresca |
+| `PaymentAgendaEngineTest` | fecha heredada del pago anterior, estados de vencimiento, fechas y montos personalizados, filtro de solo recurrentes para el calendario y tildado manual por mes (`manualPaidMonths`) |
 | `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago), pago de servicio (Galicia), resumen de tarjeta de crédito (`MASTERCARD BLACK` con vencimiento, próximo cierre y total a pagar), fechas con mes en texto y comprobantes sin datos |
 | `MarketClientsTest` | normalización de claves/URLs y parseo HTML de Rava (tabla histórica y encabezado con cierre anterior) y CAFCI |
 | `MacroRiskTest` | bandas de carry, techo por riesgo país, velocidad de la brecha, calendario electoral, histéresis, guardarraíl de liquidez, alcance por riesgo subyacente, vencimientos como flujo y reparto orgánico 100% pesos / 100% dólares |

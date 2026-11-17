@@ -34,6 +34,8 @@ data class HistoricalExpenseRecord(
     val amountCents: Long,
     val date: LocalDate,
     val categoryId: Long,
+    /** Expense flagged as recurring; the payment calendar only shows these. */
+    val isRecurring: Boolean = false,
 )
 
 enum class PaymentAgendaStatus(val label: String) {
@@ -103,6 +105,10 @@ object PaymentAgendaEngine {
      * - Automatically includes all payments made in service/recurring categories (`serviceCategoryIds`),
      *   defaulting the scheduled date in [month] to the day-of-month of the previous payment.
      * - Merges user edits and manually added items from [templates].
+     *
+     * When [recurringOnly] is true (payment calendar), only expenses flagged as recurring
+     * plus the configured [templates] are projected; ordinary service-category expenses
+     * stay in the agenda screen but do not clutter the calendar.
      */
     fun buildForMonth(
         month: YearMonth,
@@ -110,12 +116,18 @@ object PaymentAgendaEngine {
         expenses: List<HistoricalExpenseRecord>,
         serviceCategoryIds: Set<Long>,
         templates: List<PaymentAgendaTemplate>,
+        recurringOnly: Boolean = false,
     ): PaymentAgendaMonthSummary {
         val templateMap = templates.associateBy { it.key }
         val templateKeys = templateMap.keys
 
         val relevantExpenses = expenses.filter { exp ->
-            exp.categoryId in serviceCategoryIds || normalizeKey(exp.description) in templateKeys
+            val matchesTemplate = normalizeKey(exp.description) in templateKeys
+            if (recurringOnly) {
+                exp.isRecurring || matchesTemplate
+            } else {
+                exp.categoryId in serviceCategoryIds || matchesTemplate
+            }
         }
 
         val expensesByKey = relevantExpenses.groupBy { normalizeKey(it.description) }

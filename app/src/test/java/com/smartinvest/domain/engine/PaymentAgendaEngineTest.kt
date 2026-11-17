@@ -2,6 +2,7 @@ package com.smartinvest.domain.engine
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -91,5 +92,72 @@ class PaymentAgendaEngineTest {
         assertEquals(28_500_00L, internet.amountCents)
         assertEquals(PaymentAgendaStatus.UPCOMING, internet.status)
         assertTrue(internet.alertEnabled)
+    }
+
+    @Test
+    fun `calendar only projects recurring expenses and agenda templates`() {
+        val expenses = listOf(
+            HistoricalExpenseRecord(
+                id = 1,
+                description = "Alquiler",
+                amountCents = 450_000_00L,
+                date = LocalDate.of(2026, 10, 5),
+                categoryId = 1L,
+                isRecurring = true,
+            ),
+            HistoricalExpenseRecord(
+                id = 2,
+                description = "Luz",
+                amountCents = 22_000_00L,
+                date = LocalDate.of(2026, 10, 12),
+                categoryId = 1L,
+                isRecurring = false,
+            ),
+        )
+
+        val summary = PaymentAgendaEngine.buildForMonth(
+            month = YearMonth.of(2026, 11),
+            today = LocalDate.of(2026, 11, 1),
+            expenses = expenses,
+            serviceCategoryIds = setOf(1L),
+            templates = emptyList(),
+            recurringOnly = true,
+        )
+
+        assertEquals(1, summary.rows.size)
+        val rent = summary.rows.first()
+        assertEquals("Alquiler", rent.name)
+        assertEquals(LocalDate.of(2026, 11, 5), rent.scheduledDate)
+        assertEquals(450_000_00L, rent.amountCents)
+        assertFalse(rent.isPaid)
+    }
+
+    @Test
+    fun `manual paid month marks a recurring row paid without an expense`() {
+        val key = PaymentAgendaEngine.normalizeKey("Alquiler")
+        val templates = listOf(
+            PaymentAgendaTemplate(
+                key = key,
+                name = "Alquiler",
+                customDayOfMonth = 5,
+                manualPaidMonths = listOf("2026-11"),
+            ),
+        )
+
+        val summary = PaymentAgendaEngine.buildForMonth(
+            month = YearMonth.of(2026, 11),
+            today = LocalDate.of(2026, 11, 1),
+            expenses = emptyList(),
+            serviceCategoryIds = emptySet(),
+            templates = templates,
+            recurringOnly = true,
+        )
+
+        val row = summary.rows.single()
+        assertTrue(row.isPaid)
+        assertNull(row.paidExpenseId)
+        assertEquals(LocalDate.of(2026, 11, 5), row.paidDate)
+        assertEquals(1, summary.paidCount)
+        assertEquals(0, summary.pendingCount)
     }
 }

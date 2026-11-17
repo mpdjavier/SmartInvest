@@ -63,6 +63,8 @@ data class ExpenseEntity(
     val walletHoldingId: Long? = null,
     @androidx.room.ColumnInfo(defaultValue = "0.0") val walletQuantityDelta: Double = 0.0,
     @androidx.room.ColumnInfo(defaultValue = "0") val walletValueDeltaCents: Long = 0,
+    /** Recurring household expense: shown in the payment calendar every month. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val isRecurring: Boolean = false,
     val createdAt: Long,
 )
 

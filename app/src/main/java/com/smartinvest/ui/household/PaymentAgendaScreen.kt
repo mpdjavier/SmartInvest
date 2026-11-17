@@ -165,6 +165,7 @@ class PaymentAgendaViewModel @Inject constructor(
                 amountCents = it.totalAmountCents,
                 date = LocalDate.ofEpochDay(it.dateEpochDay),
                 categoryId = it.categoryId,
+                isRecurring = it.isRecurring,
             )
         }
         AgendaSources(records, categories, members, wallets, settings.paymentAgendaJson)
@@ -410,6 +411,7 @@ class PaymentAgendaViewModel @Inject constructor(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PaymentAgendaScreen(
+    onOpenCalendar: () -> Unit = {},
     viewModel: PaymentAgendaViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -488,6 +490,19 @@ fun PaymentAgendaScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        item {
+            OutlinedButton(
+                onClick = onOpenCalendar,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+            ) {
+                Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Abrir calendario de pagos", maxLines = 1, softWrap = false)
             }
         }
 

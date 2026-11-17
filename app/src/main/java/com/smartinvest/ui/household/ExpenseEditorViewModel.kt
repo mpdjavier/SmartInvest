@@ -47,6 +47,8 @@ data class ExpenseForm(
     val walletHoldingId: Long? = null,
     val installments: Int = 1,
     val notes: String = "",
+    /** Marks the expense as recurring so it appears in the payment calendar every month. */
+    val isRecurring: Boolean = false,
     val originalPaymentMethod: ExpensePaymentMethod? = null,
     val originalAmountCents: Long = 0L,
     val originalWalletHoldingId: Long? = null,
@@ -139,6 +141,7 @@ class ExpenseEditorViewModel @Inject constructor(
                             walletHoldingId = existing.walletHoldingId ?: current.walletHoldingId,
                             installments = existing.installments.coerceAtLeast(1),
                             notes = existing.notes,
+                            isRecurring = existing.isRecurring,
                             originalPaymentMethod = existing.paymentMethod,
                             originalAmountCents = existing.totalCents,
                             originalWalletHoldingId = existing.walletHoldingId,
@@ -195,6 +198,8 @@ class ExpenseEditorViewModel @Inject constructor(
     fun setWalletHolding(id: Long) = form.update { it.copy(walletHoldingId = id, error = null) }
 
     fun setInstallments(count: Int) = form.update { it.copy(installments = count.coerceIn(1, 60)) }
+
+    fun setRecurring(value: Boolean) = form.update { it.copy(isRecurring = value) }
 
     fun clearError() = form.update { it.copy(error = null) }
 
@@ -273,6 +278,7 @@ class ExpenseEditorViewModel @Inject constructor(
                 } else {
                     null
                 },
+                isRecurring = current.isRecurring,
             )
             runCatching {
                 if (current.id > 0L) {

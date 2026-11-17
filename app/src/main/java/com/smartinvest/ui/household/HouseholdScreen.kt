@@ -91,6 +91,7 @@ fun HouseholdScreen(
     onFundMovement: (YearMonth) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPaymentAgenda: () -> Unit = {},
+    onOpenPaymentCalendar: () -> Unit = {},
     onOpenExpenseSearch: () -> Unit = {},
     onOpenExpenseReport: () -> Unit = {},
     viewModel: HouseholdViewModel = hiltViewModel(),
@@ -199,6 +200,16 @@ fun HouseholdScreen(
                     Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Agenda de pagos y vencimientos", maxLines = 1, softWrap = false)
+                }
+                OutlinedButton(
+                    onClick = onOpenPaymentCalendar,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                ) {
+                    Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Calendario de pagos recurrentes", maxLines = 1, softWrap = false)
                 }
             }
         }

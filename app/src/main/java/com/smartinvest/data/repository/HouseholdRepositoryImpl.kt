@@ -189,6 +189,7 @@ class HouseholdRepositoryImpl @Inject constructor(
             notes = entity.notes,
             walletHoldingId = entity.walletHoldingId,
             walletValueDeltaCents = entity.walletValueDeltaCents,
+            isRecurring = entity.isRecurring,
         )
     }
 
@@ -247,6 +248,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         installments = input.installments,
                         firstInstallmentMonth = firstMonth.toString(),
                         notes = input.notes.trim(),
+                        isRecurring = input.isRecurring,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -282,6 +284,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         paymentMethod = input.paymentMethod,
                         installments = 1,
                         notes = input.notes.trim(),
+                        isRecurring = input.isRecurring,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -350,6 +353,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         walletHoldingId = holding.id,
                         walletQuantityDelta = quantityDelta,
                         walletValueDeltaCents = input.totalCents,
+                        isRecurring = input.isRecurring,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -368,6 +372,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         paymentMethod = input.paymentMethod,
                         installments = 1,
                         notes = input.notes.trim(),
+                        isRecurring = input.isRecurring,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )

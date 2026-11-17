@@ -57,6 +57,7 @@ import com.smartinvest.ui.household.ExpenseSearchScreen
 import com.smartinvest.ui.household.FundMovementScreen
 import com.smartinvest.ui.household.HouseholdScreen
 import com.smartinvest.ui.household.PaymentAgendaScreen
+import com.smartinvest.ui.household.PaymentCalendarScreen
 import com.smartinvest.ui.household.ReceiptImportScreen
 import com.smartinvest.ui.importer.ImportScreen
 import com.smartinvest.ui.investments.DailyInterestScreen
@@ -97,6 +98,7 @@ object Routes {
     const val REM = "rem"
     const val RECEIPT_IMPORT = "receipt_import/{receiptPath}"
     const val PAYMENT_AGENDA = "payment_agenda"
+    const val PAYMENT_CALENDAR = "payment_calendar"
     const val EXPENSE_SEARCH = "expense_search"
     const val EXPENSE_REPORT = "expense_report"
     const val PORTFOLIO_RECONCILIATION = "portfolio_reconciliation"
@@ -138,6 +140,7 @@ private val secondaryTitles = mapOf(
     Routes.REM to "Comparador REM",
     Routes.RECEIPT_IMPORT to "Importar comprobante",
     Routes.PAYMENT_AGENDA to "Agenda de pagos",
+    Routes.PAYMENT_CALENDAR to "Calendario de pagos",
     Routes.EXPENSE_SEARCH to "Buscar gastos",
     Routes.EXPENSE_REPORT to "Reportes de gastos",
     Routes.PORTFOLIO_RECONCILIATION to "Ajuste y control de cartera",
@@ -272,6 +275,7 @@ fun SmartInvestNavHost(
                     onFundMovement = { month -> navController.navigate(Routes.fundEditor(month)) },
                     onOpenSettings = { navigateTopLevel(Routes.SETTINGS) },
                     onOpenPaymentAgenda = { navController.navigate(Routes.PAYMENT_AGENDA) },
+                    onOpenPaymentCalendar = { navController.navigate(Routes.PAYMENT_CALENDAR) },
                     onOpenExpenseSearch = { navController.navigate(Routes.EXPENSE_SEARCH) },
                     onOpenExpenseReport = { navController.navigate(Routes.EXPENSE_REPORT) },
                 )
@@ -294,7 +298,13 @@ fun SmartInvestNavHost(
             }
 
             composable(Routes.PAYMENT_AGENDA) {
-                PaymentAgendaScreen()
+                PaymentAgendaScreen(
+                    onOpenCalendar = { navController.navigate(Routes.PAYMENT_CALENDAR) },
+                )
+            }
+
+            composable(Routes.PAYMENT_CALENDAR) {
+                PaymentCalendarScreen()
             }
 
             composable(Routes.INVESTMENTS) {

@@ -130,6 +130,7 @@ data class BackupExpenseDto(
     val walletHoldingId: Long? = null,
     val walletQuantityDelta: Double = 0.0,
     val walletValueDeltaCents: Long = 0,
+    val isRecurring: Boolean = false,
     val createdAt: Long,
 )
 
@@ -371,6 +372,7 @@ class AppBackupManager @Inject constructor(
                     walletHoldingId = it.walletHoldingId,
                     walletQuantityDelta = it.walletQuantityDelta,
                     walletValueDeltaCents = it.walletValueDeltaCents,
+                    isRecurring = it.isRecurring,
                     createdAt = it.createdAt,
                 )
             },
@@ -611,6 +613,7 @@ class AppBackupManager @Inject constructor(
                             walletHoldingId = it.walletHoldingId,
                             walletQuantityDelta = it.walletQuantityDelta,
                             walletValueDeltaCents = it.walletValueDeltaCents,
+                            isRecurring = it.isRecurring,
                             createdAt = it.createdAt,
                         )
                     },

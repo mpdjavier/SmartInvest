@@ -26,6 +26,8 @@ data class NewExpense(
     val notes: String = "",
     /** FCI marked as wallet that funds a WALLET_FCI expense. */
     val walletHoldingId: Long? = null,
+    /** Recurring household expense: projected every month in the payment calendar. */
+    val isRecurring: Boolean = false,
 )
 
 data class EditableExpense(
@@ -41,6 +43,7 @@ data class EditableExpense(
     val notes: String = "",
     val walletHoldingId: Long? = null,
     val walletValueDeltaCents: Long = 0L,
+    val isRecurring: Boolean = false,
 )
 
 data class NewFundMovement(
