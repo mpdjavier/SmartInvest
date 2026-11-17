@@ -318,12 +318,27 @@ object FundStabilityEngine {
      * first common observation. Returns null when there are fewer than two
      * common dates (for example, disjoint ranges or a fund without history).
      */
-    fun overlay(primary: FundEvaluation, secondary: FundEvaluation): FundOverlay? {
+    fun overlay(
+        primary: FundEvaluation,
+        secondary: FundEvaluation,
+        range: FundDateRange? = null,
+    ): FundOverlay? {
         if (primary.fromSummary || secondary.fromSummary) return null
         if (primary.name.equals(secondary.name, ignoreCase = true)) return null
 
-        val primaryByDate = evaluationPoints(primary).associateBy { it.date }
-        val secondaryByDate = evaluationPoints(secondary).associateBy { it.date }
+        val primaryPoints = if (range != null) {
+            rangePoints(primary.history, range.start, range.end)
+        } else {
+            evaluationPoints(primary)
+        }
+        val secondaryPoints = if (range != null) {
+            rangePoints(secondary.history, range.start, range.end)
+        } else {
+            evaluationPoints(secondary)
+        }
+
+        val primaryByDate = primaryPoints.associateBy { it.date }
+        val secondaryByDate = secondaryPoints.associateBy { it.date }
         val dates = (primaryByDate.keys intersect secondaryByDate.keys).sorted()
         if (dates.size < 2) return null
 

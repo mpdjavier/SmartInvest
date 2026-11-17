@@ -280,11 +280,22 @@ fun FundEvaluatorScreen(
                         overlay = state.overlay,
                         overlayCandidates = state.overlayCandidates,
                         isFollowed = isFollowed(state.watchlist, detached.name),
+                        overlayRangeOpen = state.overlayRangeOpen,
+                        overlayRangeStartText = state.overlayRangeStartText,
+                        overlayRangeEndText = state.overlayRangeEndText,
+                        overlayRangeError = state.overlayRangeError,
+                        hasOverlayRange = state.overlayRangeStart != null || state.overlayRangeEnd != null,
                         onAmountChange = viewModel::onSimulationAmountChange,
                         onSimulate = viewModel::simulate,
                         onFollow = viewModel::followSelected,
                         onRemove = { viewModel.removeFund(detached.name) },
                         onSelectOverlay = viewModel::selectOverlay,
+                        onOpenOverlayRange = viewModel::openOverlayRange,
+                        onCloseOverlayRange = viewModel::closeOverlayRange,
+                        onOverlayRangeStartChange = viewModel::onOverlayRangeStartChange,
+                        onOverlayRangeEndChange = viewModel::onOverlayRangeEndChange,
+                        onApplyOverlayRange = viewModel::applyOverlayRange,
+                        onClearOverlayRange = viewModel::clearOverlayRange,
                     )
                 }
             }
@@ -351,11 +362,22 @@ fun FundEvaluatorScreen(
                         overlay = state.overlay,
                         overlayCandidates = state.overlayCandidates,
                         isFollowed = isFollowed(state.watchlist, detail.name),
+                        overlayRangeOpen = state.overlayRangeOpen,
+                        overlayRangeStartText = state.overlayRangeStartText,
+                        overlayRangeEndText = state.overlayRangeEndText,
+                        overlayRangeError = state.overlayRangeError,
+                        hasOverlayRange = state.overlayRangeStart != null || state.overlayRangeEnd != null,
                         onAmountChange = viewModel::onSimulationAmountChange,
                         onSimulate = viewModel::simulate,
                         onFollow = viewModel::followSelected,
                         onRemove = { viewModel.removeFund(detail.name) },
                         onSelectOverlay = viewModel::selectOverlay,
+                        onOpenOverlayRange = viewModel::openOverlayRange,
+                        onCloseOverlayRange = viewModel::closeOverlayRange,
+                        onOverlayRangeStartChange = viewModel::onOverlayRangeStartChange,
+                        onOverlayRangeEndChange = viewModel::onOverlayRangeEndChange,
+                        onApplyOverlayRange = viewModel::applyOverlayRange,
+                        onClearOverlayRange = viewModel::clearOverlayRange,
                     )
                 }
             }
@@ -869,11 +891,22 @@ private fun FundDetailGroup(
     overlay: FundOverlay?,
     overlayCandidates: List<String>,
     isFollowed: Boolean,
+    overlayRangeOpen: Boolean,
+    overlayRangeStartText: String,
+    overlayRangeEndText: String,
+    overlayRangeError: String?,
+    hasOverlayRange: Boolean,
     onAmountChange: (String) -> Unit,
     onSimulate: () -> Unit,
     onFollow: () -> Unit,
     onRemove: () -> Unit,
     onSelectOverlay: (String?) -> Unit,
+    onOpenOverlayRange: () -> Unit,
+    onCloseOverlayRange: () -> Unit,
+    onOverlayRangeStartChange: (String) -> Unit,
+    onOverlayRangeEndChange: (String) -> Unit,
+    onApplyOverlayRange: () -> Unit,
+    onClearOverlayRange: () -> Unit,
 ) {
     if (evaluation.fromSummary) {
         FundSummaryDetailCard(
@@ -888,7 +921,18 @@ private fun FundDetailGroup(
             candidates = overlayCandidates,
             overlayName = overlayName,
             overlay = overlay,
+            overlayRangeOpen = overlayRangeOpen,
+            overlayRangeStartText = overlayRangeStartText,
+            overlayRangeEndText = overlayRangeEndText,
+            overlayRangeError = overlayRangeError,
+            hasOverlayRange = hasOverlayRange,
             onSelect = onSelectOverlay,
+            onOpenRange = onOpenOverlayRange,
+            onCloseRange = onCloseOverlayRange,
+            onStartChange = onOverlayRangeStartChange,
+            onEndChange = onOverlayRangeEndChange,
+            onApplyRange = onApplyOverlayRange,
+            onClearRange = onClearOverlayRange,
         )
         FundMetricsCard(evaluation = evaluation)
         if (comparison != null) {
@@ -935,12 +979,25 @@ private fun FundOverlayCard(
     candidates: List<String>,
     overlayName: String?,
     overlay: FundOverlay?,
+    overlayRangeOpen: Boolean,
+    overlayRangeStartText: String,
+    overlayRangeEndText: String,
+    overlayRangeError: String?,
+    hasOverlayRange: Boolean,
     onSelect: (String?) -> Unit,
+    onOpenRange: () -> Unit,
+    onCloseRange: () -> Unit,
+    onStartChange: (String) -> Unit,
+    onEndChange: (String) -> Unit,
+    onApplyRange: () -> Unit,
+    onClearRange: () -> Unit,
 ) {
     SmartCard {
         SectionHeader(
             title = "Superponer dos FCI",
             subtitle = "Ambas series se normalizan a 100 al inicio del rango",
+            actionLabel = if (overlayName != null && !overlayRangeOpen) "Zoom / Rango" else null,
+            onAction = if (overlayName != null) onOpenRange else null,
         )
         Spacer(Modifier.height(10.dp))
 
@@ -973,11 +1030,27 @@ private fun FundOverlayCard(
             return@SmartCard
         }
 
+        if (overlayRangeOpen) {
+            Spacer(Modifier.height(12.dp))
+            DateRangeCard(
+                startText = overlayRangeStartText,
+                endText = overlayRangeEndText,
+                error = overlayRangeError,
+                hasRange = hasOverlayRange,
+                onStartChange = onStartChange,
+                onEndChange = onEndChange,
+                onApply = onApplyRange,
+                onClear = onClearRange,
+                onQuickRange = { }, // No quick ranges for overlay yet
+                onClose = onCloseRange,
+            )
+        }
+
         if (overlay == null) {
             Spacer(Modifier.height(8.dp))
             InfoBanner(
-                "No hay fechas en común para $overlayName en el rango elegido. Ampliá el " +
-                    "rango o volvé a una ventana fija.",
+                "No hay fechas en común para $overlayName en el rango elegido. Probá con " +
+                    "otro rango de fechas o volvé a la ventana predeterminada.",
                 color = Amber,
             )
             return@SmartCard

@@ -71,6 +71,13 @@ data class FundEvaluatorUiState(
     val overlayCandidates: List<String> = emptyList(),
     /** The selected class has no observations inside the current date range. */
     val selectedOutOfRange: Boolean = false,
+    /** Specific range for the overlay chart. Null follows the evaluation range. */
+    val overlayRangeStart: LocalDate? = null,
+    val overlayRangeEnd: LocalDate? = null,
+    val overlayRangeStartText: String = "",
+    val overlayRangeEndText: String = "",
+    val overlayRangeError: String? = null,
+    val overlayRangeOpen: Boolean = false,
 ) {
     val attribution: String get() = "Datos: compararfondos.com.ar (CAFCI/CNV)"
     val hasMinimum: Boolean get() = minStability > 0.0
@@ -243,7 +250,87 @@ class FundEvaluatorViewModel @Inject constructor(
 
     fun selectOverlay(name: String?) {
         if (name == _uiState.value.overlayName) return
-        _uiState.update { it.copy(overlayName = name) }
+        _uiState.update {
+            it.copy(
+                overlayName = name,
+                overlayRangeStart = null,
+                overlayRangeEnd = null,
+                overlayRangeStartText = "",
+                overlayRangeEndText = "",
+                overlayRangeError = null,
+                overlayRangeOpen = false,
+            )
+        }
+        rebuild()
+    }
+
+    fun openOverlayRange() {
+        _uiState.update { state ->
+            val overlay = state.overlay
+            if (overlay != null && state.overlayRangeStartText.isBlank()) {
+                state.copy(
+                    overlayRangeOpen = true,
+                    overlayRangeStartText = formatDate(overlay.startDate),
+                    overlayRangeEndText = formatDate(overlay.endDate),
+                    overlayRangeError = null,
+                )
+            } else {
+                state.copy(overlayRangeOpen = true, overlayRangeError = null)
+            }
+        }
+    }
+
+    fun closeOverlayRange() {
+        _uiState.update { it.copy(overlayRangeOpen = false, overlayRangeError = null) }
+    }
+
+    fun onOverlayRangeStartChange(text: String) {
+        _uiState.update { it.copy(overlayRangeStartText = text, overlayRangeError = null) }
+    }
+
+    fun onOverlayRangeEndChange(text: String) {
+        _uiState.update { it.copy(overlayRangeEndText = text, overlayRangeError = null) }
+    }
+
+    fun applyOverlayRange() {
+        val state = _uiState.value
+        val start = parseDate(state.overlayRangeStartText)
+        val end = parseDate(state.overlayRangeEndText)
+        val error = when {
+            state.overlayRangeStartText.isNotBlank() && start == null ->
+                "La fecha «desde» no es válida. Usá dd/MM/aaaa."
+            state.overlayRangeEndText.isNotBlank() && end == null ->
+                "La fecha «hasta» no es válida. Usá dd/MM/aaaa."
+            start == null && end == null ->
+                "Ingresá al menos una fecha para acotar la superposición."
+            start != null && end != null && start.isAfter(end) ->
+                "La fecha «desde» no puede ser posterior a la fecha «hasta»."
+            else -> null
+        }
+        if (error != null) {
+            _uiState.update { it.copy(overlayRangeError = error) }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                overlayRangeStart = start,
+                overlayRangeEnd = end,
+                overlayRangeError = null,
+            )
+        }
+        rebuild()
+    }
+
+    fun clearOverlayRange() {
+        _uiState.update {
+            it.copy(
+                overlayRangeStart = null,
+                overlayRangeEnd = null,
+                overlayRangeStartText = "",
+                overlayRangeEndText = "",
+                overlayRangeError = null,
+            )
+        }
         rebuild()
     }
 
@@ -485,8 +572,13 @@ class FundEvaluatorViewModel @Inject constructor(
         val overlayEvaluation = state.overlayName?.let { name ->
             historyEvaluations.firstOrNull { it.name.equals(name, ignoreCase = true) }
         }
+        val overlayRange = if (state.overlayRangeStart != null || state.overlayRangeEnd != null) {
+            FundDateRange(state.overlayRangeStart, state.overlayRangeEnd)
+        } else {
+            null
+        }
         val overlay = if (selected != null && !selected.fromSummary && overlayEvaluation != null) {
-            FundStabilityEngine.overlay(selected, overlayEvaluation)
+            FundStabilityEngine.overlay(selected, overlayEvaluation, overlayRange)
         } else {
             null
         }
