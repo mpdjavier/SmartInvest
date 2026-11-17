@@ -150,7 +150,7 @@ fun PortfolioReconciliationScreen(
             SmartCard {
                 SectionHeader(
                     title = "Carga rápida de saldos",
-                    subtitle = "Aplicá la lista del 16/11/2026 o pegá una lista actualizada",
+                    subtitle = "Aplicá la lista del 16/11/2026 (saldos + cantidades) o pegá una lista actualizada",
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(
@@ -159,7 +159,7 @@ fun PortfolioReconciliationScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Button(
-                        onClick = viewModel::apply2026_11_14Preset,
+                        onClick = viewModel::apply2026_11_16Preset,
                         enabled = !state.isWorking,
                         modifier = Modifier
                             .weight(1f)
@@ -176,6 +176,13 @@ fun PortfolioReconciliationScreen(
                         Text(if (showBulkPaste) "Ocultar texto" else "Pegar lista", maxLines = 1, softWrap = false)
                     }
                 }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "El botón carga los 9 saldos del 16/11 y las cantidades que faltaban " +
+                        "(AO27D, ADCAP-BAL3, MP-ARS y MP-USD) para que CAFCI y Rava actualicen solos.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (showBulkPaste) {
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(

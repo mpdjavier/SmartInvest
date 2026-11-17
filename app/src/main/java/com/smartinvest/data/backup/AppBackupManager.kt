@@ -994,7 +994,7 @@ class AppBackupManager @Inject constructor(
                 marketKey = "rava:S30N6",
                 symbol = "S30N6",
                 source = MarketSource.RAVA,
-                price = 128.87,
+                price = 128.88,
                 currency = CurrencyCode.ARS,
                 quoteUnit = QuoteUnit.PER_100_NOMINAL,
                 dateEpochDay = LocalDate.of(2026, 11, 16).toEpochDay(),

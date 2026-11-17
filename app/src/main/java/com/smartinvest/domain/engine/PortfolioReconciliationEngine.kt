@@ -218,14 +218,65 @@ S30N6 (IEB) 3820184.88 ARS
     /**
      * Exact 9 holdings from the user's 16/11/2026 update, with current valuations from
      * brokers, bank and wallets (including the MP-ARS withdrawal + accrued yield).
+     *
+     * Includes the cuotapartes/nominales implied by those balances on 16/11 so every
+     * instrument keeps updating automatically from CAFCI/Rava after the preset is applied.
      */
     fun presetHoldings2026_11_16(): List<ParsedHoldingAdjustment> =
-        parseAdjustmentText(DEFAULT_2026_11_16_LIST)
+        parseAdjustmentText(DEFAULT_2026_11_16_LIST, presetQuantities = QUANTITIES_2026_11_16)
+
+    /**
+     * Quantities of the untouched 16/11 preset; empty for any edited/custom list so a new
+     * daily snapshot never inherits yesterday's cuotapartes.
+     */
+    fun presetQuantitiesFor(rawText: String): Map<String, Double> =
+        if (normalizedLines(rawText) == normalizedLines(DEFAULT_2026_11_16_LIST)) {
+            QUANTITIES_2026_11_16
+        } else {
+            emptyMap()
+        }
+
+    /** Lock date of the untouched 16/11 preset, or null when the list was edited. */
+    fun presetDateFor(rawText: String): LocalDate? =
+        if (normalizedLines(rawText) == normalizedLines(DEFAULT_2026_11_16_LIST)) {
+            PRESET_DATE_2026_11_16
+        } else {
+            null
+        }
+
+    private fun normalizedLines(text: String): List<String> =
+        text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+
+    private val PRESET_DATE_2026_11_16: LocalDate = LocalDate.of(2026, 11, 16)
+
+    /**
+     * Quantities as of 16/11/2026 for the instruments whose quantity is not present in the
+     * imported broker movements: balance / quote on that date.
+     *
+     * They are only applied by [presetHoldings2026_11_16]; a custom pasted list keeps
+     * whatever quantity the holding already has.
+     */
+    private val QUANTITIES_2026_11_16: Map<String, Double> = mapOf(
+        // USD 20.796,11 / (102,55 / 100)
+        "AO27D" to 20_278.995612,
+        // ARS 74.876.721,78 / 5,525386 (CAFCI VCP 16/11)
+        "ADCAP-BAL3" to 13_551_401.074966,
+        // ARS 359.921,06 / 26,457855 (CAFCI VCP 16/11)
+        "MP-ARS" to 13_603.561589,
+        // USD 7.112,67 / 1,049342 (CAFCI VCP 16/11)
+        "MP-USD" to 6_778.219113,
+    )
 
     /**
      * Parses a multi-line list of manual balances (`TICKER (CUENTA) MONTO ARS/USD`).
+     *
+     * [presetQuantities] is keyed by symbol and only fills the instruments that have no
+     * quantity of their own (AO27D, ADCAP-BAL3, MP-ARS, MP-USD).
      */
-    fun parseAdjustmentText(rawText: String): List<ParsedHoldingAdjustment> {
+    fun parseAdjustmentText(
+        rawText: String,
+        presetQuantities: Map<String, Double> = emptyMap(),
+    ): List<ParsedHoldingAdjustment> {
         val adcapSummary = BrokerMovementImporter.summarize(BrokerMovementImporter.ecoValoresAdcapBal3Movements)
         val spySummary = BrokerMovementImporter.summarize(BrokerMovementImporter.iebSpyMovements)
         val s30IebSummary = BrokerMovementImporter.summarize(BrokerMovementImporter.iebS30n6Movements)
@@ -261,6 +312,7 @@ S30N6 (IEB) 3820184.88 ARS
                     s30IebSummary = s30IebSummary,
                     t15Summary = t15Summary,
                     ao27Summary = ao27Summary,
+                    presetQuantity = presetQuantities[rawSymbol] ?: 0.0,
                 )
             }
             .toList()
@@ -303,6 +355,7 @@ S30N6 (IEB) 3820184.88 ARS
         s30IebSummary: BrokerImportSummary,
         t15Summary: BrokerImportSummary,
         ao27Summary: BrokerImportSummary,
+        presetQuantity: Double = 0.0,
     ): ParsedHoldingAdjustment = when {
         symbol == "AO27D" -> ParsedHoldingAdjustment(
             symbol = "AO27D",
@@ -314,6 +367,7 @@ S30N6 (IEB) 3820184.88 ARS
             marketKey = "rava:AO27D",
             source = MarketSource.RAVA,
             quoteUnit = QuoteUnit.PER_100_NOMINAL,
+            quantity = presetQuantity,
             costCents = valueCents,
         )
         symbol == "AO27" -> ParsedHoldingAdjustment(
@@ -398,6 +452,7 @@ S30N6 (IEB) 3820184.88 ARS
             marketKey = "cafci:1402:4070",
             source = MarketSource.CAFCI,
             quoteUnit = QuoteUnit.PER_UNIT,
+            quantity = presetQuantity,
             costCents = adcapSummary.netInvestedCents,
             settlementDays = 1,
             movements = adcapSummary.movements,
@@ -412,6 +467,7 @@ S30N6 (IEB) 3820184.88 ARS
             marketKey = "cafci:798:1982",
             source = MarketSource.CAFCI,
             quoteUnit = QuoteUnit.PER_UNIT,
+            quantity = presetQuantity,
             costCents = valueCents,
             isWallet = true,
             settlementDays = 0,
@@ -426,6 +482,7 @@ S30N6 (IEB) 3820184.88 ARS
             marketKey = "cafci:1522:4557",
             source = MarketSource.CAFCI,
             quoteUnit = QuoteUnit.PER_UNIT,
+            quantity = presetQuantity,
             costCents = valueCents,
             settlementDays = 0,
         )

@@ -263,7 +263,7 @@ class PortfolioReconciliationViewModel @Inject constructor(
         }
     }
 
-    fun apply2026_11_14Preset() {
+    fun apply2026_11_16Preset() {
         if (working.value) return
         viewModelScope.launch {
             working.value = true
@@ -274,7 +274,7 @@ class PortfolioReconciliationViewModel @Inject constructor(
                 drafts.value = emptyMap()
                 message.value = summary
             }.onFailure { err ->
-                message.value = err.message ?: "No se pudo aplicar la lista del 14/11/2026."
+                message.value = err.message ?: "No se pudo aplicar la lista del 16/11/2026."
             }
             working.value = false
         }
@@ -283,7 +283,10 @@ class PortfolioReconciliationViewModel @Inject constructor(
     fun applyBulkPasteList() {
         if (working.value) return
         val raw = uiState.value.bulkPasteText
-        val parsed = PortfolioReconciliationEngine.parseAdjustmentText(raw)
+        val parsed = PortfolioReconciliationEngine.parseAdjustmentText(
+            rawText = raw,
+            presetQuantities = PortfolioReconciliationEngine.presetQuantitiesFor(raw),
+        )
         if (parsed.isEmpty()) {
             message.value = "No se detectaron líneas con formato 'TICKER MONTO ARS/USD'."
             return
@@ -295,7 +298,9 @@ class PortfolioReconciliationViewModel @Inject constructor(
                 backupManager.applyHoldingAdjustments(
                     adjustments = parsed,
                     lockManual = true,
-                    date = DateUtils.today(),
+                    // The untouched 16/11 list keeps its own date; a custom daily paste
+                    // locks today so tomorrow's quotes do not override it.
+                    date = PortfolioReconciliationEngine.presetDateFor(raw) ?: DateUtils.today(),
                 )
             }.onSuccess { summary ->
                 drafts.value = emptyMap()

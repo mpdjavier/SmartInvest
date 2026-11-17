@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartinvest.core.money.MoneyFormatter
 import com.smartinvest.core.money.MoneyParser
+import com.smartinvest.core.money.QuantityParser
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.data.network.MarketKeyParser
 import com.smartinvest.data.network.MarketPreset
@@ -152,7 +153,7 @@ class HoldingEditorViewModel @Inject constructor(
 
     fun applyCalculatedValuation() {
         val current = form.value
-        val qty = current.quantityText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+        val qty = QuantityParser.parse(current.quantityText) ?: 0.0
         val price = current.latestQuotePrice ?: 0.0
         if (qty <= 0.0 || price <= 0.0) {
             form.update { it.copy(error = "Configurá cantidad y sincronizá la cotización para calcular") }
@@ -198,13 +199,10 @@ class HoldingEditorViewModel @Inject constructor(
             else -> 0L
         }
 
-        val oldQty = current.quantityText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+        val oldQty = QuantityParser.parse(current.quantityText) ?: 0.0
         val newQtyText = if (oldQty > 0.0 && oldValueCents > 0L) {
             val scaledQty = oldQty * (newValueCents.toDouble() / oldValueCents.toDouble())
-            String.format(java.util.Locale.US, "%.4f", scaledQty)
-                .trimEnd('0')
-                .trimEnd('.')
-                .replace('.', ',')
+            QuantityParser.format(scaledQty).ifBlank { current.quantityText }
         } else {
             current.quantityText
         }
@@ -299,14 +297,7 @@ class HoldingEditorViewModel @Inject constructor(
         }
 
         val newQtyText = if (summary.netQuantity > 0.0) {
-            if (summary.netQuantity % 1.0 == 0.0) {
-                String.format(java.util.Locale.US, "%.0f", summary.netQuantity)
-            } else {
-                String.format(java.util.Locale.US, "%.4f", summary.netQuantity)
-                    .trimEnd('0')
-                    .trimEnd('.')
-                    .replace('.', ',')
-            }
+            QuantityParser.format(summary.netQuantity)
         } else {
             current.quantityText
         }
@@ -352,7 +343,7 @@ class HoldingEditorViewModel @Inject constructor(
             form.update { it.copy(error = "Ingresá el ticker o símbolo") }
             return
         }
-        val quantity = current.quantityText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+        val quantity = QuantityParser.parse(current.quantityText) ?: 0.0
         if (quantity < 0.0) {
             form.update { it.copy(error = "Cantidad inválida") }
             return
@@ -443,7 +434,7 @@ class HoldingEditorViewModel @Inject constructor(
         maturity = holding.maturityDate,
         notes = holding.notes,
         marketKey = holding.marketKey,
-        quantityText = if (holding.quantity > 0.0) holding.quantity.toString().replace('.', ',') else "",
+        quantityText = if (holding.quantity > 0.0) QuantityParser.format(holding.quantity) else "",
         quoteUnit = holding.quoteUnit,
         isWallet = holding.isWallet,
         settlementDays = holding.settlementDays,

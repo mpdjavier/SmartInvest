@@ -7,6 +7,7 @@ import com.smartinvest.domain.model.MarketSource
 import com.smartinvest.domain.model.QuoteUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -73,6 +74,7 @@ class PortfolioReconciliationEngineTest {
         val ao27d = requireNotNull(byLabel["AO27D (GALICIA)"])
         assertEquals(20_796_11L, ao27d.valueCents)
         assertEquals(CurrencyCode.USD, ao27d.currency)
+        assertEquals(20_278.995612, ao27d.quantity, 0.000001)
 
         val s30Galicia = requireNotNull(byLabel["S30N6 (GALICIA)"])
         assertEquals(4_065_344_32L, s30Galicia.valueCents)
@@ -82,13 +84,16 @@ class PortfolioReconciliationEngineTest {
         assertEquals(359_921_06L, mpArs.valueCents)
         assertEquals(CurrencyCode.ARS, mpArs.currency)
         assertTrue(mpArs.isWallet)
+        assertEquals(13_603.561589, mpArs.quantity, 0.000001)
 
         val mpUsd = requireNotNull(byLabel["MP-USD"])
         assertEquals(7_112_67L, mpUsd.valueCents)
         assertEquals(CurrencyCode.USD, mpUsd.currency)
+        assertEquals(6_778.219113, mpUsd.quantity, 0.000001)
 
         val adcap = requireNotNull(byLabel["ADCAP-BAL3"])
         assertEquals(74_876_721_78L, adcap.valueCents)
+        assertEquals(13_551_401.074966, adcap.quantity, 0.000001)
 
         val t15 = requireNotNull(byLabel["T15E7 (IEB)"])
         assertEquals(782_363_16L, t15.valueCents)
@@ -101,6 +106,46 @@ class PortfolioReconciliationEngineTest {
 
         val s30Ieb = requireNotNull(byLabel["S30N6 (IEB)"])
         assertEquals(3_820_184_88L, s30Ieb.valueCents)
+    }
+
+    @Test
+    fun `2026-11-16 preset quantities reproduce the balances at reference prices`() {
+        val bySymbol = PortfolioReconciliationEngine.presetHoldings2026_11_16().associateBy { it.symbol }
+
+        fun calculatedCents(symbol: String, price: Double): Long {
+            val spec = requireNotNull(bySymbol[symbol])
+            val factor = if (spec.quoteUnit == QuoteUnit.PER_100_NOMINAL) 0.01 else 1.0
+            return kotlin.math.round(price * factor * spec.quantity * 100.0).toLong()
+        }
+
+        assertEquals(20_796_11L, calculatedCents("AO27D", 102.55))
+        assertEquals(74_876_721_78L, calculatedCents("ADCAP-BAL3", 5.525386))
+        assertEquals(359_921_06L, calculatedCents("MP-ARS", 26.457855))
+        assertEquals(7_112_67L, calculatedCents("MP-USD", 1.049342))
+    }
+
+    @Test
+    fun `pasted lists do not inject the preset quantities`() {
+        val pasted = PortfolioReconciliationEngine.parseAdjustmentText(
+            PortfolioReconciliationEngine.DEFAULT_2026_11_16_LIST,
+        )
+        val bySymbol = pasted.associateBy { it.symbol }
+        assertEquals(0.0, bySymbol.getValue("AO27D").quantity, 0.0)
+        assertEquals(0.0, bySymbol.getValue("ADCAP-BAL3").quantity, 0.0)
+        assertEquals(0.0, bySymbol.getValue("MP-ARS").quantity, 0.0)
+        assertEquals(0.0, bySymbol.getValue("MP-USD").quantity, 0.0)
+
+        assertTrue(
+            PortfolioReconciliationEngine.presetQuantitiesFor(
+                PortfolioReconciliationEngine.DEFAULT_2026_11_16_LIST,
+            ).isNotEmpty(),
+        )
+        assertTrue(PortfolioReconciliationEngine.presetQuantitiesFor("SPY 100 ARS").isEmpty())
+        assertEquals(
+            LocalDate.of(2026, 11, 16),
+            PortfolioReconciliationEngine.presetDateFor(PortfolioReconciliationEngine.DEFAULT_2026_11_16_LIST),
+        )
+        assertNull(PortfolioReconciliationEngine.presetDateFor("SPY 100 ARS"))
     }
 
     @Test

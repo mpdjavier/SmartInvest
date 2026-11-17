@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartinvest.core.money.MoneyParser
+import com.smartinvest.core.money.QuantityParser
 import com.smartinvest.data.network.MarketPresets
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
@@ -347,7 +348,7 @@ fun HoldingEditorScreen(
                     onCheckedChange = viewModel::setManualValuationLocked,
                 )
             }
-            val qty = state.quantityText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
+            val qty = QuantityParser.parse(state.quantityText) ?: 0.0
             val quotePrice = state.latestQuotePrice
             if (qty > 0.0 && quotePrice != null && quotePrice > 0.0) {
                 val factor = if (state.quoteUnit == QuoteUnit.PER_100_NOMINAL) 0.01 else 1.0
