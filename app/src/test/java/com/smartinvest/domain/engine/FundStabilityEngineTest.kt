@@ -2,6 +2,7 @@ package com.smartinvest.domain.engine
 
 import com.smartinvest.domain.model.FundCatalogEntry
 import com.smartinvest.domain.model.FundData
+import com.smartinvest.domain.model.FundDateRange
 import com.smartinvest.domain.model.FundFilterOption
 import com.smartinvest.domain.model.FundPoint
 import com.smartinvest.domain.model.FundReturnHorizon
@@ -206,6 +207,81 @@ class FundStabilityEngineTest {
             !FundStabilityEngine.matchesThreshold(stable, stable.stability.score + 5.0),
         )
         assertTrue(!FundStabilityEngine.matchesThreshold(jumpy, 70.0))
+    }
+
+    @Test
+    fun `custom date range limits the analysis to its bounds`() {
+        val history = series((0..40).map { 100.0 + it })
+        val range = FundDateRange(
+            start = start.plusDays(10),
+            end = start.plusDays(20),
+        )
+
+        val metrics = FundStabilityEngine.metrics(history, range)!!
+        assertEquals(11, metrics.observations)
+        assertEquals(10, metrics.windowDays)
+        assertEquals(9.09, metrics.totalReturnPercent, 0.01)
+
+        val evaluation = FundStabilityEngine.evaluate(FundData("f", null, history), range)!!
+        assertEquals(start.plusDays(10), evaluation.rangeStart)
+        assertEquals(start.plusDays(20), evaluation.rangeEnd)
+        assertTrue(evaluation.hasCustomRange)
+        assertEquals(11, FundStabilityEngine.evaluationPoints(evaluation).size)
+    }
+
+    @Test
+    fun `open range bounds work in both directions`() {
+        val history = series((0..10).map { 100.0 + it })
+
+        assertEquals(4, FundStabilityEngine.rangePoints(history, start = start.plusDays(7)).size)
+        assertEquals(3, FundStabilityEngine.rangePoints(history, end = start.plusDays(2)).size)
+        assertEquals(11, FundStabilityEngine.rangePoints(history).size)
+    }
+
+    @Test
+    fun `range simulation starts and ends inside the chosen dates`() {
+        val history = series((0..30).map { 100.0 + it })
+        val range = FundDateRange(start.plusDays(10), start.plusDays(20))
+
+        val simulation = FundStabilityEngine.simulate(history, 1_000_000, range)!!
+
+        assertEquals(start.plusDays(10), simulation.startDate)
+        assertEquals(start.plusDays(20), simulation.endDate)
+        assertEquals(11, simulation.values.size)
+        assertEquals(9.09, simulation.returnPercent, 0.01)
+        assertEquals(1_090_909L, simulation.finalCents)
+    }
+
+    @Test
+    fun `overlay aligns common dates and normalises both series to 100`() {
+        val primary = evaluation("A", listOf(100.0, 110.0, 121.0, 133.1))
+        val secondary = evaluation("B", listOf(50.0, 52.5, 55.0, 57.75))
+
+        val overlay = FundStabilityEngine.overlay(primary, secondary)!!
+
+        assertEquals(4, overlay.observations)
+        assertEquals(100.0, overlay.points.first().primaryIndex, 0.001)
+        assertEquals(100.0, overlay.points.first().secondaryIndex, 0.001)
+        assertEquals(133.1, overlay.points.last().primaryIndex, 0.001)
+        assertEquals(115.5, overlay.points.last().secondaryIndex, 0.001)
+        assertEquals(33.1, overlay.primaryReturnPercent, 0.01)
+        assertEquals(15.5, overlay.secondaryReturnPercent, 0.01)
+        assertEquals(17.6, overlay.differencePp, 0.01)
+        assertTrue(overlay.verdict.contains("supera"))
+    }
+
+    @Test
+    fun `overlay needs at least two common dates`() {
+        val primary = evaluation("A", listOf(100.0, 101.0))
+        val shifted = FundData(
+            name = "B",
+            catalog = null,
+            history = series(listOf(100.0, 102.0)).map { FundPoint(it.date.plusDays(30), it.value) },
+        )
+        val secondary = FundStabilityEngine.evaluate(shifted, 30)!!
+
+        assertNull(FundStabilityEngine.overlay(primary, secondary))
+        assertNull(FundStabilityEngine.overlay(primary, primary))
     }
 
     private fun entry(

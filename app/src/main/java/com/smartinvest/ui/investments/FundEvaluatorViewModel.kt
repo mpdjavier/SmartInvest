@@ -2,12 +2,15 @@ package com.smartinvest.ui.investments
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.engine.FundStabilityEngine
 import com.smartinvest.domain.model.FundBenchmarkComparison
 import com.smartinvest.domain.model.FundCatalogEntry
 import com.smartinvest.domain.model.FundData
+import com.smartinvest.domain.model.FundDateRange
 import com.smartinvest.domain.model.FundEvaluation
 import com.smartinvest.domain.model.FundFilterOption
+import com.smartinvest.domain.model.FundOverlay
 import com.smartinvest.domain.model.FundReturnHorizon
 import com.smartinvest.domain.model.FundSimulation
 import com.smartinvest.domain.model.FundSortOption
@@ -21,6 +24,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.Normalizer
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.roundToInt
@@ -53,11 +57,25 @@ data class FundEvaluatorUiState(
     val simulation: FundSimulation? = null,
     val dataAsOf: LocalDate? = null,
     val message: String? = null,
+    /** Custom range bounds (already validated). Null means "rolling preset window". */
+    val rangeStart: LocalDate? = null,
+    val rangeEnd: LocalDate? = null,
+    val rangeStartText: String = "",
+    val rangeEndText: String = "",
+    val rangeError: String? = null,
+    val customRangeOpen: Boolean = false,
+    /** Second fund superposed on the chart, chosen among the loaded histories. */
+    val overlayName: String? = null,
+    val overlay: FundOverlay? = null,
+    val overlayCandidates: List<String> = emptyList(),
+    /** The selected class has no observations inside the current date range. */
+    val selectedOutOfRange: Boolean = false,
 ) {
     val attribution: String get() = "Datos: compararfondos.com.ar (CAFCI/CNV)"
     val hasMinimum: Boolean get() = minStability > 0.0
     val minimumLabel: String
         get() = if (hasMinimum) "≥ ${minStability.roundToInt()}" else "Sin mínimo"
+    val hasCustomRange: Boolean get() = rangeStart != null || rangeEnd != null
 }
 
 @HiltViewModel
@@ -108,8 +126,125 @@ class FundEvaluatorViewModel @Inject constructor(
     }
 
     fun selectWindow(windowDays: Int) {
-        if (windowDays == _uiState.value.windowDays) return
-        _uiState.update { it.copy(windowDays = windowDays) }
+        if (windowDays == FundStabilityEngine.CUSTOM_WINDOW) {
+            openCustomRange()
+            return
+        }
+        if (windowDays == _uiState.value.windowDays && !_uiState.value.hasCustomRange) return
+        _uiState.update {
+            it.copy(
+                windowDays = windowDays,
+                rangeStart = null,
+                rangeEnd = null,
+                rangeStartText = "",
+                rangeEndText = "",
+                rangeError = null,
+                customRangeOpen = false,
+            )
+        }
+        rebuild()
+    }
+
+    fun openCustomRange() {
+        _uiState.update { state ->
+            val prefill = state.rangeStartText.isBlank() &&
+                state.rangeEndText.isBlank() &&
+                !state.hasCustomRange
+            if (prefill) {
+                val today = DateUtils.today()
+                val start = today.minusDays(state.windowDays.toLong())
+                state.copy(
+                    customRangeOpen = true,
+                    rangeError = null,
+                    rangeStartText = formatDate(start),
+                    rangeEndText = formatDate(today),
+                )
+            } else {
+                state.copy(customRangeOpen = true, rangeError = null)
+            }
+        }
+    }
+
+    fun closeCustomRange() {
+        _uiState.update { it.copy(customRangeOpen = false, rangeError = null) }
+    }
+
+    fun onRangeStartChange(text: String) {
+        _uiState.update { it.copy(rangeStartText = text, rangeError = null) }
+    }
+
+    fun onRangeEndChange(text: String) {
+        _uiState.update { it.copy(rangeEndText = text, rangeError = null) }
+    }
+
+    fun applyRange() {
+        val state = _uiState.value
+        val start = parseDate(state.rangeStartText)
+        val end = parseDate(state.rangeEndText)
+        val error = when {
+            state.rangeStartText.isNotBlank() && start == null ->
+                "La fecha «desde» no es válida. Usá dd/MM/aaaa."
+            state.rangeEndText.isNotBlank() && end == null ->
+                "La fecha «hasta» no es válida. Usá dd/MM/aaaa."
+            start == null && end == null ->
+                "Ingresá al menos una fecha para acotar el análisis."
+            start != null && end != null && start.isAfter(end) ->
+                "La fecha «desde» no puede ser posterior a la fecha «hasta»."
+            else -> null
+        }
+        if (error != null) {
+            _uiState.update { it.copy(rangeError = error) }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                rangeStart = start,
+                rangeEnd = end,
+                rangeError = null,
+                customRangeOpen = true,
+            )
+        }
+        rebuild()
+    }
+
+    /** Quick ranges from the UI: null means "year to date". */
+    fun applyQuickRange(days: Int?) {
+        val today = DateUtils.today()
+        val start = if (days == null) LocalDate.of(today.year, 1, 1) else today.minusDays(days.toLong())
+        _uiState.update {
+            it.copy(
+                rangeStart = start,
+                rangeEnd = today,
+                rangeStartText = formatDate(start),
+                rangeEndText = formatDate(today),
+                rangeError = null,
+                customRangeOpen = true,
+            )
+        }
+        rebuild()
+    }
+
+    fun clearRange() {
+        _uiState.update {
+            it.copy(
+                rangeStart = null,
+                rangeEnd = null,
+                rangeStartText = "",
+                rangeEndText = "",
+                rangeError = null,
+            )
+        }
+        rebuild()
+    }
+
+    fun selectOverlay(name: String?) {
+        if (name == _uiState.value.overlayName) return
+        _uiState.update { it.copy(overlayName = name) }
+        rebuild()
+    }
+
+    fun clearSelection() {
+        _uiState.update { it.copy(selectedName = null) }
         rebuild()
     }
 
@@ -139,7 +274,12 @@ class FundEvaluatorViewModel @Inject constructor(
     }
 
     fun selectFund(name: String) {
-        _uiState.update { it.copy(selectedName = name) }
+        _uiState.update {
+            it.copy(
+                selectedName = name,
+                overlayName = it.overlayName?.takeIf { overlay -> !overlay.equals(name, ignoreCase = true) },
+            )
+        }
         rebuild()
         val selected = _uiState.value.selected
         if (selected != null && selected.fromSummary) {
@@ -287,9 +427,14 @@ class FundEvaluatorViewModel @Inject constructor(
         val state = _uiState.value
         val followed = state.watchlist.map { it.lowercase() }.toSet()
         val benchmarkKey = FundStabilityEngine.BENCHMARK_NAME.lowercase()
+        val range = if (state.hasCustomRange) FundDateRange(state.rangeStart, state.rangeEnd) else null
 
-        val historyEvaluations = fundData.mapNotNull {
-            FundStabilityEngine.evaluate(it, state.windowDays)
+        val historyEvaluations = fundData.mapNotNull { data ->
+            if (range != null) {
+                FundStabilityEngine.evaluate(data, range)
+            } else {
+                FundStabilityEngine.evaluate(data, state.windowDays)
+            }
         }
         val followedEvaluations = historyEvaluations.filter {
             it.name.lowercase() in followed || it.name.lowercase() == benchmarkKey
@@ -328,10 +473,24 @@ class FundEvaluatorViewModel @Inject constructor(
         val comparison = if (selected != null && !selected.fromSummary && benchmark != null &&
             !selected.name.equals(benchmark.name, ignoreCase = true)
         ) {
-            FundStabilityEngine.compare(selected, benchmark, state.windowDays)
+            FundStabilityEngine.compare(selected, benchmark, selected.windowDays)
         } else {
             null
         }
+
+        val overlayEvaluation = state.overlayName?.let { name ->
+            historyEvaluations.firstOrNull { it.name.equals(name, ignoreCase = true) }
+        }
+        val overlay = if (selected != null && !selected.fromSummary && overlayEvaluation != null) {
+            FundStabilityEngine.overlay(selected, overlayEvaluation)
+        } else {
+            null
+        }
+        val overlayCandidates = historyEvaluations
+            .filter { evaluation ->
+                selected == null || !evaluation.name.equals(selected.name, ignoreCase = true)
+            }
+            .map { it.name }
 
         val searchResults = searchCatalog(state.catalog, state.query, state.watchlist)
         val dataAsOf = historyEvaluations.mapNotNull { it.lastDate }.maxOrNull()
@@ -347,6 +506,9 @@ class FundEvaluatorViewModel @Inject constructor(
                 selected = selected,
                 selectedComparison = comparison,
                 dataAsOf = dataAsOf,
+                overlay = overlay,
+                overlayCandidates = overlayCandidates,
+                selectedOutOfRange = state.selectedName != null && selected == null,
             )
         }
         rebuildSimulation()
@@ -375,7 +537,15 @@ class FundEvaluatorViewModel @Inject constructor(
         val selected = state.selected
         val amount = parseAmountCents(state.simulationAmountText)
         val simulation = if (selected != null && !selected.fromSummary && amount != null) {
-            FundStabilityEngine.simulate(selected.history, amount, state.windowDays)
+            if (state.hasCustomRange) {
+                FundStabilityEngine.simulate(
+                    selected.history,
+                    amount,
+                    FundDateRange(state.rangeStart, state.rangeEnd),
+                )
+            } else {
+                FundStabilityEngine.simulate(selected.history, amount, state.windowDays)
+            }
         } else {
             null
         }
@@ -421,6 +591,20 @@ class FundEvaluatorViewModel @Inject constructor(
         return (value * 100.0).roundToLong()
     }
 
+    private fun parseDate(raw: String): LocalDate? {
+        val clean = raw.trim()
+        if (clean.isEmpty()) return null
+        for (pattern in DATE_PATTERNS) {
+            val parsed = runCatching {
+                LocalDate.parse(clean, DateTimeFormatter.ofPattern(pattern, ES_AR))
+            }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        return null
+    }
+
+    private fun formatDate(date: LocalDate): String = date.format(DATE_DISPLAY)
+
     private fun String.normalize(): String =
         Normalizer.normalize(this, Normalizer.Form.NFD)
             .replace(ACCENT_MARKS, "")
@@ -430,5 +614,14 @@ class FundEvaluatorViewModel @Inject constructor(
     companion object {
         private const val SEARCH_LIMIT = 40
         private val ACCENT_MARKS = Regex("\\p{M}+")
+        private val ES_AR = Locale.forLanguageTag("es-AR")
+        private val DATE_PATTERNS = listOf(
+            "dd/MM/yyyy",
+            "dd-MM-yyyy",
+            "d/M/yyyy",
+            "d-M-yyyy",
+            "yyyy-MM-dd",
+        )
+        private val DATE_DISPLAY = DateTimeFormatter.ofPattern("dd/MM/yyyy", ES_AR)
     }
 }

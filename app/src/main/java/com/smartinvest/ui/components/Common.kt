@@ -774,6 +774,81 @@ fun PortfolioChart(
     }
 }
 
+/**
+ * Two normalised series on the same axes. Both are expected to start at the
+ * same base (for example 100), so the visual comparison is about shape and
+ * relative return, not nominal value per unit.
+ */
+@Composable
+fun OverlayChart(
+    primary: List<Double>,
+    secondary: List<Double>,
+    modifier: Modifier = Modifier,
+    primaryColor: Color = Emerald,
+    secondaryColor: Color = Sky,
+) {
+    Canvas(modifier = modifier.fillMaxWidth()) {
+        val width = size.width
+        val height = size.height
+        if (width <= 0f || height <= 0f) return@Canvas
+
+        repeat(3) { index ->
+            val y = height * (index + 1) / 4f
+            drawLine(
+                color = Hairline,
+                start = Offset(0f, y),
+                end = Offset(width, y),
+                strokeWidth = 1f,
+            )
+        }
+
+        val count = minOf(primary.size, secondary.size)
+        if (count < 2) return@Canvas
+
+        val all = primary.take(count) + secondary.take(count)
+        val max = all.max().toFloat()
+        val min = all.min().toFloat()
+        val range = (max - min).takeIf { abs(it) > 0.01f } ?: 1f
+        val top = height * 0.12f
+        val usable = height * 0.76f
+
+        fun xAt(index: Int): Float = width * index / (count - 1).toFloat()
+        fun yAt(value: Double): Float =
+            top + usable * (1f - ((value.toFloat() - min) / range))
+
+        // Reference line at the normalised base (100) when it falls in range.
+        if (min <= 100f && max >= 100f) {
+            val baseY = yAt(100.0)
+            drawLine(
+                color = Hairline,
+                start = Offset(0f, baseY),
+                end = Offset(width, baseY),
+                strokeWidth = 1.5f,
+            )
+        }
+
+        fun pathOf(series: List<Double>): Path = Path().apply {
+            moveTo(xAt(0), yAt(series[0]))
+            for (index in 1 until count) {
+                lineTo(xAt(index), yAt(series[index]))
+            }
+        }
+
+        drawPath(
+            path = pathOf(primary),
+            color = primaryColor,
+            style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+        )
+        drawPath(
+            path = pathOf(secondary),
+            color = secondaryColor,
+            style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+        )
+        drawCircle(primaryColor, radius = 3.5.dp.toPx(), center = Offset(width, yAt(primary[count - 1])))
+        drawCircle(secondaryColor, radius = 3.5.dp.toPx(), center = Offset(width, yAt(secondary[count - 1])))
+    }
+}
+
 @Composable
 fun IconBubble(
     icon: ImageVector,

@@ -67,7 +67,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 16/11/2026 en 1 toque (saldos **y** cantidades de AO27D, ADCAP-BAL3, MP-ARS y MP-USD, para que los 9 activos se actualicen solos), y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
 - **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
 - **Comparador REM de corto plazo** (`rem`): usa las medianas del **Relevamiento de Expectativas de Mercado** del BCRA (IPC mensual, tipo de cambio oficial y TAMAR) para proyectar letras, bonos CER, dollar linked y tasa en pesos, y las compara contra un **crawling peg ficticio** configurable (1% mensual por defecto). Cada instrumento se proyecta hasta su vencimiento o hasta el horizonte elegido, **nunca más allá de abril de 2027** por el calendario electoral. Muestra retorno nominal, mensual, real, en dólares, break-even de devaluación y veredicto (conviene / empata / no conviene). El REM de octubre 2026 viene embebido y se puede **actualizar importando el XLSX oficial del BCRA**; TIR, TNA y vencimientos se editan a mano.
-- **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): compara el universo Eco Valores o **las 2.300+ clases del catálogo completo**, con la rentabilidad y la estabilidad como parámetros independientes. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. En el seguimiento las métricas salen de la serie diaria en ventanas de 30/90/180/365 días; en el catálogo completo se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
+- **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): compara el universo Eco Valores o **las 2.300+ clases del catálogo completo**, con la rentabilidad y la estabilidad como parámetros independientes. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. **Rango de fechas personalizado**: además de las ventanas fijas (30/90/180/365 días) podés fijar «desde» y «hasta» (o atajos como año actual / últimos 90 días / 12 meses), y el ranking, el gráfico, la comparación y el simulador usan exactamente esas cuotapartes. **Superposición de dos FCI**: elegís otra clase del seguimiento y ves las dos curvas normalizadas a 100 en el mismo gráfico, con retorno, caída, volatilidad y diferencia en puntos porcentuales del período. En el seguimiento las métricas salen de la serie diaria; en el catálogo completo se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
 - Planificador de sueldo y simulador de rescate de emergencia.
 
 ### Importación desde SplitHome
@@ -181,7 +181,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `receipt_import/{receiptPath}` | Importación de comprobantes PDF/texto (quita «Pago de», categoría Servicios y rescate en FCI billetera) |
 | `holding_editor/{holdingId}` | Activo (alta/edición, valuación manual fija en ARS/USD, sumar/retirar aportes e importador `.xlsx`/`.xls`/`.csv` de brókers) |
 | `portfolio_reconciliation` | Ajuste manual de saldos en ARS y USD, carga de lista por texto y verificación de cálculos/evolución |
-| `fund_evaluator` | Evaluador FCI con rentabilidad y estabilidad configurables: seguimiento o catálogo completo, orden por rentabilidad/estabilidad/caída/volatilidad, piso de estabilidad, referencia Adcap Balanceado III, simulador y buscador |
+| `fund_evaluator` | Evaluador FCI con rentabilidad y estabilidad configurables: seguimiento o catálogo completo, orden por rentabilidad/estabilidad/caída/volatilidad, piso de estabilidad, rango de fechas personalizado, superposición de dos clases, referencia Adcap Balanceado III, simulador y buscador |
 | `analytics` | Analítica de cartera |
 | `salary` | Repartir sueldo |
 | `emergency` | Rescate de emergencia |
@@ -361,6 +361,23 @@ El acumulado parte del saldo y la TNA **actuales** y reinvierte los intereses de
 - `% = (valor_actual − valor_base) / valor_base × 100`.
 - Ganancia de 30 días y ganancia promedio por día = ganancia / 30.
 - El gráfico usa los snapshots de los últimos 90 días.
+
+### Evaluador FCI: ventana, rango y superposición
+
+```
+ventana_fija   = últimos N días desde la última cuotaparte (30 / 90 / 180 / 365)
+rango_libre    = cuotapartes con fecha en [desde, hasta]   (extremos opcionales)
+observaciones  = puntos del tramo elegido
+rentabilidad   = (último / primero − 1) × 100
+volatilidad    = desvío de retornos diarios × √252 × 100
+máx_caída      = min(VCP / máximo_previo − 1) × 100
+superposición  = cada serie normalizada a 100 en la primera fecha en común
+diferencia_pp  = retorno_principal − retorno_referencia
+```
+
+- El **rango de fechas** reemplaza la ventana fija en el ranking del seguimiento, el gráfico de detalle, la comparación con Adcap Balanceado III y el simulador. El catálogo completo sigue usando el resumen de 90 días publicado por la fuente.
+- La **superposición** solo usa fechas presentes en ambas series, así que las curvas arrancan en el mismo punto y son comparables aunque los VCP nominales sean muy distintos; si no hay al menos dos fechas en común, la app lo advierte.
+- Si las clases están en monedas distintas, la normalización se mantiene pero el retorno no descuenta el tipo de cambio (se muestra una advertencia).
 
 ### Rebalanceo 60/40
 
@@ -690,7 +707,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**138 tests, 0 fallos, 21 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**143 tests, 0 fallos, 21 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -725,7 +742,7 @@ Tests unitarios JVM (sin emulador):
 | `SplitHomeParserTest` | hojas Gastos/Fondo, pagadores, cuotas, fechas y totales |
 | `ExpenseReportEngineTest` | búsqueda por texto/categoría/medio/integrante, totales y promedios, agrupaciones, top de gastos y exportación CSV con escape |
 | `FormattersTest` | enmascarado de montos en modo privacidad (ARS/USD/compactos/firmados) y restauración al desactivarlo |
-| `FundStabilityEngineTest` | retorno, volatilidad anualizada, máxima caída, peor/mejor día y ratio de días positivos; recorte por ventana; score y tiers; ranking por estabilidad/rentabilidad/caída/volatilidad; umbral mínimo de estabilidad; filtros; evaluación del catálogo por horizonte (7d/30d/12m), clases sin datos a 90 días y ranking completo por rentabilidad; comparación contra Adcap Balanceado III y simulación con la serie real |
+| `FundStabilityEngineTest` | retorno, volatilidad anualizada, máxima caída, peor/mejor día y ratio de días positivos; recorte por ventana y por rango de fechas con extremos abiertos; score y tiers; ranking por estabilidad/rentabilidad/caída/volatilidad; umbral mínimo de estabilidad; filtros; evaluación del catálogo por horizonte (7d/30d/12m), clases sin datos a 90 días y ranking completo por rentabilidad; comparación contra Adcap Balanceado III y simulación con la serie real; simulación por rango y superposición de dos series normalizadas a 100 con fechas comunes |
 | `FundComparisonClientTest` | parseo del catálogo de compararfondos (nombre, gestora, tipo, moneda, métricas a 30/365 días) y de la serie diaria (`history`), orden, descarte de puntos inválidos y respuesta vacía |
 | `FundWatchlistCodecTest` | persistencia JSON del seguimiento, deduplicación, lista vacía explícita y JSON inválido |
 

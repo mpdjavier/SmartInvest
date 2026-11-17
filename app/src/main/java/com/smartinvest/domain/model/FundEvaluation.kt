@@ -87,7 +87,12 @@ data class FundEvaluation(
      * whole-catalog ranking, where loading 2.300+ histories is not practical.
      */
     val fromSummary: Boolean = false,
+    /** Inclusive bounds of a user-chosen range; null keeps the rolling [windowDays]. */
+    val rangeStart: LocalDate? = null,
+    val rangeEnd: LocalDate? = null,
 ) {
+    val hasCustomRange: Boolean get() = rangeStart != null || rangeEnd != null
+
     val manager: String get() = catalog?.manager.orEmpty()
     val type: String get() = catalog?.type.orEmpty()
     val currency: String get() = catalog?.currency ?: "ARS"
@@ -100,6 +105,46 @@ data class FundData(
     val name: String,
     val catalog: FundCatalogEntry?,
     val history: List<FundPoint>,
+)
+
+/**
+ * User-chosen analysis range. Bounds are inclusive and may be open: only a
+ * start, only an end, or both. An empty range keeps the rolling preset window.
+ */
+data class FundDateRange(
+    val start: LocalDate? = null,
+    val end: LocalDate? = null,
+) {
+    val isEmpty: Boolean get() = start == null && end == null
+}
+
+/** One date shared by the two overlaid funds, normalised to 100 at the start. */
+data class FundOverlayPoint(
+    val date: LocalDate,
+    val primaryIndex: Double,
+    val secondaryIndex: Double,
+)
+
+/**
+ * Two funds superposed over the same dates. Both series start at 100 on the
+ * first common observation, so the chart compares shape and not nominal VCP.
+ */
+data class FundOverlay(
+    val primaryName: String,
+    val secondaryName: String,
+    val startDate: LocalDate,
+    val endDate: LocalDate,
+    val observations: Int,
+    val points: List<FundOverlayPoint>,
+    val primaryReturnPercent: Double,
+    val secondaryReturnPercent: Double,
+    val primaryDrawdownPercent: Double,
+    val secondaryDrawdownPercent: Double,
+    val primaryVolatilityPercent: Double,
+    val secondaryVolatilityPercent: Double,
+    val differencePp: Double,
+    val currencyMismatch: Boolean,
+    val verdict: String,
 )
 
 data class FundSimulation(

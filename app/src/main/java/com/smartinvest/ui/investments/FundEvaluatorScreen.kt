@@ -3,6 +3,8 @@ package com.smartinvest.ui.investments
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -48,17 +51,20 @@ import com.smartinvest.domain.model.FundBenchmarkComparison
 import com.smartinvest.domain.model.FundCatalogEntry
 import com.smartinvest.domain.model.FundEvaluation
 import com.smartinvest.domain.model.FundFilterOption
+import com.smartinvest.domain.model.FundOverlay
 import com.smartinvest.domain.model.FundReturnHorizon
 import com.smartinvest.domain.model.FundSimulation
 import com.smartinvest.domain.model.FundSortOption
 import com.smartinvest.domain.model.FundStabilityTier
 import com.smartinvest.domain.model.FundUniverse
 import com.smartinvest.ui.components.ChipRow
+import com.smartinvest.ui.components.DropdownField
 import com.smartinvest.ui.components.EmptyState
 import com.smartinvest.ui.components.HeroAmountText
 import com.smartinvest.ui.components.InfoBanner
 import com.smartinvest.ui.components.KeyValueRow
 import com.smartinvest.ui.components.MetricPill
+import com.smartinvest.ui.components.OverlayChart
 import com.smartinvest.ui.components.PortfolioChart
 import com.smartinvest.ui.components.SectionHeader
 import com.smartinvest.ui.components.SmartCard
@@ -123,8 +129,9 @@ fun FundEvaluatorScreen(
         item {
             InfoBanner(
                 text = "Ordená por rentabilidad, por estabilidad o por caída, y poné un piso " +
-                    "de estabilidad opcional. Podés comparar tu seguimiento o las " +
-                    "2.300+ clases del catálogo. Cuotapartes de CAFCI/CNV vía compararfondos.com.ar.",
+                    "de estabilidad opcional. Podés acotar el análisis con un rango de fechas y " +
+                    "superponer dos FCI para comparar la misma serie. Cuotapartes de CAFCI/CNV " +
+                    "vía compararfondos.com.ar.",
                 color = Sky,
             )
         }
@@ -152,7 +159,6 @@ fun FundEvaluatorScreen(
             item {
                 BenchmarkCard(
                     benchmark = benchmark,
-                    windowDays = state.windowDays,
                     dataAsOf = state.dataAsOf,
                 )
             }
@@ -163,6 +169,7 @@ fun FundEvaluatorScreen(
                 universe = state.universe,
                 catalogSize = state.catalogSize,
                 windowDays = state.windowDays,
+                hasCustomRange = state.hasCustomRange,
                 horizon = state.horizon,
                 sort = state.sort,
                 filter = state.filter,
@@ -175,6 +182,35 @@ fun FundEvaluatorScreen(
                 onFilter = viewModel::selectFilter,
                 onMinStability = viewModel::setMinStability,
             )
+        }
+
+        if (state.customRangeOpen || state.hasCustomRange) {
+            item {
+                DateRangeCard(
+                    startText = state.rangeStartText,
+                    endText = state.rangeEndText,
+                    error = state.rangeError,
+                    hasRange = state.hasCustomRange,
+                    onStartChange = viewModel::onRangeStartChange,
+                    onEndChange = viewModel::onRangeEndChange,
+                    onApply = viewModel::applyRange,
+                    onClear = viewModel::clearRange,
+                    onQuickRange = viewModel::applyQuickRange,
+                    onClose = viewModel::closeCustomRange,
+                )
+            }
+        }
+
+        if (state.selectedOutOfRange) {
+            item {
+                Column {
+                    InfoBanner(
+                        "La clase elegida no tiene cuotapartes en el rango. Probá ampliar las fechas.",
+                        color = Amber,
+                    )
+                    TextButton(onClick = viewModel::clearSelection) { Text("Volver al ranking") }
+                }
+            }
         }
 
         item {
@@ -229,11 +265,15 @@ fun FundEvaluatorScreen(
                         simulation = state.simulation,
                         horizon = state.horizon,
                         detailLoading = state.detailLoading,
+                        overlayName = state.overlayName,
+                        overlay = state.overlay,
+                        overlayCandidates = state.overlayCandidates,
                         isFollowed = isFollowed(state.watchlist, detached.name),
                         onAmountChange = viewModel::onSimulationAmountChange,
                         onSimulate = viewModel::simulate,
                         onFollow = viewModel::followSelected,
                         onRemove = { viewModel.removeFund(detached.name) },
+                        onSelectOverlay = viewModel::selectOverlay,
                     )
                 }
             }
@@ -244,6 +284,10 @@ fun FundEvaluatorScreen(
                 val title: String
                 val message: String
                 when {
+                    state.hasCustomRange && state.universe == FundUniverse.WATCHLIST -> {
+                        title = "Sin datos en el rango elegido"
+                        message = "Ningún fondo del seguimiento tiene cuotapartes en esas fechas. Ampliá el rango o volvé a una ventana fija."
+                    }
                     state.universe == FundUniverse.CATALOG && state.catalogSize == 0 -> {
                         title = "Catálogo no disponible"
                         message = "No se pudo descargar el catálogo. Actualizá con el botón de arriba e intentá de nuevo."
@@ -292,11 +336,15 @@ fun FundEvaluatorScreen(
                         simulation = state.simulation,
                         horizon = state.horizon,
                         detailLoading = state.detailLoading,
+                        overlayName = state.overlayName,
+                        overlay = state.overlay,
+                        overlayCandidates = state.overlayCandidates,
                         isFollowed = isFollowed(state.watchlist, detail.name),
                         onAmountChange = viewModel::onSimulationAmountChange,
                         onSimulate = viewModel::simulate,
                         onFollow = viewModel::followSelected,
                         onRemove = { viewModel.removeFund(detail.name) },
+                        onSelectOverlay = viewModel::selectOverlay,
                     )
                 }
             }
@@ -324,8 +372,13 @@ fun FundEvaluatorScreen(
 private fun rankingSubtitle(state: FundEvaluatorUiState): String = buildString {
     if (state.universe == FundUniverse.WATCHLIST) {
         append("${state.ranked.size} fondos")
-        append(" · ventana ")
-        append(windowLabel(state.windowDays))
+        if (state.hasCustomRange) {
+            append(" · rango ")
+            append(rangeLabel(state.rangeStart, state.rangeEnd))
+        } else {
+            append(" · ventana ")
+            append(windowLabel(state.windowDays))
+        }
     } else {
         append("${state.ranked.size}")
         if (state.catalogSize > 0) append(" de ${state.catalogSize}")
@@ -341,7 +394,6 @@ private fun rankingSubtitle(state: FundEvaluatorUiState): String = buildString {
 @Composable
 private fun BenchmarkCard(
     benchmark: FundEvaluation,
-    windowDays: Int,
     dataAsOf: LocalDate?,
 ) {
     val metrics = benchmark.metrics
@@ -381,7 +433,7 @@ private fun BenchmarkCard(
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile(
-                label = "Rent. ${windowShort(windowDays)}",
+                label = "Rent. ${analysisShort(benchmark)}",
                 value = Fmt.signedPercent(metrics.totalReturnPercent),
                 caption = "${metrics.observations} ruedas",
                 accent = returnColor(metrics.totalReturnPercent),
@@ -429,6 +481,7 @@ private fun FiltersCard(
     universe: FundUniverse,
     catalogSize: Int,
     windowDays: Int,
+    hasCustomRange: Boolean,
     horizon: FundReturnHorizon,
     sort: FundSortOption,
     filter: FundFilterOption,
@@ -470,9 +523,19 @@ private fun FiltersCard(
             )
             Spacer(Modifier.height(6.dp))
             ChipRow(
-                options = FundStabilityEngine.WINDOWS,
-                selected = windowDays,
-                label = { windowLabel(it) },
+                options = FundStabilityEngine.WINDOWS + FundStabilityEngine.CUSTOM_WINDOW,
+                selected = if (hasCustomRange) {
+                    FundStabilityEngine.CUSTOM_WINDOW
+                } else {
+                    windowDays
+                },
+                label = { option ->
+                    if (option == FundStabilityEngine.CUSTOM_WINDOW) {
+                        "Rango de fechas"
+                    } else {
+                        windowLabel(option)
+                    }
+                },
                 onSelect = onWindow,
             )
         } else {
@@ -553,7 +616,105 @@ private fun FiltersCard(
             Spacer(Modifier.height(10.dp))
             Text(
                 "En el catálogo, la estabilidad se estima con volatilidad, máxima caída y " +
-                    "días positivos a 90 días. La rentabilidad usa el período elegido.",
+                    "días positivos a 90 días. La rentabilidad usa el período elegido." +
+                    if (hasCustomRange) {
+                        " El rango de fechas personalizado se aplica al seguimiento y al detalle, " +
+                            "no al ranking completo del catálogo."
+                    } else {
+                        ""
+                    },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DateRangeCard(
+    startText: String,
+    endText: String,
+    error: String?,
+    hasRange: Boolean,
+    onStartChange: (String) -> Unit,
+    onEndChange: (String) -> Unit,
+    onApply: () -> Unit,
+    onClear: () -> Unit,
+    onQuickRange: (Int?) -> Unit,
+    onClose: () -> Unit,
+) {
+    SmartCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Rango de fechas", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Aplica al ranking, al gráfico, a la comparación y al simulador",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onClose) { Text("Cerrar") }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = startText,
+                onValueChange = onStartChange,
+                label = { Text("Desde") },
+                placeholder = { Text("dd/MM/aaaa") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = endText,
+                onValueChange = onEndChange,
+                label = { Text("Hasta") },
+                placeholder = { Text("dd/MM/aaaa") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        error?.let { message ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = Rose,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(onClick = onApply) { Text("Aplicar") }
+            TextButton(
+                onClick = onClear,
+                enabled = hasRange || startText.isNotBlank() || endText.isNotBlank(),
+            ) {
+                Text("Limpiar")
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "ATAJOS",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(onClick = { onQuickRange(null) }, label = { Text("Año actual") })
+            AssistChip(onClick = { onQuickRange(90) }, label = { Text("Últimos 90 días") })
+            AssistChip(onClick = { onQuickRange(365) }, label = { Text("Últimos 12 meses") })
+        }
+        if (hasRange) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "El rango activo reemplaza a la ventana fija. Si un fondo no tiene cuotapartes " +
+                    "en esas fechas, no aparece en el ranking ni en la superposición.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -693,11 +854,15 @@ private fun FundDetailGroup(
     simulation: FundSimulation?,
     horizon: FundReturnHorizon,
     detailLoading: Boolean,
+    overlayName: String?,
+    overlay: FundOverlay?,
+    overlayCandidates: List<String>,
     isFollowed: Boolean,
     onAmountChange: (String) -> Unit,
     onSimulate: () -> Unit,
     onFollow: () -> Unit,
     onRemove: () -> Unit,
+    onSelectOverlay: (String?) -> Unit,
 ) {
     if (evaluation.fromSummary) {
         FundSummaryDetailCard(
@@ -707,6 +872,13 @@ private fun FundDetailGroup(
         )
     } else {
         FundDetailCard(evaluation = evaluation)
+        FundOverlayCard(
+            evaluation = evaluation,
+            candidates = overlayCandidates,
+            overlayName = overlayName,
+            overlay = overlay,
+            onSelect = onSelectOverlay,
+        )
         FundMetricsCard(evaluation = evaluation)
         if (comparison != null) {
             ComparisonCard(evaluation = evaluation, comparison = comparison)
@@ -743,6 +915,163 @@ private fun FundDetailGroup(
                 Text("Agregar al seguimiento", maxLines = 1, softWrap = false)
             }
         }
+    }
+}
+
+@Composable
+private fun FundOverlayCard(
+    evaluation: FundEvaluation,
+    candidates: List<String>,
+    overlayName: String?,
+    overlay: FundOverlay?,
+    onSelect: (String?) -> Unit,
+) {
+    SmartCard {
+        SectionHeader(
+            title = "Superponer dos FCI",
+            subtitle = "Ambas series se normalizan a 100 al inicio del rango",
+        )
+        Spacer(Modifier.height(10.dp))
+
+        if (candidates.isEmpty()) {
+            Text(
+                "Agregá otra clase al seguimiento (o tocá una del catálogo para cargar su " +
+                    "historial) y después elegila acá para superponerla contra ${evaluation.name}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@SmartCard
+        }
+
+        DropdownField(
+            label = "Comparar con",
+            selected = overlayName ?: OVERLAY_NONE,
+            options = listOf(OVERLAY_NONE) + candidates,
+            optionLabel = { it },
+            onSelect = { name -> onSelect(if (name == OVERLAY_NONE) null else name) },
+        )
+
+        if (overlayName == null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Elegí un fondo de referencia para ver las dos curvas en el mismo gráfico y " +
+                    "la diferencia de retorno del período.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@SmartCard
+        }
+
+        if (overlay == null) {
+            Spacer(Modifier.height(8.dp))
+            InfoBanner(
+                "No hay fechas en común para $overlayName en el rango elegido. Ampliá el " +
+                    "rango o volvé a una ventana fija.",
+                color = Amber,
+            )
+            return@SmartCard
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "${rangeLabel(overlay.startDate, overlay.endDate)} · ${overlay.observations} ruedas",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        OverlayChart(
+            primary = overlay.points.map { it.primaryIndex },
+            secondary = overlay.points.map { it.secondaryIndex },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp),
+            primaryColor = Emerald,
+            secondaryColor = Sky,
+        )
+        Spacer(Modifier.height(10.dp))
+        OverlayLegendRow(
+            color = Emerald,
+            name = overlay.primaryName,
+            returnPercent = overlay.primaryReturnPercent,
+            drawdownPercent = overlay.primaryDrawdownPercent,
+            volatilityPercent = overlay.primaryVolatilityPercent,
+        )
+        Spacer(Modifier.height(6.dp))
+        OverlayLegendRow(
+            color = Sky,
+            name = overlay.secondaryName,
+            returnPercent = overlay.secondaryReturnPercent,
+            drawdownPercent = overlay.secondaryDrawdownPercent,
+            volatilityPercent = overlay.secondaryVolatilityPercent,
+        )
+        ThinDivider()
+        KeyValueRow(
+            "Diferencia de retorno",
+            formatPp(overlay.differencePp),
+            valueColor = returnColor(overlay.differencePp),
+            strong = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        InfoBanner(
+            overlay.verdict,
+            color = if (overlay.differencePp >= 0.0) Emerald else Amber,
+        )
+        if (overlay.currencyMismatch) {
+            Spacer(Modifier.height(6.dp))
+            InfoBanner(
+                "Los fondos están en monedas distintas: la serie se normaliza igual, pero el " +
+                    "retorno no descuenta el tipo de cambio.",
+                color = Amber,
+            )
+        }
+    }
+}
+
+@Composable
+private fun OverlayLegendRow(
+    color: Color,
+    name: String,
+    returnPercent: Double,
+    drawdownPercent: Double,
+    volatilityPercent: Double,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "●",
+            style = MaterialTheme.typography.titleSmall,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+        )
+        Spacer(Modifier.width(6.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                name,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "Caída ${Fmt.signedPercent(drawdownPercent, 2)} · " +
+                    "volat. ${Fmt.percent(volatilityPercent, 1)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            Fmt.signedPercent(returnPercent, 2),
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = PlexMono,
+                fontWeight = FontWeight.SemiBold,
+            ),
+            color = returnColor(returnPercent),
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 
@@ -866,8 +1195,13 @@ private fun FundSummaryDetailCard(
 @Composable
 private fun FundDetailCard(evaluation: FundEvaluation) {
     val metrics = evaluation.metrics
-    val chartValues = remember(evaluation.history, evaluation.windowDays) {
-        FundStabilityEngine.windowPoints(evaluation.history, evaluation.windowDays)
+    val chartValues = remember(
+        evaluation.history,
+        evaluation.windowDays,
+        evaluation.rangeStart,
+        evaluation.rangeEnd,
+    ) {
+        FundStabilityEngine.evaluationPoints(evaluation)
             .map { (it.value * 10_000.0).roundToLong() }
     }
     SmartCard {
@@ -901,7 +1235,7 @@ private fun FundDetailCard(evaluation: FundEvaluation) {
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile(
-                label = "Rent. ${windowShort(evaluation.windowDays)}",
+                label = "Rent. ${analysisShort(evaluation)}",
                 value = Fmt.signedPercent(metrics.totalReturnPercent),
                 caption = evaluation.lastDate?.let { "al ${Fmt.shortDate(it)}" } ?: "serie diaria",
                 accent = returnColor(metrics.totalReturnPercent),
@@ -928,10 +1262,15 @@ private fun FundDetailCard(evaluation: FundEvaluation) {
 @Composable
 private fun FundMetricsCard(evaluation: FundEvaluation) {
     val metrics = evaluation.metrics
+    val scope = if (evaluation.hasCustomRange) {
+        "Rango ${analysisLabel(evaluation)}"
+    } else {
+        "Ventana ${windowLabel(evaluation.windowDays)}"
+    }
     SmartCard {
         SectionHeader(
             title = "Cómo se comportó",
-            subtitle = "Ventana ${windowLabel(evaluation.windowDays)} · ${metrics.observations} observaciones",
+            subtitle = "$scope · ${metrics.observations} observaciones",
         )
         Spacer(Modifier.height(8.dp))
         KeyValueRow(
@@ -971,7 +1310,7 @@ private fun ComparisonCard(
     SmartCard {
         SectionHeader(
             title = "Vs. Adcap Balanceado III",
-            subtitle = "Misma ventana: ${windowLabel(comparison.windowDays)}",
+            subtitle = "Mismo rango: ${analysisLabel(evaluation)}",
         )
         Spacer(Modifier.height(8.dp))
         Text(
@@ -1029,7 +1368,7 @@ private fun SimulatorCard(
         val signedText: (Long) -> String = if (isUsd) Fmt::signedUsd else Fmt::signedArs
         SectionHeader(
             title = "Simulador del fondo",
-            subtitle = "Monto inicial en $amountCurrency · ventana ${windowLabel(evaluation.windowDays)}",
+            subtitle = "Monto inicial en $amountCurrency · ${analysisLabel(evaluation)}",
         )
         Spacer(Modifier.height(10.dp))
         Row(
@@ -1205,11 +1544,34 @@ private fun CatalogResultRow(
     }
 }
 
+private const val OVERLAY_NONE = "Ninguno"
+
 private fun isFollowed(watchlist: List<String>, name: String): Boolean =
     watchlist.any { it.equals(name, ignoreCase = true) }
 
+private fun rangeLabel(start: LocalDate?, end: LocalDate?): String = when {
+    start != null && end != null -> "${Fmt.shortDate(start)} → ${Fmt.shortDate(end)}"
+    start != null -> "desde ${Fmt.shortDate(start)}"
+    end != null -> "hasta ${Fmt.shortDate(end)}"
+    else -> "sin rango"
+}
+
+private fun analysisLabel(evaluation: FundEvaluation): String =
+    if (evaluation.hasCustomRange) {
+        rangeLabel(evaluation.rangeStart, evaluation.rangeEnd)
+    } else {
+        windowLabel(evaluation.windowDays)
+    }
+
+private fun analysisShort(evaluation: FundEvaluation): String =
+    if (evaluation.hasCustomRange) "rango" else windowShort(evaluation.windowDays)
+
 private fun returnLabel(evaluation: FundEvaluation, horizon: FundReturnHorizon): String =
-    if (evaluation.fromSummary) "Rent. ${horizon.shortLabel}" else "Rent. ${windowShort(evaluation.windowDays)}"
+    if (evaluation.fromSummary) {
+        "Rent. ${horizon.shortLabel}"
+    } else {
+        "Rent. ${analysisShort(evaluation)}"
+    }
 
 private fun returnText(evaluation: FundEvaluation): String =
     if (evaluation.metrics.returnAvailable) {
