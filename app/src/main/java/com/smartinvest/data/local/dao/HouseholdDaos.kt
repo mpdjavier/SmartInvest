@@ -38,6 +38,9 @@ interface MemberDao {
 
     @Query("SELECT COUNT(*) FROM members")
     suspend fun count(): Int
+
+    @Query("DELETE FROM members")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -68,6 +71,9 @@ interface CategoryDao {
 
     @Query("UPDATE categories SET isArchived = :archived WHERE id = :id")
     suspend fun setArchived(id: Long, archived: Boolean)
+
+    @Query("DELETE FROM categories")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -98,6 +104,9 @@ interface CreditCardDao {
 
     @Query("SELECT COUNT(*) FROM credit_cards")
     suspend fun count(): Int
+
+    @Query("DELETE FROM credit_cards")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -199,6 +208,9 @@ interface ExpenseDao {
 
     @Query("DELETE FROM expenses WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM expenses")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -223,6 +235,9 @@ interface InstallmentDao {
 
     @Query("DELETE FROM installments WHERE expenseId = :expenseId")
     suspend fun deleteForExpense(expenseId: Long)
+
+    @Query("DELETE FROM installments")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -271,6 +286,9 @@ interface FundMovementDao {
 
     @Query("SELECT COUNT(*) FROM fund_movements")
     suspend fun count(): Int
+
+    @Query("DELETE FROM fund_movements")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -298,4 +316,7 @@ interface SettlementDao {
 
     @Query("SELECT COUNT(*) FROM settlements")
     suspend fun count(): Int
+
+    @Query("DELETE FROM settlements")
+    suspend fun deleteAll()
 }

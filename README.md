@@ -611,6 +611,8 @@ Room, versión 4 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_
 
 Los ajustes (pesos del sueldo, umbrales, tolerancia, MEP de fallback, devaluación mensual esperada, TNA de referencia en pesos, notificaciones) viven en **DataStore Preferences**. También guardan ahí su JSON la agenda de pagos (`paymentAgendaJson`), el seguimiento de FCI (`fundWatchlistJson`) y el comparador REM (`remConfigJson`), y los tres se incluyen en el backup.
 
+El **respaldo completo** (`Ajustes → Respaldo completo y sincronización de brókers`) exporta todas las tablas a un `.json` y lo restaura con **reemplazo total**: antes de insertar, vacía las tablas que vienen en el archivo. Así los ids exportados por otra instalación no conviven con las filas locales (semillas del primer arranque, altas posteriores) y no aparecen activos duplicados. Además, los holdings repetidos dentro del propio archivo (mismo símbolo, cuenta, moneda y tipo de activo) se colapsan en uno solo —queda la fila más reciente— y el mensaje indica cuántos se omitieron. La app pide confirmación antes de reemplazar los datos.
+
 ### Datos iniciales
 
 En el primer arranque se crean:
@@ -707,7 +709,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**143 tests, 0 fallos, 21 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**148 tests, 0 fallos, 22 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -745,6 +747,7 @@ Tests unitarios JVM (sin emulador):
 | `FundStabilityEngineTest` | retorno, volatilidad anualizada, máxima caída, peor/mejor día y ratio de días positivos; recorte por ventana y por rango de fechas con extremos abiertos; score y tiers; ranking por estabilidad/rentabilidad/caída/volatilidad; umbral mínimo de estabilidad; filtros; evaluación del catálogo por horizonte (7d/30d/12m), clases sin datos a 90 días y ranking completo por rentabilidad; comparación contra Adcap Balanceado III y simulación con la serie real; simulación por rango y superposición de dos series normalizadas a 100 con fechas comunes |
 | `FundComparisonClientTest` | parseo del catálogo de compararfondos (nombre, gestora, tipo, moneda, métricas a 30/365 días) y de la serie diaria (`history`), orden, descarte de puntos inválidos y respuesta vacía |
 | `FundWatchlistCodecTest` | persistencia JSON del seguimiento, deduplicación, lista vacía explícita y JSON inválido |
+| `BackupHoldingDedupeTest` | holdings repetidos en un respaldo (mismo símbolo, cuenta, moneda y tipo) colapsados al más reciente, cuentas GALICIA/IEB separadas y activos distintos intactos |
 
 ---
 

@@ -72,6 +72,7 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var pendingImport by remember { mutableStateOf<String?>(null) }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
@@ -97,7 +98,7 @@ fun SettingsScreen(
                 }
             }.getOrNull()
             if (!content.isNullOrBlank()) {
-                viewModel.importBackup(content)
+                pendingImport = content
             }
         }
     }
@@ -584,7 +585,8 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Guardá una copia completa de tus inversiones, movimientos, cotizaciones, gastos y ajustes " +
-                        "en un archivo .json para restaurarla cuando quieras sin volver a cargar nada.",
+                        "en un archivo .json para restaurarla cuando quieras sin volver a cargar nada. " +
+                        "Al importar, el respaldo reemplaza los datos actuales de la app.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -812,6 +814,33 @@ fun SettingsScreen(
             },
             confirmButton = { TextButton(onClick = viewModel::saveCardDraft) { Text("Guardar") } },
             dismissButton = { TextButton(onClick = viewModel::dismissCardDraft) { Text("Cancelar") } },
+        )
+    }
+
+    pendingImport?.let { content ->
+        AlertDialog(
+            onDismissRequest = { pendingImport = null },
+            title = { Text("Reemplazar todos los datos") },
+            text = {
+                Text(
+                    "Importar el respaldo deja exactamente lo que tiene el archivo: reemplaza " +
+                        "tenencias, billeteras, movimientos, gastos, cotizaciones y configuración. " +
+                        "La información actual de la app se borra y no se puede recuperar.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingImport = null
+                        viewModel.importBackup(content)
+                    },
+                ) {
+                    Text("Importar y reemplazar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingImport = null }) { Text("Cancelar") }
+            },
         )
     }
 }

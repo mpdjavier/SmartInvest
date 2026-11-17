@@ -501,40 +501,29 @@ class AppBackupManager @Inject constructor(
     suspend fun importBackupJson(rawJson: String): String = withContext(io) {
         val payload = deserialize(rawJson)
         val s = payload.settings
-
-        settingsRepository.update(
-            AppSettings(
-                salaryFciPercent = s.salaryFciPercent,
-                salaryLecapPercent = s.salaryLecapPercent,
-                salaryMepPercent = s.salaryMepPercent,
-                salaryBondPercent = s.salaryBondPercent,
-                salaryLiquidityCents = s.salaryLiquidityCents,
-                ao27dThresholdUsdCents = s.ao27dThresholdUsdCents,
-                rebalanceTargetPesoPercent = s.rebalanceTargetPesoPercent,
-                redTargetPesoPercent = s.redTargetPesoPercent,
-                rebalanceTolerancePp = s.rebalanceTolerancePp,
-                maturityAlertDays = s.maturityAlertDays,
-                rateDropThresholdPp = s.rateDropThresholdPp,
-                fallbackMepRate = s.fallbackMepRate,
-                monthlyDevaluationPercent = s.monthlyDevaluationPercent,
-                pesoReferenceTnaPercent = s.pesoReferenceTnaPercent,
-                countryRiskPoints = s.countryRiskPoints,
-                countryRisk30dChange = s.countryRisk30dChange,
-                previousFxGapPercent = s.previousFxGapPercent,
-                electoralCalendarEnabled = s.electoralCalendarEnabled,
-                liquidityGuardrailEnabled = s.liquidityGuardrailEnabled,
-                liquidityGuardrailMaxMonths = s.liquidityGuardrailMaxMonths,
-                previousCarryBandName = s.previousCarryBandName,
-                carryExcludedPatterns = s.carryExcludedPatterns,
-                notificationsEnabled = s.notificationsEnabled,
-                hideAmounts = s.hideAmounts,
-                paymentAgendaJson = s.paymentAgendaJson,
-                fundWatchlistJson = s.fundWatchlistJson,
-                remConfigJson = s.remConfigJson,
-            ),
-        )
+        val deduped = BackupHoldingDedupe.apply(payload.holdings)
 
         db.withTransaction {
+            // Restaurar es autoritativo: vaciamos cada tabla que venga en el
+            // respaldo antes de reinsertarla. Así los ids exportados por otra
+            // instalación no conviven con filas locales (semillas del primer
+            // arranque, altas posteriores) y no aparecen activos duplicados.
+            if (payload.installments.isNotEmpty() || payload.expenses.isNotEmpty()) {
+                installmentDao.deleteAll()
+            }
+            if (payload.expenses.isNotEmpty()) expenseDao.deleteAll()
+            if (payload.fundMovements.isNotEmpty()) fundMovementDao.deleteAll()
+            if (payload.settlements.isNotEmpty()) settlementDao.deleteAll()
+            if (payload.wallets.isNotEmpty()) walletDao.deleteAll()
+            if (deduped.holdings.isNotEmpty()) holdingDao.deleteAll()
+            if (payload.creditCards.isNotEmpty()) creditCardDao.deleteAll()
+            if (payload.categories.isNotEmpty()) categoryDao.deleteAll()
+            if (payload.members.isNotEmpty()) memberDao.deleteAll()
+            if (payload.instrumentQuotes.isNotEmpty()) instrumentQuoteDao.deleteAll()
+            if (payload.salaryPlans.isNotEmpty()) salaryPlanDao.deleteAll()
+            if (payload.snapshots.isNotEmpty()) snapshotDao.deleteAll()
+            if (payload.fxRates.isNotEmpty()) fxRateDao.deleteAll()
+
             if (payload.members.isNotEmpty()) {
                 memberDao.upsertAll(
                     payload.members.map {
@@ -578,9 +567,9 @@ class AppBackupManager @Inject constructor(
                     },
                 )
             }
-            if (payload.holdings.isNotEmpty()) {
+            if (deduped.holdings.isNotEmpty()) {
                 holdingDao.upsertAll(
-                    payload.holdings.map {
+                    deduped.holdings.map {
                         HoldingEntity(
                             id = it.id,
                             symbol = it.symbol,
@@ -740,8 +729,45 @@ class AppBackupManager @Inject constructor(
             }
         }
 
+        settingsRepository.update(
+            AppSettings(
+                salaryFciPercent = s.salaryFciPercent,
+                salaryLecapPercent = s.salaryLecapPercent,
+                salaryMepPercent = s.salaryMepPercent,
+                salaryBondPercent = s.salaryBondPercent,
+                salaryLiquidityCents = s.salaryLiquidityCents,
+                ao27dThresholdUsdCents = s.ao27dThresholdUsdCents,
+                rebalanceTargetPesoPercent = s.rebalanceTargetPesoPercent,
+                redTargetPesoPercent = s.redTargetPesoPercent,
+                rebalanceTolerancePp = s.rebalanceTolerancePp,
+                maturityAlertDays = s.maturityAlertDays,
+                rateDropThresholdPp = s.rateDropThresholdPp,
+                fallbackMepRate = s.fallbackMepRate,
+                monthlyDevaluationPercent = s.monthlyDevaluationPercent,
+                pesoReferenceTnaPercent = s.pesoReferenceTnaPercent,
+                countryRiskPoints = s.countryRiskPoints,
+                countryRisk30dChange = s.countryRisk30dChange,
+                previousFxGapPercent = s.previousFxGapPercent,
+                electoralCalendarEnabled = s.electoralCalendarEnabled,
+                liquidityGuardrailEnabled = s.liquidityGuardrailEnabled,
+                liquidityGuardrailMaxMonths = s.liquidityGuardrailMaxMonths,
+                previousCarryBandName = s.previousCarryBandName,
+                carryExcludedPatterns = s.carryExcludedPatterns,
+                notificationsEnabled = s.notificationsEnabled,
+                hideAmounts = s.hideAmounts,
+                paymentAgendaJson = s.paymentAgendaJson,
+                fundWatchlistJson = s.fundWatchlistJson,
+                remConfigJson = s.remConfigJson,
+            ),
+        )
+
         runCatching { investmentRepository.refreshSnapshot() }
-        "Respaldo restaurado: ${payload.holdings.size} tenencias, ${payload.expenses.size} gastos y configuración."
+        val duplicateNote = if (deduped.removed > 0) {
+            " Se omitieron ${deduped.removed} activos duplicados que venían en el archivo."
+        } else {
+            ""
+        }
+        "Respaldo restaurado: ${deduped.holdings.size} tenencias, ${payload.expenses.size} gastos y configuración.$duplicateNote"
     }
 
     /**

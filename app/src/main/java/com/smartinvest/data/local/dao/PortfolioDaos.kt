@@ -52,6 +52,9 @@ interface WalletDao {
 
     @Query("SELECT COUNT(*) FROM wallets")
     suspend fun count(): Int
+
+    @Query("DELETE FROM wallets")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -85,6 +88,9 @@ interface HoldingDao {
 
     @Query("DELETE FROM holdings WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM holdings")
+    suspend fun deleteAll()
 
     @Query(
         """
@@ -127,6 +133,9 @@ interface InstrumentQuoteDao {
     /** Removes future-dated rows left by older versions that stamped quotes with the sync day. */
     @Query("DELETE FROM instrument_quotes WHERE marketKey = :marketKey AND dateEpochDay > :epochDay")
     suspend fun deleteForMarketAfter(marketKey: String, epochDay: Long)
+
+    @Query("DELETE FROM instrument_quotes")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -148,6 +157,9 @@ interface SnapshotDao {
 
     @Query("DELETE FROM portfolio_snapshots WHERE dateEpochDay < :epochDay")
     suspend fun deleteOlderThan(epochDay: Long)
+
+    @Query("DELETE FROM portfolio_snapshots")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -163,6 +175,9 @@ interface FxRateDao {
 
     @Query("SELECT * FROM fx_rates WHERE house = :house")
     suspend fun getByHouse(house: String): FxRateEntity?
+
+    @Query("DELETE FROM fx_rates")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -197,6 +212,9 @@ interface SalaryPlanDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<SalaryPlanEntity>)
+
+    @Query("DELETE FROM salary_plans")
+    suspend fun deleteAll()
 }
 
 @Dao
