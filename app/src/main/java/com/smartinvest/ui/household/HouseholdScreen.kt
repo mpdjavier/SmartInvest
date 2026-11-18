@@ -423,18 +423,20 @@ private fun SettlementCard(
                     OutlinedButton(
                         onClick = { onOpenSettleDialog(transfer, true) },
                         modifier = Modifier.weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
                     ) {
-                        Icon(Icons.Rounded.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Pago parcial")
+                        Icon(Icons.Rounded.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Pago parcial", maxLines = 1, softWrap = false)
                     }
                     Button(
                         onClick = { onOpenSettleDialog(transfer, false) },
-                        modifier = Modifier.weight(1.3f),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
                     ) {
-                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Saldar total")
+                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Saldar total", maxLines = 1, softWrap = false)
                     }
                 }
                 if (summary.settlements.isNotEmpty()) {
@@ -677,7 +679,7 @@ private fun SettlementDialog(
                 Text(
                     when {
                         transfer == null -> "Confirmar cierre"
-                        isPartialPayment -> "Registrar pago parcial"
+                        isPartialPayment -> "Registrar pago"
                         else -> "Saldar total"
                     },
                 )

@@ -205,6 +205,55 @@ fun ExpenseEditorScreen(
             onClick = { showDatePicker = true },
         )
 
+        SmartCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Gasto recurrente", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (form.isRecurring) {
+                            "Se repite en el calendario de pagos con la frecuencia elegida."
+                        } else {
+                            "Activalo o elegí una frecuencia para que aparezca en el calendario."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = form.isRecurring,
+                    onCheckedChange = viewModel::setRecurring,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Frecuencia",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            val recurrence = ExpenseRecurrence.fromMonths(form.recurrenceMonths)
+            ChipRow(
+                options = ExpenseRecurrence.entries,
+                selected = recurrence,
+                label = { it.label },
+                onSelect = { option ->
+                    viewModel.setRecurrenceMonths(option.intervalMonths)
+                    if (!form.isRecurring) viewModel.setRecurring(true)
+                },
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (form.isRecurring) {
+                    "El calendario lo proyecta ${recurrence.shortLabel.lowercase()} " +
+                        "tomando como referencia la fecha de este gasto."
+                } else {
+                    "Al tocar una frecuencia, el gasto se marca como recurrente."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         val selectedCategory = data.categories.firstOrNull { it.id == form.categoryId }
             ?: data.categories.firstOrNull()
         if (selectedCategory != null) {
@@ -251,46 +300,6 @@ fun ExpenseEditorScreen(
                 label = { it.shortLabel },
                 onSelect = viewModel::setPaymentMethod,
             )
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Recurrente", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "Se repite en el calendario de pagos. Elegí cada cuánto más abajo.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = form.isRecurring,
-                onCheckedChange = viewModel::setRecurring,
-            )
-        }
-
-        if (form.isRecurring) {
-            val recurrence = ExpenseRecurrence.fromMonths(form.recurrenceMonths)
-            Column {
-                Text(
-                    "Frecuencia",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(6.dp))
-                ChipRow(
-                    options = ExpenseRecurrence.entries,
-                    selected = recurrence,
-                    label = { it.label },
-                    onSelect = { viewModel.setRecurrenceMonths(it.intervalMonths) },
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "El calendario lo proyecta ${recurrence.shortLabel.lowercase()} " +
-                        "tomando como referencia la fecha de este gasto.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
 
         if (isCredit) {
