@@ -2,6 +2,11 @@ package com.smartinvest.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smartinvest.core.time.DateUtils
+import com.smartinvest.data.local.dao.ExpenseDao
+import com.smartinvest.domain.engine.HistoricalExpenseRecord
+import com.smartinvest.domain.engine.PaymentAgendaEngine
+import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.model.AppAlert
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.HouseholdSummary
@@ -17,6 +22,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.YearMonth
 import javax.inject.Inject
 
@@ -30,6 +36,9 @@ data class DashboardUiState(
     val isRefreshing: Boolean = false,
     val message: String? = null,
     val hideAmounts: Boolean = false,
+    /** Pending recurring payments scheduled for today or tomorrow. */
+    val upcomingPayments: List<PaymentAgendaRow> = emptyList(),
+    val today: LocalDate = DateUtils.today(),
 )
 
 private data class DashboardCore(
@@ -49,6 +58,7 @@ private data class DashboardExtras(
 class DashboardViewModel @Inject constructor(
     observePortfolio: ObservePortfolioOverviewUseCase,
     observeHousehold: ObserveHouseholdSummaryUseCase,
+    expenseDao: ExpenseDao,
     private val investments: InvestmentRepository,
     private val alertsRepository: AlertsRepository,
     private val settingsRepository: SettingsRepository,
@@ -75,7 +85,50 @@ class DashboardViewModel @Inject constructor(
         DashboardExtras(fxRates, isRefreshing, msg)
     }
 
-    val uiState = combine(core, extras, settingsRepository.settings) { c, e, settings ->
+    /**
+     * Recurring payments due today and tomorrow, using the same projection as the
+     * payment calendar. Two months are built when tomorrow falls in the next month.
+     */
+    private val upcomingPayments = combine(
+        expenseDao.observeAll(),
+        settingsRepository.settings,
+    ) { expenses, settings ->
+        val today = DateUtils.today()
+        val tomorrow = today.plusDays(1)
+        val records = expenses.map {
+            HistoricalExpenseRecord(
+                id = it.id,
+                description = it.description,
+                amountCents = it.totalAmountCents,
+                date = LocalDate.ofEpochDay(it.dateEpochDay),
+                categoryId = it.categoryId,
+                isRecurring = it.isRecurring,
+                recurrenceMonths = it.recurrenceMonths,
+            )
+        }
+        val templates = PaymentAgendaEngine.decodeTemplates(settings.paymentAgendaJson)
+        val months = listOf(YearMonth.from(today), YearMonth.from(tomorrow)).distinct()
+        months.flatMap { month ->
+            PaymentAgendaEngine.buildForMonth(
+                month = month,
+                today = today,
+                expenses = records,
+                serviceCategoryIds = emptySet(),
+                templates = templates,
+                recurringOnly = true,
+            ).rows
+        }.filter { row ->
+            !row.isPaid && (row.scheduledDate == today || row.scheduledDate == tomorrow)
+        }.distinctBy { it.key to it.scheduledDate }
+            .sortedBy { it.scheduledDate }
+    }
+
+    val uiState = combine(
+        core,
+        extras,
+        settingsRepository.settings,
+        upcomingPayments,
+    ) { c, e, settings, payments ->
         DashboardUiState(
             isLoading = false,
             overview = c.overview,
@@ -86,6 +139,8 @@ class DashboardViewModel @Inject constructor(
             isRefreshing = e.isRefreshing,
             message = e.message,
             hideAmounts = settings.hideAmounts,
+            upcomingPayments = payments,
+            today = DateUtils.today(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 

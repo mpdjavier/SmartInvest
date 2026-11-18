@@ -52,7 +52,7 @@ import com.smartinvest.data.local.entity.WalletEntity
         SettlementEntity::class,
         InstrumentQuoteEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

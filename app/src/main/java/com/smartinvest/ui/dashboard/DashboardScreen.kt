@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
@@ -59,8 +60,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartinvest.core.time.DateUtils
+import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.model.AlertSeverity
 import com.smartinvest.domain.model.AppAlert
+import com.smartinvest.domain.model.ExpenseRecurrence
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.HouseholdSummary
 import com.smartinvest.domain.model.MemberSettlement
@@ -87,6 +90,7 @@ import com.smartinvest.ui.util.Fmt
 import com.smartinvest.ui.util.MoneyVisibility
 import com.smartinvest.ui.util.colorFromHex
 import com.smartinvest.ui.util.severityColor
+import java.time.LocalDate
 import kotlin.math.roundToLong
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -104,6 +108,7 @@ fun DashboardScreen(
     onOpenExpenseReport: () -> Unit = {},
     onOpenPortfolioReconciliation: () -> Unit = {},
     onOpenRem: () -> Unit = {},
+    onOpenPaymentCalendar: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -184,6 +189,14 @@ fun DashboardScreen(
                 overview = state.overview,
                 onRefresh = viewModel::refresh,
                 isRefreshing = state.isRefreshing,
+            )
+        }
+
+        item {
+            PaymentsDueCard(
+                payments = state.upcomingPayments,
+                today = state.today,
+                onOpenCalendar = onOpenPaymentCalendar,
             )
         }
 
@@ -409,6 +422,82 @@ private fun HeroCard(
             )
             TextButton(onClick = onRefresh, enabled = !isRefreshing) {
                 Text("Actualizar")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PaymentsDueCard(
+    payments: List<PaymentAgendaRow>,
+    today: LocalDate,
+    onOpenCalendar: () -> Unit,
+) {
+    val total = payments.sumOf { it.amountCents }
+    SmartCard {
+        SectionHeader(
+            title = "Pagos de hoy y mañana",
+            subtitle = if (payments.isEmpty()) {
+                "Sin vencimientos pendientes"
+            } else {
+                "${payments.size} pendiente${if (payments.size == 1) "" else "s"} · ${Fmt.ars(total)}"
+            },
+            actionLabel = "Calendario",
+            onAction = onOpenCalendar,
+        )
+        Spacer(Modifier.height(8.dp))
+        if (payments.isEmpty()) {
+            InfoBanner(
+                "No hay pagos recurrentes para hoy ni mañana. Marcá un gasto como " +
+                    "«Recurrente» y elegí la frecuencia para verlo acá y en el calendario.",
+                color = Sky,
+            )
+        } else {
+            payments.forEach { row ->
+                val isToday = row.scheduledDate == today
+                Row(
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconBubble(
+                        icon = Icons.Rounded.CalendarMonth,
+                        tint = if (isToday) Amber else Emerald,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            row.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            buildString {
+                                append(if (isToday) "Vence hoy" else "Vence mañana")
+                                append(" · ")
+                                append(Fmt.shortDate(row.scheduledDate))
+                                if (row.intervalMonths > 1) {
+                                    append(" · ")
+                                    append(ExpenseRecurrence.fromMonths(row.intervalMonths).label)
+                                }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        Fmt.ars(row.amountCents),
+                        style = MaterialTheme.typography.titleSmall.copy(fontFamily = PlexMono),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+            ThinDivider()
+            TextButton(onClick = onOpenCalendar) {
+                Text("Ver el calendario completo")
             }
         }
     }

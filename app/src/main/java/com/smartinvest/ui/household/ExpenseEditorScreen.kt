@@ -44,6 +44,7 @@ import com.smartinvest.core.money.MoneyParser
 import com.smartinvest.domain.engine.CardCycleResolver
 import com.smartinvest.domain.engine.InstallmentEngine
 import com.smartinvest.domain.model.ExpensePaymentMethod
+import com.smartinvest.domain.model.ExpenseRecurrence
 import com.smartinvest.ui.components.AmountInput
 import com.smartinvest.ui.components.ChipRow
 import com.smartinvest.ui.components.DateField
@@ -256,7 +257,7 @@ fun ExpenseEditorScreen(
             Column(Modifier.weight(1f)) {
                 Text("Recurrente", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "Se repite todos los meses en el calendario de pagos.",
+                    "Se repite en el calendario de pagos. Elegí cada cuánto más abajo.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -265,6 +266,31 @@ fun ExpenseEditorScreen(
                 checked = form.isRecurring,
                 onCheckedChange = viewModel::setRecurring,
             )
+        }
+
+        if (form.isRecurring) {
+            val recurrence = ExpenseRecurrence.fromMonths(form.recurrenceMonths)
+            Column {
+                Text(
+                    "Frecuencia",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                ChipRow(
+                    options = ExpenseRecurrence.entries,
+                    selected = recurrence,
+                    label = { it.label },
+                    onSelect = { viewModel.setRecurrenceMonths(it.intervalMonths) },
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "El calendario lo proyecta ${recurrence.shortLabel.lowercase()} " +
+                        "tomando como referencia la fecha de este gasto.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (isCredit) {

@@ -48,6 +48,7 @@ import com.smartinvest.domain.engine.PaymentAgendaMonthSummary
 import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.engine.PaymentAgendaStatus
 import com.smartinvest.domain.engine.PaymentAgendaTemplate
+import com.smartinvest.domain.model.ExpenseRecurrence
 import com.smartinvest.domain.repository.SettingsRepository
 import com.smartinvest.ui.components.EmptyState
 import com.smartinvest.ui.components.HeroAmountText
@@ -107,6 +108,7 @@ class PaymentCalendarViewModel @Inject constructor(
                 date = LocalDate.ofEpochDay(it.dateEpochDay),
                 categoryId = it.categoryId,
                 isRecurring = it.isRecurring,
+                recurrenceMonths = it.recurrenceMonths,
             )
         }
         CalendarSources(records, settings.paymentAgendaJson)
@@ -489,6 +491,10 @@ private fun CalendarPaymentRow(
         row.daysUntilDue == 0L -> "Vence hoy"
         row.status == PaymentAgendaStatus.DUE_SOON -> "Vence en ${row.daysUntilDue} d"
         else -> "Agendado"
+    } + if (row.intervalMonths > 1) {
+        " · ${ExpenseRecurrence.fromMonths(row.intervalMonths).label}"
+    } else {
+        ""
     }
 
     SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)) {

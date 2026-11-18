@@ -261,6 +261,7 @@ class AlertsRepositoryImpl @Inject constructor(
                 date = LocalDate.ofEpochDay(it.dateEpochDay),
                 categoryId = it.categoryId,
                 isRecurring = it.isRecurring,
+                recurrenceMonths = it.recurrenceMonths,
             )
         }
         val agendaSummary = PaymentAgendaEngine.buildForMonth(

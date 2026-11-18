@@ -263,6 +263,7 @@ fun SmartInvestNavHost(
                     onOpenExpenseReport = { navController.navigate(Routes.EXPENSE_REPORT) },
                     onOpenPortfolioReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
                     onOpenRem = { navController.navigate(Routes.REM) },
+                    onOpenPaymentCalendar = { navController.navigate(Routes.PAYMENT_CALENDAR) },
                 )
             }
 

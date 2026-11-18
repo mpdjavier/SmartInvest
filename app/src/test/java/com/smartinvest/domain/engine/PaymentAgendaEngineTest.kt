@@ -160,4 +160,116 @@ class PaymentAgendaEngineTest {
         assertEquals(1, summary.paidCount)
         assertEquals(0, summary.pendingCount)
     }
+
+    @Test
+    fun `bimonthly recurring expense is projected only on its cadence`() {
+        val expenses = listOf(
+            HistoricalExpenseRecord(
+                id = 1,
+                description = "Seguro del auto",
+                amountCents = 85_000_00L,
+                date = LocalDate.of(2026, 1, 10),
+                categoryId = 1L,
+                isRecurring = true,
+                recurrenceMonths = 2,
+            ),
+        )
+
+        fun summary(month: YearMonth) = PaymentAgendaEngine.buildForMonth(
+            month = month,
+            today = month.atDay(1),
+            expenses = expenses,
+            serviceCategoryIds = emptySet(),
+            templates = emptyList(),
+            recurringOnly = true,
+        )
+
+        val january = summary(YearMonth.of(2026, 1)).rows.single()
+        assertEquals(LocalDate.of(2026, 1, 10), january.scheduledDate)
+        assertEquals(2, january.intervalMonths)
+        assertTrue(summary(YearMonth.of(2026, 2)).rows.isEmpty())
+        assertEquals(
+            LocalDate.of(2026, 3, 10),
+            summary(YearMonth.of(2026, 3)).rows.single().scheduledDate,
+        )
+        assertTrue(summary(YearMonth.of(2026, 4)).rows.isEmpty())
+        assertEquals(
+            LocalDate.of(2026, 5, 10),
+            summary(YearMonth.of(2026, 5)).rows.single().scheduledDate,
+        )
+    }
+
+    @Test
+    fun `a payment registered outside the cadence remains visible`() {
+        val expenses = listOf(
+            HistoricalExpenseRecord(
+                id = 1,
+                description = "Seguro del auto",
+                amountCents = 85_000_00L,
+                date = LocalDate.of(2026, 1, 10),
+                categoryId = 1L,
+                isRecurring = true,
+                recurrenceMonths = 2,
+            ),
+            // Paid early in February even though the cadence would skip that month.
+            HistoricalExpenseRecord(
+                id = 2,
+                description = "Seguro del auto",
+                amountCents = 87_000_00L,
+                date = LocalDate.of(2026, 2, 3),
+                categoryId = 1L,
+                isRecurring = true,
+                recurrenceMonths = 2,
+            ),
+        )
+
+        fun summary(month: YearMonth) = PaymentAgendaEngine.buildForMonth(
+            month = month,
+            today = month.atDay(1),
+            expenses = expenses,
+            serviceCategoryIds = emptySet(),
+            templates = emptyList(),
+            recurringOnly = true,
+        )
+
+        val february = summary(YearMonth.of(2026, 2)).rows.single()
+        assertTrue(february.isPaid)
+        assertEquals(LocalDate.of(2026, 2, 3), february.paidDate)
+        assertEquals(87_000_00L, february.amountCents)
+        assertTrue(summary(YearMonth.of(2026, 4)).rows.isEmpty())
+    }
+
+    @Test
+    fun `manual agenda item respects intervalMonths from its start month`() {
+        val templates = listOf(
+            PaymentAgendaTemplate(
+                key = PaymentAgendaEngine.normalizeKey("Seguro de vida"),
+                name = "Seguro de vida",
+                customDayOfMonth = 12,
+                estimatedAmountCents = 30_000_00L,
+                intervalMonths = 3,
+                startMonth = "2026-02",
+            ),
+        )
+
+        fun summary(month: YearMonth) = PaymentAgendaEngine.buildForMonth(
+            month = month,
+            today = month.atDay(1),
+            expenses = emptyList(),
+            serviceCategoryIds = emptySet(),
+            templates = templates,
+            recurringOnly = true,
+        )
+
+        assertEquals(
+            LocalDate.of(2026, 2, 12),
+            summary(YearMonth.of(2026, 2)).rows.single().scheduledDate,
+        )
+        assertTrue(summary(YearMonth.of(2026, 3)).rows.isEmpty())
+        assertTrue(summary(YearMonth.of(2026, 4)).rows.isEmpty())
+        assertEquals(
+            LocalDate.of(2026, 5, 12),
+            summary(YearMonth.of(2026, 5)).rows.single().scheduledDate,
+        )
+    }
 }

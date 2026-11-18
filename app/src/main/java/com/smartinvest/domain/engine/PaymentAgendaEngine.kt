@@ -22,6 +22,10 @@ data class PaymentAgendaTemplate(
     val alertDaysBefore: Int = 3,
     val notes: String = "",
     val isDeleted: Boolean = false,
+    /** Months between occurrences for manual agenda items (1 = monthly). */
+    val intervalMonths: Int = 1,
+    /** First month of the cadence ("YYYY-MM"). Null falls back to the previous payment. */
+    val startMonth: String? = null,
     /** Per-month custom date overrides ("YYYY-MM" -> "YYYY-MM-DD"). */
     val monthDateOverrides: Map<String, String> = emptyMap(),
     /** Months manually marked as paid without a linked expense row ("YYYY-MM"). */
@@ -36,6 +40,8 @@ data class HistoricalExpenseRecord(
     val categoryId: Long,
     /** Expense flagged as recurring; the payment calendar only shows these. */
     val isRecurring: Boolean = false,
+    /** Months between occurrences of a recurring expense (1 = monthly). */
+    val recurrenceMonths: Int = 1,
 )
 
 enum class PaymentAgendaStatus(val label: String) {
@@ -60,6 +66,8 @@ data class PaymentAgendaRow(
     val notes: String,
     val status: PaymentAgendaStatus,
     val daysUntilDue: Long,
+    /** Cadence used to project this row (1 = monthly). */
+    val intervalMonths: Int = 1,
 )
 
 data class PaymentAgendaMonthSummary(
@@ -147,6 +155,26 @@ object PaymentAgendaEngine {
                 ?: paidInMonth
                 ?: history.maxByOrNull { it.date }
 
+            // Cadence: a bimonthly expense anchored in January only shows in
+            // January, March, May… The first recurring payment is the anchor, and
+            // months with an actual payment or an explicit override always show.
+            val intervalMonths = (template?.intervalMonths
+                ?: history.firstOrNull { it.isRecurring }?.recurrenceMonths
+                ?: 1).coerceAtLeast(1)
+            val anchorMonth = template?.startMonth
+                ?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
+                ?: history.firstOrNull { it.isRecurring }?.let { YearMonth.from(it.date) }
+                ?: referencePayment?.let { YearMonth.from(it.date) }
+                ?: month
+            val explicitMonth = template?.monthDateOverrides?.containsKey(monthStr) == true
+            val manualPaid = template?.manualPaidMonths?.contains(monthStr) == true
+            val cadenceApplies = intervalMonths <= 1 ||
+                explicitMonth ||
+                manualPaid ||
+                paidInMonth != null ||
+                occursInMonth(month, anchorMonth, intervalMonths)
+            if (!cadenceApplies) continue
+
             // If an item was only paid once in a future month after [month] and has no template, skip it for past months.
             if (template == null && priorPayments.isEmpty() && paidInMonth == null) continue
 
@@ -197,6 +225,7 @@ object PaymentAgendaEngine {
                 notes = template?.notes.orEmpty(),
                 status = status,
                 daysUntilDue = daysUntilDue,
+                intervalMonths = intervalMonths,
             )
         }
 
@@ -216,5 +245,16 @@ object PaymentAgendaEngine {
                 it.status == PaymentAgendaStatus.OVERDUE || it.status == PaymentAgendaStatus.DUE_SOON
             },
         )
+    }
+
+    /** True when [month] falls on the cadence anchored at [anchorMonth] (step [intervalMonths]). */
+    private fun occursInMonth(
+        month: YearMonth,
+        anchorMonth: YearMonth,
+        intervalMonths: Int,
+    ): Boolean {
+        if (intervalMonths <= 1) return true
+        val diff = ChronoUnit.MONTHS.between(anchorMonth, month)
+        return diff >= 0L && diff % intervalMonths == 0L
     }
 }

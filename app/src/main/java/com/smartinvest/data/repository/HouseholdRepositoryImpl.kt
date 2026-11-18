@@ -190,6 +190,7 @@ class HouseholdRepositoryImpl @Inject constructor(
             walletHoldingId = entity.walletHoldingId,
             walletValueDeltaCents = entity.walletValueDeltaCents,
             isRecurring = entity.isRecurring,
+            recurrenceMonths = entity.recurrenceMonths,
         )
     }
 
@@ -223,6 +224,7 @@ class HouseholdRepositoryImpl @Inject constructor(
         val member = memberDao.getById(input.paidByMemberId) ?: error("Integrante inexistente")
         val category = categoryDao.getById(input.categoryId) ?: error("Categoría inexistente")
         require(!category.isArchived) { "La categoría está archivada" }
+        val recurrenceMonths = if (input.isRecurring) input.recurrenceMonths.coerceAtLeast(1) else 1
 
         return when (input.paymentMethod) {
             ExpensePaymentMethod.CREDIT -> {
@@ -249,6 +251,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         firstInstallmentMonth = firstMonth.toString(),
                         notes = input.notes.trim(),
                         isRecurring = input.isRecurring,
+                        recurrenceMonths = recurrenceMonths,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -285,6 +288,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         installments = 1,
                         notes = input.notes.trim(),
                         isRecurring = input.isRecurring,
+                        recurrenceMonths = recurrenceMonths,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -354,6 +358,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         walletQuantityDelta = quantityDelta,
                         walletValueDeltaCents = input.totalCents,
                         isRecurring = input.isRecurring,
+                        recurrenceMonths = recurrenceMonths,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
@@ -373,6 +378,7 @@ class HouseholdRepositoryImpl @Inject constructor(
                         installments = 1,
                         notes = input.notes.trim(),
                         isRecurring = input.isRecurring,
+                        recurrenceMonths = recurrenceMonths,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )

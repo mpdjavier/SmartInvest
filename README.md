@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **150 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **159 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -23,14 +23,20 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 
 ## Funcionalidades
 
+### Inicio
+
+- **Pagos de hoy y mañana**: card con los pagos recurrentes y los ítems de la agenda que vencen hoy o mañana, monto total y acceso directo al calendario completo. Si no hay vencimientos, explica cómo marcar un gasto como recurrente.
+- Patrimonio total valuado a MEP, evolución, flujo estimado, cuentas del hogar, dólar y alertas.
+- Acciones rápidas: nuevo gasto, fondo común, repartir sueldo, rescate, analítica, búsqueda/reportes y comparador REM.
+
 ### Hogar
 
 - Integrantes dinámicos (por defecto **Vos** y **Mamá**), con color e indicador de usuario actual.
 - Categorías editables (supermercado, servicios, expensas, auto, salud, comida, ocio, otros).
 - Gastos en efectivo, transferencia, tarjeta de crédito, **fondo común** o **FCI billetera** (descuenta el saldo del FCI marcado como billetera). El medio predeterminado es el FCI billetera si está configurado; si no, efectivo.
 - **Sugerencias de descripción**: al escribir los primeros caracteres, propone descripciones de gastos anteriores para cargar compras recurrentes con un toque.
-- **Gastos recurrentes**: el interruptor **«Recurrente»** del editor marca el gasto para que se proyecte todos los meses en el calendario de pagos.
-- **Calendario de pagos**: grilla mensual con indicador en los días que tienen uno o más pagos; al tocar un día se listan sus pagos recurrentes/agendados. Los pagos registrados desde Hogar se tildan solos y los demás se pueden tildar a mano (se guarda en `manualPaidMonths` de la agenda).
+- **Gastos recurrentes**: el interruptor **«Recurrente»** del editor marca el gasto y habilita la **frecuencia** (mensual, bimestral, trimestral, semestral o anual). La cadencia se ancla al mes del primer pago: un gasto bimestral cargado en enero se proyecta en enero, marzo, mayo…, no todos los meses.
+- **Calendario de pagos**: grilla mensual con indicador en los días que tienen uno o más pagos; al tocar un día se listan sus pagos recurrentes/agendados. Solo aparecen los gastos marcados como recurrentes y los ítems manuales de la agenda; los meses con un pago real o un tilde manual siempre se muestran aunque salgan de la cadencia. Los pagos registrados desde Hogar se tildan solos y los demás se pueden tildar a mano (se guarda en `manualPaidMonths` de la agenda).
 - **Cuotas**: una compra en N cuotas impacta cada mes solo por el valor de la cuota, nunca por el total.
 - Tarjetas con **cierre y vencimiento manuales**; la primera cuota se imputa según la fecha de compra y el día de cierre.
 - Fondo común: aportes, extracciones y compras pagadas con el fondo, con saldo en tiempo real.
@@ -69,7 +75,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 16/11/2026 en 1 toque (saldos **y** cantidades de AO27D, ADCAP-BAL3, MP-ARS y MP-USD, para que los 9 activos se actualicen solos), y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
 - **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
 - **Comparador REM de corto plazo** (`rem`): usa las medianas del **Relevamiento de Expectativas de Mercado** del BCRA (IPC mensual, tipo de cambio oficial y TAMAR) para proyectar letras, bonos CER, dollar linked y tasa en pesos, y las compara contra un **crawling peg ficticio** configurable (1% mensual por defecto). Cada instrumento se proyecta hasta su vencimiento o hasta el horizonte elegido, **nunca más allá de abril de 2027** por el calendario electoral. Muestra retorno nominal, mensual, real, en dólares, break-even de devaluación y veredicto (conviene / empata / no conviene). El REM de octubre 2026 viene embebido y se puede **actualizar importando el XLSX oficial del BCRA**; TIR, TNA y vencimientos se editan a mano.
-- **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): compara el universo Eco Valores o **las 2.300+ clases del catálogo completo**, con la rentabilidad y la estabilidad como parámetros independientes. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. **Rango de fechas personalizado**: además de las ventanas fijas (30/90/180/365 días) podés fijar «desde» y «hasta» (o atajos como año actual / últimos 90 días / 12 meses), y el ranking, el gráfico, la comparación y el simulador usan exactamente esas cuotapartes. **Superposición de dos FCI**: elegís otra clase del seguimiento y ves las dos curvas normalizadas a 100 en el mismo gráfico, con retorno, caída, volatilidad y diferencia en puntos porcentuales del período. En el seguimiento las métricas salen de la serie diaria; en el catálogo completo se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
+- **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): arranca en el **universo Eco Valores** con las Clases A de la planilla del usuario (148 publicadas en compararfondos.com.ar; las que no tienen publicación quedan documentadas aparte) y permite cambiar a **«Todo el catálogo»** con las 2.300+ clases, siempre con la rentabilidad y la estabilidad como parámetros independientes. El matching de nombres ignora acentos, guiones y mayúsculas. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. **Rango de fechas personalizado**: además de las ventanas fijas (30/90/180/365 días) podés fijar «desde» y «hasta» (o atajos como año actual / últimos 90 días / 12 meses), y el ranking, el gráfico, la comparación y el simulador usan exactamente esas cuotapartes. **Superposición de dos FCI**: elegís otra clase del seguimiento y ves las dos curvas normalizadas a 100 en el mismo gráfico, con retorno, caída, volatilidad y diferencia en puntos porcentuales del período. En el seguimiento las métricas salen de la serie diaria; en el catálogo completo y en Eco Valores se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
 - Planificador de sueldo y simulador de rescate de emergencia.
 
 ### Importación desde SplitHome
@@ -184,7 +190,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `receipt_import/{receiptPath}` | Importación de comprobantes PDF/texto (quita «Pago de», categoría Servicios y rescate en FCI billetera) |
 | `holding_editor/{holdingId}` | Activo (alta/edición, valuación manual fija en ARS/USD, sumar/retirar aportes e importador `.xlsx`/`.xls`/`.csv` de brókers) |
 | `portfolio_reconciliation` | Ajuste manual de saldos en ARS y USD, carga de lista por texto y verificación de cálculos/evolución |
-| `fund_evaluator` | Evaluador FCI con rentabilidad y estabilidad configurables: seguimiento o catálogo completo, orden por rentabilidad/estabilidad/caída/volatilidad, piso de estabilidad, rango de fechas personalizado, superposición de dos clases, referencia Adcap Balanceado III, simulador y buscador |
+| `fund_evaluator` | Evaluador FCI con rentabilidad y estabilidad configurables: universo Eco Valores (Clases A) por defecto o «Todo el catálogo», orden por rentabilidad/estabilidad/caída/volatilidad, piso de estabilidad, rango de fechas personalizado, superposición de dos clases, referencia Adcap Balanceado III, simulador y buscador |
 | `analytics` | Analítica de cartera |
 | `salary` | Repartir sueldo |
 | `emergency` | Rescate de emergencia |
@@ -592,14 +598,14 @@ Además, el widget se refresca al escribir datos y con el botón manual. WorkMan
 
 ## Persistencia
 
-Room, versión 4 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_3` y `MIGRATION_3_4`, y esquema exportado a `app/schemas`):
+Room, versión 6 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_3`, `MIGRATION_3_4`, `MIGRATION_4_5` y `MIGRATION_5_6`, y esquema exportado a `app/schemas`):
 
 | Tabla | Contenido |
 | --- | --- |
 | `members` | integrantes del hogar |
 | `categories` | categorías de gasto |
 | `credit_cards` | tarjetas, cierre y vencimiento |
-| `expenses` | compras y gastos (incluye el rescate del FCI billetera y su delta para reponer al eliminar) |
+| `expenses` | compras y gastos (incluye el rescate del FCI billetera y su delta para reponer al eliminar; `isRecurring` y `recurrenceMonths` definen la frecuencia del calendario) |
 | `installments` | cronograma de cuotas por mes |
 | `fund_movements` | aportes, extracciones y compras del fondo |
 | `settlements` | cierres/pagos manuales de liquidación mensual del hogar |
@@ -712,7 +718,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**150 tests, 0 fallos, 22 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**159 tests, 0 fallos, 23 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -737,7 +743,7 @@ Tests unitarios JVM (sin emulador):
 | `PortfolioValuationTest` | valoración ARS/USD, CEDEAR (`SPY`) y bonos (`AO27`/`AO27D`) en exposición USD, MEP, topes, interés, variación diaria de un bono USD y tenencias sin cantidad |
 | `PortfolioReconciliationEngineTest` | parseo de listas de saldos (14/11/2026 y 16/11/2026), totales nativos ARS/USD, reconciliación de la planilla 16/11 a MEP 1.500, cantidades del preset 16/11 que reproducen los saldos al cierre, exposición 60/40 con bonos y SPY, precios implícitos, diferencias contra cotización y bloqueo manual |
 | `DailyInterestEngineTest` | desglose diario por TNA/tope, variación real de cotizaciones (con y sin cantidad), conciliación, TNA tomada del FCI vinculado y capitalización diaria en billeteras y FCI sin cotización fresca |
-| `PaymentAgendaEngineTest` | fecha heredada del pago anterior, estados de vencimiento, fechas y montos personalizados, filtro de solo recurrentes para el calendario y tildado manual por mes (`manualPaidMonths`) |
+| `PaymentAgendaEngineTest` | fecha heredada del pago anterior, estados de vencimiento, fechas y montos personalizados, filtro de solo recurrentes para el calendario, cadencia mensual/bimestral/trimestral anclada al primer pago, pagos reales fuera de cadencia y tildado manual por mes (`manualPaidMonths`) |
 | `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago), pago de servicio (Galicia), resumen de tarjeta de crédito (`MASTERCARD BLACK` con vencimiento, próximo cierre y total a pagar), fechas con mes en texto y comprobantes sin datos |
 | `MarketClientsTest` | normalización de claves/URLs y parseo HTML de Rava (tabla histórica y encabezado con cierre anterior) y CAFCI |
 | `MacroRiskTest` | bandas de carry, techo por riesgo país, velocidad de la brecha, calendario electoral, histéresis, guardarraíl de liquidez, alcance por riesgo subyacente, vencimientos como flujo y reparto orgánico 100% pesos / 100% dólares |
@@ -749,6 +755,7 @@ Tests unitarios JVM (sin emulador):
 | `ExpenseReportEngineTest` | búsqueda por texto/categoría/medio/integrante, totales y promedios, agrupaciones, top de gastos y exportación CSV con escape |
 | `FormattersTest` | enmascarado de montos en modo privacidad (ARS/USD/compactos/firmados) y restauración al desactivarlo |
 | `FundStabilityEngineTest` | retorno, volatilidad anualizada, máxima caída, peor/mejor día y ratio de días positivos; recorte por ventana y por rango de fechas con extremos abiertos; score y tiers; ranking por estabilidad/rentabilidad/caída/volatilidad; umbral mínimo de estabilidad; filtros; evaluación del catálogo por horizonte (7d/30d/12m), clases sin datos a 90 días y ranking completo por rentabilidad; comparación contra Adcap Balanceado III y simulación con la serie real; simulación por rango y superposición de dos series normalizadas a 100 con fechas comunes |
+| `EcoValoresFundsTest` | lista de Clases A de Eco Valores: match exacto, nombres con acentos/guiones/mayúsculas, alias de Adcap, exclusión de Clases B/C y de las clases A sin publicación, y unicidad de la lista publicada |
 | `FundComparisonClientTest` | parseo del catálogo de compararfondos (nombre, gestora, tipo, moneda, métricas a 30/365 días) y de la serie diaria (`history`), orden, descarte de puntos inválidos y respuesta vacía |
 | `FundWatchlistCodecTest` | persistencia JSON del seguimiento, deduplicación, lista vacía explícita y JSON inválido |
 | `BackupHoldingDedupeTest` | holdings repetidos en un respaldo (mismo símbolo, cuenta, moneda y tipo) colapsados al más reciente, cuentas GALICIA/IEB separadas y activos distintos intactos |

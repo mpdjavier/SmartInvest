@@ -28,6 +28,8 @@ data class NewExpense(
     val walletHoldingId: Long? = null,
     /** Recurring household expense: projected every month in the payment calendar. */
     val isRecurring: Boolean = false,
+    /** Months between occurrences when [isRecurring] is true (1 = monthly). */
+    val recurrenceMonths: Int = 1,
 )
 
 data class EditableExpense(
@@ -44,6 +46,7 @@ data class EditableExpense(
     val walletHoldingId: Long? = null,
     val walletValueDeltaCents: Long = 0L,
     val isRecurring: Boolean = false,
+    val recurrenceMonths: Int = 1,
 )
 
 data class NewFundMovement(

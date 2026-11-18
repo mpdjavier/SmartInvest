@@ -310,7 +310,7 @@ fun FundEvaluatorScreen(
                         title = "Sin datos en el rango elegido"
                         message = "Ningún fondo del seguimiento tiene cuotapartes en esas fechas. Ampliá el rango o volvé a una ventana fija."
                     }
-                    state.universe == FundUniverse.CATALOG && state.catalogSize == 0 -> {
+                    state.universe != FundUniverse.WATCHLIST && state.catalogSize == 0 -> {
                         title = "Catálogo no disponible"
                         message = "No se pudo descargar el catálogo. Actualizá con el botón de arriba e intentá de nuevo."
                     }
@@ -321,6 +321,10 @@ fun FundEvaluatorScreen(
                     state.filter != FundFilterOption.ALL -> {
                         title = "Ningún fondo cumple el filtro"
                         message = "Probá con «Todos» o cambiá la ventana de análisis para ampliar el resultado."
+                    }
+                    state.universe == FundUniverse.ECO_VALORES -> {
+                        title = "Sin clases de Eco Valores para mostrar"
+                        message = "Actualizá el catálogo. Si el filtro sigue activo, probá con «Todos»."
                     }
                     state.universe == FundUniverse.CATALOG -> {
                         title = "Sin clases para mostrar"
@@ -412,6 +416,11 @@ private fun rankingSubtitle(state: FundEvaluatorUiState): String = buildString {
             append(" · ventana ")
             append(windowLabel(state.windowDays))
         }
+    } else if (state.universe == FundUniverse.ECO_VALORES) {
+        append("${state.ranked.size} de ${EcoValoresFunds.CATALOG_NAMES.size} clases A")
+        append(" · renta ")
+        append(state.horizon.label.lowercase())
+        append(" · estabilidad 90 días")
     } else {
         append("${state.ranked.size}")
         if (state.catalogSize > 0) append(" de ${state.catalogSize}")
@@ -645,14 +654,20 @@ private fun FiltersCard(
             label = { it.label },
             onSelect = onFilter,
         )
-        if (universe == FundUniverse.CATALOG) {
+        if (universe != FundUniverse.WATCHLIST) {
             Spacer(Modifier.height(10.dp))
             Text(
-                "En el catálogo, la estabilidad se estima con volatilidad, máxima caída y " +
-                    "días positivos a 90 días. La rentabilidad usa el período elegido." +
+                (if (universe == FundUniverse.ECO_VALORES) {
+                    "Estas son las clases A que ofrece Eco Valores. La estabilidad se estima con " +
+                        "volatilidad, máxima caída y días positivos a 90 días. La rentabilidad usa " +
+                        "el período elegido. Cambiá a «Todo el catálogo» para ver fondos de otras sociedades."
+                } else {
+                    "En el catálogo, la estabilidad se estima con volatilidad, máxima caída y " +
+                        "días positivos a 90 días. La rentabilidad usa el período elegido."
+                }) +
                     if (hasCustomRange) {
                         " El rango de fechas personalizado se aplica al seguimiento y al detalle, " +
-                            "no al ranking completo del catálogo."
+                            "no al ranking por resumen."
                     } else {
                         ""
                     },

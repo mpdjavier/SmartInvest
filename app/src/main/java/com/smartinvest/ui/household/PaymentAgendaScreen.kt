@@ -59,6 +59,7 @@ import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.engine.PaymentAgendaStatus
 import com.smartinvest.domain.engine.PaymentAgendaTemplate
 import com.smartinvest.domain.model.ExpensePaymentMethod
+import com.smartinvest.domain.model.ExpenseRecurrence
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
@@ -104,6 +105,7 @@ data class AgendaItemDraft(
     val amountText: String = "",
     val alertEnabled: Boolean = true,
     val alertDaysBefore: Int = 3,
+    val intervalMonths: Int = 1,
     val notes: String = "",
     val isEditingExisting: Boolean = false,
 )
@@ -166,6 +168,7 @@ class PaymentAgendaViewModel @Inject constructor(
                 date = LocalDate.ofEpochDay(it.dateEpochDay),
                 categoryId = it.categoryId,
                 isRecurring = it.isRecurring,
+                recurrenceMonths = it.recurrenceMonths,
             )
         }
         AgendaSources(records, categories, members, wallets, settings.paymentAgendaJson)
@@ -252,6 +255,7 @@ class PaymentAgendaViewModel @Inject constructor(
             amountText = amountStr,
             alertEnabled = row.alertEnabled,
             alertDaysBefore = row.alertDaysBefore,
+            intervalMonths = row.intervalMonths,
             notes = row.notes,
             isEditingExisting = true,
         )
@@ -294,6 +298,8 @@ class PaymentAgendaViewModel @Inject constructor(
                 estimatedAmountCents = amountCents,
                 alertEnabled = draft.alertEnabled,
                 alertDaysBefore = draft.alertDaysBefore.coerceIn(0, 30),
+                intervalMonths = draft.intervalMonths.coerceAtLeast(1),
+                startMonth = existing?.startMonth ?: if (existing == null) selectedMonthStr else null,
                 notes = draft.notes.trim(),
                 isDeleted = false,
                 monthDateOverrides = updatedOverrides,
@@ -657,6 +663,10 @@ private fun PaymentAgendaRowCard(
                             append(" · Pago ant.: ")
                             append(Fmt.shortDate(row.previousPaymentDate))
                         }
+                        if (row.intervalMonths > 1) {
+                            append(" · ")
+                            append(ExpenseRecurrence.fromMonths(row.intervalMonths).label)
+                        }
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -772,6 +782,29 @@ private fun AgendaEditDialog(
                     onValueChange = { value -> onUpdate { it.copy(amountText = value) } },
                     label = "Monto estimado (opcional)",
                 )
+                Column {
+                    Text(
+                        "Frecuencia",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    ChipRow(
+                        options = ExpenseRecurrence.entries,
+                        selected = ExpenseRecurrence.fromMonths(draft.intervalMonths),
+                        label = { it.label },
+                        onSelect = { recurrence ->
+                            onUpdate { it.copy(intervalMonths = recurrence.intervalMonths) }
+                        },
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Mensual, bimestral, trimestral, semestral o anual. " +
+                            "El calendario solo lo muestra en los meses que corresponden.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Alerta de vencimiento", style = MaterialTheme.typography.titleSmall)
