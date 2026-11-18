@@ -22,13 +22,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.EditCalendar
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,8 +79,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneOffset
 import javax.inject.Inject
 
 data class PaymentCalendarUiState(
@@ -213,10 +224,53 @@ class PaymentCalendarViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Moves the payment of [row] to [newDate] inside the month shown in the calendar.
+     * The invoice often changes the due date, so the new date is stored as a monthly
+     * override and the rest of the agenda (name, amount, cadence) stays untouched.
+     */
+    fun movePayment(row: PaymentAgendaRow, newDate: LocalDate) {
+        if (row.paidExpenseId != null) return
+        if (newDate == row.scheduledDate) return
+        val selectedMonth = month.value
+        if (YearMonth.from(newDate) != selectedMonth) return
+        val monthStr = selectedMonth.toString()
+        viewModelScope.launch {
+            val currentSettings = settingsRepository.currentSettings()
+            val list = PaymentAgendaEngine.decodeTemplates(currentSettings.paymentAgendaJson).toMutableList()
+            val idx = list.indexOfFirst { it.key == row.key }
+            val existing = if (idx >= 0) list[idx] else null
+            val overrides = existing?.monthDateOverrides.orEmpty() + (monthStr to newDate.toString())
+            // Keep the cadence anchor null when there was no template: the engine then
+            // falls back to the first recurring expense, so a bimonthly service stays bimonthly.
+            val updated = existing?.copy(
+                name = existing.name.ifBlank { row.name },
+                monthDateOverrides = overrides,
+                isDeleted = false,
+            ) ?: PaymentAgendaTemplate(
+                key = row.key,
+                name = row.name,
+                intervalMonths = row.intervalMonths.coerceAtLeast(1),
+                monthDateOverrides = overrides,
+            )
+            if (idx >= 0) {
+                list[idx] = updated
+            } else {
+                list += updated
+            }
+            settingsRepository.update(
+                currentSettings.copy(paymentAgendaJson = PaymentAgendaEngine.encodeTemplates(list)),
+            )
+            selectedDate.value = newDate
+            message.value = "${row.name}: la fecha de pago pasó al ${Fmt.longDate(newDate)}."
+        }
+    }
 }
 
 private val WEEKDAY_LABELS = listOf("L", "M", "M", "J", "V", "S", "D")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PaymentCalendarScreen(
     viewModel: PaymentCalendarViewModel = hiltViewModel(),
@@ -226,6 +280,66 @@ fun PaymentCalendarScreen(
     val rows = summary?.rows.orEmpty()
     val rowsByDate = rows.groupBy { it.scheduledDate }
     val today = DateUtils.today()
+    var reschedulingRow by remember { mutableStateOf<PaymentAgendaRow?>(null) }
+
+    reschedulingRow?.let { row ->
+        val monthStartMillis = state.month.atDay(1)
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
+        val monthEndMillis = state.month.atEndOfMonth().plusDays(1)
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli() - 1L
+        val monthSelector = remember(monthStartMillis, monthEndMillis) {
+            object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    utcTimeMillis in monthStartMillis..monthEndMillis
+
+                override fun isSelectableYear(year: Int): Boolean = year == state.month.year
+            }
+        }
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = row.scheduledDate
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli(),
+            selectableDates = monthSelector,
+        )
+        DatePickerDialog(
+            onDismissRequest = { reschedulingRow = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { millis ->
+                            val newDate = Instant.ofEpochMilli(millis)
+                                .atZone(ZoneOffset.UTC)
+                                .toLocalDate()
+                            viewModel.movePayment(row, newDate)
+                        }
+                        reschedulingRow = null
+                    },
+                ) { Text("Mover") }
+            },
+            dismissButton = {
+                TextButton(onClick = { reschedulingRow = null }) { Text("Cancelar") }
+            },
+        ) {
+            DatePicker(
+                state = pickerState,
+                title = {
+                    Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
+                        Text("Nueva fecha de pago", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "${row.name} · solo días de ${Fmt.month(state.month)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+            )
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -237,7 +351,7 @@ fun PaymentCalendarScreen(
                 Text("Calendario de pagos", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Solo gastos marcados como «Recurrente» y los pagos agendados. " +
-                        "Tocá un día para ver y tildar sus pagos.",
+                        "Tocá un día para ver, tildar o cambiar la fecha de sus pagos.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -341,6 +455,7 @@ fun PaymentCalendarScreen(
                 CalendarPaymentRow(
                     row = row,
                     onTogglePaid = { viewModel.togglePaid(row) },
+                    onMoveToAnotherDate = { reschedulingRow = row },
                 )
             }
         }
@@ -348,7 +463,8 @@ fun PaymentCalendarScreen(
         item {
             Text(
                 "Los pagos registrados desde Hogar se tildan solos y no se pueden destildar acá. " +
-                    "Los demás se tildan a mano para marcar que ya los pagaste.",
+                    "Los demás se tildan a mano para marcar que ya los pagaste. " +
+                    "«Cambiar fecha de pago» mueve solo el mes que estás viendo, sin tocar la frecuencia.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -455,9 +571,14 @@ private fun CalendarDayCell(
                     else -> MaterialTheme.colorScheme.onSurface
                 },
             )
-            if (rows.isNotEmpty()) {
-                Spacer(Modifier.height(3.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            // Always reserve the indicator strip so the day number keeps the same
+            // vertical position with or without pending payments.
+            Spacer(Modifier.height(3.dp))
+            Row(
+                modifier = Modifier.height(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                if (rows.isNotEmpty()) {
                     repeat(rows.size.coerceAtMost(3)) {
                         Box(
                             Modifier
@@ -476,6 +597,7 @@ private fun CalendarDayCell(
 private fun CalendarPaymentRow(
     row: PaymentAgendaRow,
     onTogglePaid: () -> Unit,
+    onMoveToAnotherDate: (() -> Unit)? = null,
 ) {
     val isAutomatic = row.paidExpenseId != null
     val statusColor = when {
@@ -498,37 +620,58 @@ private fun CalendarPaymentRow(
     }
 
     SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = row.isPaid,
-                onCheckedChange = if (isAutomatic) null else { _ -> onTogglePaid() },
-                enabled = !isAutomatic,
-            )
-            Spacer(Modifier.width(4.dp))
-            Column(Modifier.weight(1f)) {
-                Text(row.name, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (row.isPaid) Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = row.isPaid,
+                    onCheckedChange = if (isAutomatic) null else { _ -> onTogglePaid() },
+                    enabled = !isAutomatic,
                 )
-            }
-            Spacer(Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                if (row.amountCents > 0L) {
+                Spacer(Modifier.width(4.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(row.name, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        Fmt.ars(row.amountCents),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (row.isPaid) Emerald else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        softWrap = false,
+                        detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (row.isPaid) Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(4.dp))
                 }
-                TagPill(
-                    text = if (row.isPaid) "Pagado" else "Pendiente",
-                    color = statusColor,
-                )
+                Spacer(Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    if (row.amountCents > 0L) {
+                        Text(
+                            Fmt.ars(row.amountCents),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (row.isPaid) Emerald else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    TagPill(
+                        text = if (row.isPaid) "Pagado" else "Pendiente",
+                        color = statusColor,
+                    )
+                }
+            }
+            if (!isAutomatic && onMoveToAnotherDate != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(
+                        onClick = onMoveToAnotherDate,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Icon(
+                            Icons.Rounded.EditCalendar,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (row.isPaid) "Cambiar fecha" else "Cambiar fecha de pago")
+                    }
+                }
             }
         }
     }

@@ -95,6 +95,69 @@ class PaymentAgendaEngineTest {
     }
 
     @Test
+    fun `moving a payment in the current month keeps the cadence and other months`() {
+        val expenses = listOf(
+            HistoricalExpenseRecord(
+                id = 1,
+                description = "Gas Natural",
+                amountCents = 12_000_00L,
+                date = LocalDate.of(2026, 10, 8),
+                categoryId = 2L,
+                isRecurring = true,
+            ),
+        )
+        val key = PaymentAgendaEngine.normalizeKey("Gas Natural")
+        val templates = listOf(
+            PaymentAgendaTemplate(
+                key = key,
+                name = "Gas Natural",
+                intervalMonths = 2,
+                startMonth = "2026-11",
+                monthDateOverrides = mapOf("2026-11" to "2026-11-25"),
+            ),
+        )
+
+        val november = PaymentAgendaEngine.buildForMonth(
+            month = YearMonth.of(2026, 11),
+            today = LocalDate.of(2026, 11, 5),
+            expenses = expenses,
+            serviceCategoryIds = emptySet(),
+            templates = templates,
+            recurringOnly = true,
+        )
+        // The invoice pushed the November payment to the 25th.
+        assertEquals(
+            LocalDate.of(2026, 11, 25),
+            november.rows.single { it.key == key }.scheduledDate,
+        )
+
+        val december = PaymentAgendaEngine.buildForMonth(
+            month = YearMonth.of(2026, 12),
+            today = LocalDate.of(2026, 12, 1),
+            expenses = expenses,
+            serviceCategoryIds = emptySet(),
+            templates = templates,
+            recurringOnly = true,
+        )
+        // December is off the bimonthly cadence and the override only affects November.
+        assertTrue(december.rows.none { it.key == key })
+
+        val january = PaymentAgendaEngine.buildForMonth(
+            month = YearMonth.of(2027, 1),
+            today = LocalDate.of(2027, 1, 1),
+            expenses = expenses,
+            serviceCategoryIds = emptySet(),
+            templates = templates,
+            recurringOnly = true,
+        )
+        // Back on cadence but the override did not leak into January.
+        assertEquals(
+            LocalDate.of(2027, 1, 8),
+            january.rows.single { it.key == key }.scheduledDate,
+        )
+    }
+
+    @Test
     fun `calendar only projects recurring expenses and agenda templates`() {
         val expenses = listOf(
             HistoricalExpenseRecord(
