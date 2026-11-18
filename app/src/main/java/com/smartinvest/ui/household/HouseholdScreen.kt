@@ -246,7 +246,10 @@ fun HouseholdScreen(
                 )
             }
         } else {
-            items(state.expenses, key = { it.expenseId }) { expense ->
+            items(
+                items = state.expenses,
+                key = { "${it.expenseId}-${it.installmentId ?: "cash"}" },
+            ) { expense ->
                 ExpenseCard(
                     expense = expense,
                     categoryName = categories[expense.categoryId]?.let { "${it.emoji} ${it.name}" } ?: "Categoría",

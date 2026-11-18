@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -763,7 +765,10 @@ private fun AgendaEditDialog(
             Text(if (draft.isEditingExisting) "Modificar pago agendado" else "Nuevo pago en agenda")
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 OutlinedTextField(
                     value = draft.name,
                     onValueChange = { value -> onUpdate { it.copy(name = value) } },
@@ -771,16 +776,6 @@ private fun AgendaEditDialog(
                     placeholder = { Text("SM Tucumán CISI / Luz / Gas") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                )
-                DateField(
-                    label = "Fecha agendada (vencimiento)",
-                    value = Fmt.longDate(draft.scheduledDate),
-                    onClick = onPickDate,
-                )
-                AmountInput(
-                    value = draft.amountText,
-                    onValueChange = { value -> onUpdate { it.copy(amountText = value) } },
-                    label = "Monto estimado (opcional)",
                 )
                 Column {
                     Text(
@@ -805,6 +800,16 @@ private fun AgendaEditDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                DateField(
+                    label = "Fecha agendada (vencimiento)",
+                    value = Fmt.longDate(draft.scheduledDate),
+                    onClick = onPickDate,
+                )
+                AmountInput(
+                    value = draft.amountText,
+                    onValueChange = { value -> onUpdate { it.copy(amountText = value) } },
+                    label = "Monto estimado (opcional)",
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Alerta de vencimiento", style = MaterialTheme.typography.titleSmall)

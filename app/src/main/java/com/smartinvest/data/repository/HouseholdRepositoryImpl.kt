@@ -85,7 +85,11 @@ class HouseholdRepositoryImpl @Inject constructor(
         return combine(cash, installments) { cashRows, installmentRows ->
             val items = cashRows.map { it.toMonthlyItem(month) } +
                 installmentRows.map { it.toMonthlyItem() }
-            items.sortedWith(compareByDescending<MonthlyExpenseItem> { it.date }.thenByDescending { it.expenseId })
+            items
+                // A given expense can only impact the month once. This also protects
+                // the LazyColumn keys if a restored backup carries stray installments.
+                .distinctBy { it.expenseId to it.installmentId }
+                .sortedWith(compareByDescending<MonthlyExpenseItem> { it.date }.thenByDescending { it.expenseId })
         }.flowOn(io)
     }
 
