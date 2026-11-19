@@ -4,6 +4,7 @@ import com.smartinvest.core.time.DateUtils
 import com.smartinvest.data.local.entity.AlertEntity
 import com.smartinvest.data.local.entity.FxRateEntity
 import com.smartinvest.data.local.entity.HoldingEntity
+import com.smartinvest.data.local.entity.HoldingMovementEntity
 import com.smartinvest.data.local.entity.InstrumentQuoteEntity
 import com.smartinvest.data.local.entity.PortfolioSnapshotEntity
 import com.smartinvest.data.local.entity.RateHistoryEntity
@@ -12,6 +13,7 @@ import com.smartinvest.data.local.entity.WalletEntity
 import com.smartinvest.domain.model.AppAlert
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
+import com.smartinvest.domain.model.HoldingMovement
 import com.smartinvest.domain.model.InstrumentQuote
 import com.smartinvest.domain.model.PortfolioSnapshot
 import com.smartinvest.domain.model.RatePoint
@@ -89,6 +91,28 @@ fun Holding.toEntity(): HoldingEntity = HoldingEntity(
     quoteUnit = quoteUnit,
     isWallet = isWallet,
     settlementDays = settlementDays,
+)
+
+fun HoldingMovementEntity.toDomain(): HoldingMovement = HoldingMovement(
+    id = id,
+    holdingId = holdingId,
+    type = type,
+    amountCents = amountCents,
+    currency = currency,
+    date = DateUtils.epochDayToDate(dateEpochDay),
+    note = note,
+    createdAt = createdAt,
+)
+
+fun HoldingMovement.toEntity(): HoldingMovementEntity = HoldingMovementEntity(
+    id = id,
+    holdingId = holdingId,
+    type = type,
+    amountCents = amountCents,
+    currency = currency,
+    dateEpochDay = date.toEpochDay(),
+    note = note,
+    createdAt = createdAt,
 )
 
 fun InstrumentQuoteEntity.toDomain(): InstrumentQuote = InstrumentQuote(

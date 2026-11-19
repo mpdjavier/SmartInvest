@@ -8,6 +8,7 @@ import androidx.room.Update
 import com.smartinvest.data.local.entity.AlertEntity
 import com.smartinvest.data.local.entity.FxRateEntity
 import com.smartinvest.data.local.entity.HoldingEntity
+import com.smartinvest.data.local.entity.HoldingMovementEntity
 import com.smartinvest.data.local.entity.InstrumentQuoteEntity
 import com.smartinvest.data.local.entity.PortfolioSnapshotEntity
 import com.smartinvest.data.local.entity.RateHistoryEntity
@@ -101,6 +102,39 @@ interface HoldingDao {
         """,
     )
     suspend fun updateValuation(id: Long, valueCents: Long, name: String)
+}
+
+@Dao
+interface HoldingMovementDao {
+    @Query(
+        "SELECT * FROM holding_movements WHERE holdingId = :holdingId " +
+            "ORDER BY dateEpochDay DESC, id DESC",
+    )
+    fun observeForHolding(holdingId: Long): Flow<List<HoldingMovementEntity>>
+
+    @Query("SELECT * FROM holding_movements WHERE holdingId = :holdingId ORDER BY id ASC")
+    suspend fun getAllForHolding(holdingId: Long): List<HoldingMovementEntity>
+
+    @Query("SELECT * FROM holding_movements WHERE id = :id")
+    suspend fun getById(id: Long): HoldingMovementEntity?
+
+    @Query("SELECT * FROM holding_movements ORDER BY id ASC")
+    suspend fun getAll(): List<HoldingMovementEntity>
+
+    @Insert
+    suspend fun insert(entity: HoldingMovementEntity): Long
+
+    @Query("DELETE FROM holding_movements WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM holding_movements WHERE holdingId = :holdingId")
+    suspend fun deleteForHolding(holdingId: Long)
+
+    @Query("DELETE FROM holding_movements")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<HoldingMovementEntity>)
 }
 
 @Dao

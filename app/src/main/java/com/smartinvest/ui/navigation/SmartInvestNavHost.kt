@@ -63,6 +63,7 @@ import com.smartinvest.ui.importer.ImportScreen
 import com.smartinvest.ui.investments.DailyInterestScreen
 import com.smartinvest.ui.investments.FundEvaluatorScreen
 import com.smartinvest.ui.investments.HoldingEditorScreen
+import com.smartinvest.ui.investments.HoldingDetailScreen
 import com.smartinvest.ui.investments.InstrumentDetailScreen
 import com.smartinvest.ui.investments.InvestmentsScreen
 import com.smartinvest.ui.investments.PortfolioReconciliationScreen
@@ -87,6 +88,7 @@ object Routes {
     const val EXPENSE_EDITOR = "expense_editor/{month}?expenseId={expenseId}"
     const val FUND_EDITOR = "fund_editor/{month}"
     const val HOLDING_EDITOR = "holding_editor/{holdingId}"
+    const val HOLDING_DETAIL = "holding_detail/{holdingId}"
     const val ANALYTICS = "analytics"
     const val SALARY = "salary"
     const val EMERGENCY = "emergency"
@@ -108,6 +110,7 @@ object Routes {
         "expense_editor/$month?expenseId=$expenseId"
     fun fundEditor(month: YearMonth): String = "fund_editor/$month"
     fun holdingEditor(holdingId: Long = 0L): String = "holding_editor/$holdingId"
+    fun holdingDetail(holdingId: Long): String = "holding_detail/$holdingId"
     fun instrumentDetail(holdingId: Long = 0L): String = "instrument_detail/$holdingId"
     fun receiptImport(path: String): String = "receipt_import/${Uri.encode(path)}"
 }
@@ -129,6 +132,7 @@ private val secondaryTitles = mapOf(
     Routes.EXPENSE_EDITOR to "Nuevo gasto",
     Routes.FUND_EDITOR to "Fondo común",
     Routes.HOLDING_EDITOR to "Activo",
+    Routes.HOLDING_DETAIL to "Activo y movimientos",
     Routes.ANALYTICS to "Analítica",
     Routes.SALARY to "Repartir sueldo",
     Routes.EMERGENCY to "Rescate de emergencia",
@@ -317,6 +321,7 @@ fun SmartInvestNavHost(
                     onOpenEmergency = { navController.navigate(Routes.EMERGENCY) },
                     onOpenDailyInterest = { navController.navigate(Routes.DAILY_INTEREST) },
                     onOpenInstrumentDetail = { holdingId -> navController.navigate(Routes.instrumentDetail(holdingId)) },
+                    onOpenHoldingDetail = { holdingId -> navController.navigate(Routes.holdingDetail(holdingId)) },
                     onOpenRebalancing = { navController.navigate(Routes.REBALANCING) },
                     onOpenReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
                     onOpenFundEvaluator = { navController.navigate(Routes.FUND_EVALUATOR) },
@@ -367,6 +372,15 @@ fun SmartInvestNavHost(
                 arguments = listOf(navArgument("holdingId") { type = NavType.StringType }),
             ) {
                 HoldingEditorScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(
+                route = Routes.HOLDING_DETAIL,
+                arguments = listOf(navArgument("holdingId") { type = NavType.StringType }),
+            ) {
+                HoldingDetailScreen(
+                    onEditHolding = { id -> navController.navigate(Routes.holdingEditor(id)) },
+                )
             }
 
             composable(Routes.ANALYTICS) {

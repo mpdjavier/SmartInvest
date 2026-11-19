@@ -3,12 +3,14 @@ package com.smartinvest.data.repository
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.data.local.dao.FxRateDao
 import com.smartinvest.data.local.dao.HoldingDao
+import com.smartinvest.data.local.dao.HoldingMovementDao
 import com.smartinvest.data.local.dao.InstrumentQuoteDao
 import com.smartinvest.data.local.dao.RateHistoryDao
 import com.smartinvest.data.local.dao.SalaryPlanDao
 import com.smartinvest.data.local.dao.SnapshotDao
 import com.smartinvest.data.local.dao.WalletDao
 import com.smartinvest.data.local.entity.FxRateEntity
+import com.smartinvest.data.local.entity.HoldingMovementEntity
 import com.smartinvest.data.local.entity.InstrumentQuoteEntity
 import com.smartinvest.data.local.entity.PortfolioSnapshotEntity
 import com.smartinvest.data.local.entity.RateHistoryEntity
@@ -23,6 +25,8 @@ import com.smartinvest.data.network.MarketKeyParser
 import com.smartinvest.data.network.toDomain
 import com.smartinvest.data.widget.WidgetRefresher
 import com.smartinvest.di.IoDispatcher
+import com.smartinvest.domain.engine.BrokerMovementImporter
+import com.smartinvest.domain.engine.HoldingMovementEngine
 import com.smartinvest.domain.engine.PortfolioReconciliationEngine
 import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.model.AllocationBucket
@@ -30,6 +34,8 @@ import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
+import com.smartinvest.domain.model.HoldingMovement
+import com.smartinvest.domain.model.HoldingMovementType
 import com.smartinvest.domain.model.InstrumentQuote
 import com.smartinvest.domain.model.MacroMarketSnapshot
 import com.smartinvest.domain.model.MarketSource
@@ -48,6 +54,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.math.abs
@@ -58,6 +65,7 @@ import javax.inject.Singleton
 class InvestmentRepositoryImpl @Inject constructor(
     private val walletDao: WalletDao,
     private val holdingDao: HoldingDao,
+    private val holdingMovementDao: HoldingMovementDao,
     private val instrumentQuoteDao: InstrumentQuoteDao,
     private val snapshotDao: SnapshotDao,
     private val fxRateDao: FxRateDao,
@@ -80,6 +88,12 @@ class InvestmentRepositoryImpl @Inject constructor(
 
     override fun observeHoldings(): Flow<List<Holding>> =
         holdingDao.observeAll().map { list -> list.map { it.toDomain() } }.flowOn(io)
+
+    override fun observeHoldingMovements(holdingId: Long): Flow<List<HoldingMovement>> =
+        holdingMovementDao.observeForHolding(holdingId)
+            .onStart { ensureHoldingMovementsSeeded(holdingId) }
+            .map { list -> list.map { it.toDomain() } }
+            .flowOn(io)
 
     override fun observeWalletHoldings(): Flow<List<Holding>> =
         holdingDao.observeWallets().map { list -> list.map { it.toDomain() } }.flowOn(io)
@@ -192,8 +206,166 @@ class InvestmentRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteHolding(id: Long) {
-        withContext(io) { holdingDao.deleteById(id) }
+        withContext(io) {
+            holdingMovementDao.deleteForHolding(id)
+            holdingDao.deleteById(id)
+        }
         widgetRefresher.refresh()
+    }
+
+    override suspend fun addHoldingMovement(
+        holdingId: Long,
+        type: HoldingMovementType,
+        amountCents: Long,
+        date: LocalDate,
+        note: String,
+    ): Long {
+        val id = withContext(io) {
+            require(amountCents > 0L) { "El monto del movimiento debe ser mayor a cero" }
+            ensureHoldingMovementsSeeded(holdingId)
+            val holding = holdingDao.getById(holdingId)?.toDomain()
+                ?: error("El activo ya no existe")
+
+            val effect = HoldingMovementEngine.apply(holding, type, amountCents)
+            val qtyDelta = (effect.quantity - holding.quantity).takeIf { abs(it) > 1e-6 }
+            val signedCents = if (type == HoldingMovementType.INGRESO) amountCents else -amountCents
+            val noteLine = BrokerMovementImporter.formatMovementNoteLine(
+                date = date,
+                signedAmountCents = signedCents,
+                currency = holding.currency,
+                note = note.trim(),
+                quantityDelta = qtyDelta,
+            )
+            val updatedNotes = if (holding.notes.isBlank()) {
+                noteLine
+            } else {
+                "${holding.notes.trim()}\n$noteLine"
+            }
+
+            val now = System.currentTimeMillis()
+            val movementId = holdingMovementDao.insert(
+                HoldingMovementEntity(
+                    holdingId = holdingId,
+                    type = type,
+                    amountCents = amountCents,
+                    currency = holding.currency,
+                    dateEpochDay = date.toEpochDay(),
+                    note = note.trim(),
+                    createdAt = now,
+                ),
+            )
+            holdingDao.upsert(
+                holding.copy(
+                    currentValueCents = effect.valueCents,
+                    costCents = effect.costCents,
+                    quantity = effect.quantity,
+                    notes = updatedNotes,
+                ).toEntity(),
+            )
+            movementId
+        }
+        widgetRefresher.refresh()
+        return id
+    }
+
+    override suspend fun deleteHoldingMovement(id: Long) {
+        withContext(io) {
+            val movement = holdingMovementDao.getById(id) ?: return@withContext
+            val holding = holdingDao.getById(movement.holdingId)?.toDomain()
+            holdingMovementDao.deleteById(id)
+            if (holding != null) {
+                val effect = HoldingMovementEngine.apply(
+                    holding = holding,
+                    type = movement.type,
+                    amountCents = movement.amountCents,
+                    reverse = true,
+                )
+                val remaining = holdingMovementDao.getAllForHolding(movement.holdingId)
+                    .sortedBy { it.dateEpochDay }
+                val nonMovementLines = holding.notes.lineSequence()
+                    .filter { line -> BrokerMovementImporter.parseMovementNotes(line).isEmpty() }
+                    .joinToString("\n")
+                    .trim()
+                val movementBlock = remaining.joinToString("\n") { entity ->
+                    val signed = if (entity.type == HoldingMovementType.INGRESO) {
+                        entity.amountCents
+                    } else {
+                        -entity.amountCents
+                    }
+                    BrokerMovementImporter.formatMovementNoteLine(
+                        date = DateUtils.epochDayToDate(entity.dateEpochDay),
+                        signedAmountCents = signed,
+                        currency = entity.currency,
+                        note = entity.note,
+                    )
+                }
+                val rebuiltNotes = listOf(nonMovementLines, movementBlock)
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n")
+                holdingDao.upsert(
+                    holding.copy(
+                        currentValueCents = effect.valueCents,
+                        costCents = effect.costCents,
+                        quantity = effect.quantity,
+                        notes = rebuiltNotes,
+                    ).toEntity(),
+                )
+            }
+        }
+        widgetRefresher.refresh()
+    }
+
+    /**
+     * Populates `holding_movements` on first access from the movement lines
+     * already stored in `Holding.notes` (or from the broker preset movements
+     * when `notes` has no movement lines yet).
+     */
+    private suspend fun ensureHoldingMovementsSeeded(holdingId: Long) {
+        if (holdingId <= 0L) return
+        val existing = holdingMovementDao.getAllForHolding(holdingId)
+        if (existing.isNotEmpty()) return
+        val holding = holdingDao.getById(holdingId)?.toDomain() ?: return
+
+        val fromNotes = BrokerMovementImporter.parseMovementNotes(holding.notes)
+        val sourceMovements = if (fromNotes.isNotEmpty()) {
+            fromNotes
+        } else {
+            val preset = BrokerMovementImporter.presetMovementsFor(holding.symbol, holding.marketKey)
+            if (!preset.isNullOrEmpty() && holding.currentValueCents > 0L) {
+                BrokerMovementImporter.summarize(preset).movements
+            } else {
+                emptyList()
+            }
+        }
+        if (sourceMovements.isEmpty()) return
+
+        val baseTime = System.currentTimeMillis()
+        sourceMovements.sortedBy { it.date }.forEachIndexed { index, mov ->
+            val isIncome = mov.signedAmountCents >= 0L
+            val qtySuffix = mov.quantity?.takeIf { abs(it) > 1e-6 }?.let { q ->
+                val sign = if (q >= 0.0) "+" else ""
+                val formatted = if (abs(q) % 1.0 == 0.0) {
+                    String.format(java.util.Locale.US, "%.0f", q)
+                } else {
+                    String.format(java.util.Locale.US, "%.2f", q)
+                }
+                "cant: $sign$formatted"
+            }.orEmpty()
+            val noteText = listOf(mov.operationCode, qtySuffix)
+                .filter { it.isNotBlank() }
+                .joinToString(" · ")
+            holdingMovementDao.insert(
+                HoldingMovementEntity(
+                    holdingId = holdingId,
+                    type = if (isIncome) HoldingMovementType.INGRESO else HoldingMovementType.EGRESO,
+                    amountCents = abs(mov.signedAmountCents),
+                    currency = holding.currency,
+                    dateEpochDay = mov.date.toEpochDay(),
+                    note = noteText,
+                    createdAt = baseTime + index,
+                ),
+            )
+        }
     }
 
     override suspend fun syncRates(): SyncOutcome {

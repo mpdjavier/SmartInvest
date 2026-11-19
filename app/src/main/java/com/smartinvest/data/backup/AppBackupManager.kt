@@ -8,6 +8,7 @@ import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.data.local.dao.FundMovementDao
 import com.smartinvest.data.local.dao.FxRateDao
 import com.smartinvest.data.local.dao.HoldingDao
+import com.smartinvest.data.local.dao.HoldingMovementDao
 import com.smartinvest.data.local.dao.InstallmentDao
 import com.smartinvest.data.local.dao.InstrumentQuoteDao
 import com.smartinvest.data.local.dao.MemberDao
@@ -21,6 +22,7 @@ import com.smartinvest.data.local.entity.ExpenseEntity
 import com.smartinvest.data.local.entity.FundMovementEntity
 import com.smartinvest.data.local.entity.FxRateEntity
 import com.smartinvest.data.local.entity.HoldingEntity
+import com.smartinvest.data.local.entity.HoldingMovementEntity
 import com.smartinvest.data.local.entity.InstallmentEntity
 import com.smartinvest.data.local.entity.InstrumentQuoteEntity
 import com.smartinvest.data.local.entity.MemberEntity
@@ -37,6 +39,7 @@ import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.ExpensePaymentMethod
 import com.smartinvest.domain.model.FundMovementType
+import com.smartinvest.domain.model.HoldingMovementType
 import com.smartinvest.domain.model.MarketSource
 import com.smartinvest.domain.model.QuoteUnit
 import com.smartinvest.domain.model.WalletType
@@ -216,6 +219,18 @@ data class BackupHoldingDto(
 )
 
 @Serializable
+data class BackupHoldingMovementDto(
+    val id: Long = 0,
+    val holdingId: Long,
+    val type: String,
+    val amountCents: Long,
+    val currency: String = "ARS",
+    val dateEpochDay: Long,
+    val note: String = "",
+    val createdAt: Long,
+)
+
+@Serializable
 data class BackupQuoteDto(
     val id: Long = 0,
     val marketKey: String,
@@ -277,6 +292,7 @@ data class AppBackupPayload(
     val settlements: List<BackupSettlementDto> = emptyList(),
     val wallets: List<BackupWalletDto> = emptyList(),
     val holdings: List<BackupHoldingDto> = emptyList(),
+    val holdingMovements: List<BackupHoldingMovementDto> = emptyList(),
     val instrumentQuotes: List<BackupQuoteDto> = emptyList(),
     val fxRates: List<BackupFxRateDto> = emptyList(),
     val salaryPlans: List<BackupSalaryPlanDto> = emptyList(),
@@ -295,6 +311,7 @@ class AppBackupManager @Inject constructor(
     private val settlementDao: SettlementDao,
     private val walletDao: WalletDao,
     private val holdingDao: HoldingDao,
+    private val holdingMovementDao: HoldingMovementDao,
     private val instrumentQuoteDao: InstrumentQuoteDao,
     private val snapshotDao: SnapshotDao,
     private val fxRateDao: FxRateDao,
@@ -460,6 +477,18 @@ class AppBackupManager @Inject constructor(
                     settlementDays = it.settlementDays,
                 )
             },
+            holdingMovements = holdingMovementDao.getAll().map {
+                BackupHoldingMovementDto(
+                    id = it.id,
+                    holdingId = it.holdingId,
+                    type = it.type.name,
+                    amountCents = it.amountCents,
+                    currency = it.currency.name,
+                    dateEpochDay = it.dateEpochDay,
+                    note = it.note,
+                    createdAt = it.createdAt,
+                )
+            },
             instrumentQuotes = instrumentQuoteDao.getAll().map {
                 BackupQuoteDto(
                     id = it.id,
@@ -523,6 +552,9 @@ class AppBackupManager @Inject constructor(
             if (payload.fundMovements.isNotEmpty()) fundMovementDao.deleteAll()
             if (payload.settlements.isNotEmpty()) settlementDao.deleteAll()
             if (payload.wallets.isNotEmpty()) walletDao.deleteAll()
+            if (deduped.holdings.isNotEmpty() || payload.holdingMovements.isNotEmpty()) {
+                holdingMovementDao.deleteAll()
+            }
             if (deduped.holdings.isNotEmpty()) holdingDao.deleteAll()
             if (payload.creditCards.isNotEmpty()) creditCardDao.deleteAll()
             if (payload.categories.isNotEmpty()) categoryDao.deleteAll()
@@ -595,6 +627,24 @@ class AppBackupManager @Inject constructor(
                             quoteUnit = runCatching { QuoteUnit.valueOf(it.quoteUnit) }.getOrDefault(QuoteUnit.PER_UNIT),
                             isWallet = it.isWallet,
                             settlementDays = it.settlementDays,
+                        )
+                    },
+                )
+            }
+            if (payload.holdingMovements.isNotEmpty()) {
+                holdingMovementDao.upsertAll(
+                    payload.holdingMovements.map {
+                        HoldingMovementEntity(
+                            id = it.id,
+                            holdingId = it.holdingId,
+                            type = runCatching { HoldingMovementType.valueOf(it.type) }
+                                .getOrDefault(HoldingMovementType.INGRESO),
+                            amountCents = it.amountCents,
+                            currency = runCatching { CurrencyCode.valueOf(it.currency) }
+                                .getOrDefault(CurrencyCode.ARS),
+                            dateEpochDay = it.dateEpochDay,
+                            note = it.note,
+                            createdAt = it.createdAt,
                         )
                     },
                 )

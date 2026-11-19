@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **169 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **177 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -65,6 +65,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
   - **CAFCI** (`cafci:1402:4070` Adcap Balanceado III, `cafci:798:1982` Mercado Fondo ARS, `cafci:1522:4557` Mercado Fondo USD o cualquier URL de `estadisticas.cafci.org.ar/fondos/...`): valor de cuotaparte (VCP) y evolución histórica.
   - Presets de 1 toque en el editor de activos + recálculo automático de valuación según cantidad y unidad (`Por unidad / cuotaparte` o `Por 100 nominales`).
 - **Moneda nativa y rendimiento por activo**: una tenencia cargada en USD (por ejemplo `AO27D`) se muestra en **USD**, con la equivalencia en pesos como dato secundario, y cada fila indica cuánto aporta al **interés diario**.
+- **Histórico de movimientos por activo (`holding_detail/{holdingId}`)**: al presionar cualquier activo de la cartera se abre su ficha con valuación actual, costo, ganancia no realizada, cantidad, totales de ingresos/egresos/neto y el **histórico cronológico de movimientos** (inicializado automáticamente desde los movimientos importados del bróker o notas existentes). Desde ahí se puede **agregar manualmente un ingreso o un egreso** con monto, fecha y nota (o revertir un movimiento equivocado): la valuación, el costo neto, la cantidad y la línea de historial para intereses diarios se actualizan solos.
 - **Desglose de intereses día a día** (`daily_interest`): muestra jornada por jornada cuánto generó cada FCI, letra, bono o cuenta y la fórmula exacta usada (`Base × TNA ÷ 365` con tope remunerado, o `Cantidad × (Precio cierre − Precio anterior)` con datos reales de mercado). **El interés diario del panel suma todos los activos con seguimiento automático** (Rava y CAFCI), no solo los FCI: cada tenencia aporta la variación entre sus dos últimas cotizaciones y, si no hay par de precios, se usa su TNA.
 - **Capitalización diaria**: los intereses de cada jornada se suman a la base del día siguiente. En los FCI, cuando CAFCI todavía no publicó la cuotaparte, el hueco se completa aplicando el factor diario del último intervalo sobre el precio del día anterior, así el valor del FCI y su interés crecen en lugar de repetir siempre el mismo monto base.
 - **Conciliación de intereses**: tarjeta “¿No coinciden los números?” que compara la proyección diaria (TNA actual × días) contra el acumulado real, separa la parte explicada por capitalización y por variación de mercado, y muestra el remanente sin explicar (topes y redondeos).
@@ -189,6 +190,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `expense_report` | Reporte de gastos del período con exportación CSV y resumen compartible |
 | `receipt_import/{receiptPath}` | Importación de comprobantes PDF/texto (quita «Pago de», categoría Servicios y rescate en FCI billetera) |
 | `holding_editor/{holdingId}` | Activo (alta/edición, valuación manual fija en ARS/USD, sumar/retirar aportes e importador `.xlsx`/`.xls`/`.csv` de brókers) |
+| `holding_detail/{holdingId}` | Detalle de activo e histórico de movimientos (alta manual de ingresos/egresos y reversión con ajuste automático de valuación, costo y cantidad) |
 | `portfolio_reconciliation` | Ajuste manual de saldos en ARS y USD, carga de lista por texto y verificación de cálculos/evolución |
 | `fund_evaluator` | Evaluador FCI con rentabilidad y estabilidad configurables: universo Eco Valores (Clases A) por defecto o «Todo el catálogo», orden por rentabilidad/estabilidad/caída/volatilidad, piso de estabilidad, rango de fechas personalizado, superposición de dos clases, referencia Adcap Balanceado III, simulador y buscador |
 | `analytics` | Analítica de cartera |
@@ -602,7 +604,7 @@ Además, el widget se refresca al escribir datos y con el botón manual. WorkMan
 
 ## Persistencia
 
-Room, versión 6 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_3`, `MIGRATION_3_4`, `MIGRATION_4_5` y `MIGRATION_5_6`, y esquema exportado a `app/schemas`):
+Room, versión 7 (con migraciones no destructivas `MIGRATION_1_2` a `MIGRATION_6_7` y esquema exportado a `app/schemas`):
 
 | Tabla | Contenido |
 | --- | --- |
@@ -615,6 +617,7 @@ Room, versión 6 (con migraciones no destructivas `MIGRATION_1_2`, `MIGRATION_2_
 | `settlements` | cierres/pagos manuales de liquidación mensual del hogar |
 | `wallets` | cuentas heredadas de versiones anteriores (`linkedHoldingId`) |
 | `holdings` | LECAP, BONCAP, bonos, FCI, CEDEAR, etc. (con `marketKey`, `source`, `quantity`, `quoteUnit`, `isWallet`, `settlementDays`) |
+| `holding_movements` | histórico de ingresos y egresos por activo (`holdingId`, `type`, `amountCents`, `currency`, `dateEpochDay`, `note`) |
 | `instrument_quotes` | serie histórica de precios y valores de cuotaparte (Rava / CAFCI) |
 | `portfolio_snapshots` | evolución diaria del patrimonio |
 | `fx_rates` | cotizaciones (MEP, blue, oficial…) |
@@ -640,7 +643,7 @@ En el primer arranque se crean:
 
 - **DolarAPI** (`https://dolarapi.com/v1/dolares`) para cotizaciones vivas.
 - **ArgentinaDatos** (`https://api.argentinadatos.com/`) para las series macro: riesgo país (`v1/finanzas/indices/riesgo-pais`), MEP/mayorista/blue/oficial (`v1/cotizaciones/dolares/...`) y TNA de plazo fijo 30 días (`v1/finanzas/tasas/plazoFijo`, BCRA).
-- **Comparatasas.ar** con Jsoup para TNA de billeteras. El scraping es *best-effort*: si el sitio cambia, se conservan las tasas manuales.
+- **Comparatasas.ar** (`https://comparatasas.ar/api/entidades.json`) + **ArgentinaDatos cuentas** (`v1/finanzas/fci/otros/ultimo`) y respaldo en plazos fijos BCRA (`v1/finanzas/tasas/plazoFijo`) para sincronizar TNA de billeteras y FCI money market.
 - **Rava Bursátil** (`https://www.rava.com/perfil/{TICKER}`) para precio actual y tabla de cierres históricos de letras, bonos y CEDEARs (`S30N6`, `AO27D`, `SPY`, etc.).
 - **CAFCI** (`https://estadisticas.cafci.org.ar/fondos/{FONDO}?clase={CLASE}`) para valor de cuotaparte y rendimientos históricos de FCI (ej. Adcap Balanceado III `1402/4070`, Mercado Fondo ARS `798/1982`, Mercado Fondo USD `1522/4557`).
 - **compararfondos.com.ar** (`https://compararfondos.com.ar/api/fondos` y `/api/fondo/{clase}`) para el catálogo completo y la serie diaria de cuotapartes del evaluador de estabilidad. API pública, sin clave, con atribución obligatoria a compararfondos.com.ar (datos CAFCI/CNV).
@@ -723,7 +726,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**169 tests, 0 fallos, 23 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**177 tests, 0 fallos, 25 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -764,6 +767,8 @@ Tests unitarios JVM (sin emulador):
 | `FundComparisonClientTest` | parseo del catálogo de compararfondos (nombre, gestora, tipo, moneda, métricas a 30/365 días) y de la serie diaria (`history`), orden, descarte de puntos inválidos y respuesta vacía |
 | `FundWatchlistCodecTest` | persistencia JSON del seguimiento, deduplicación, lista vacía explícita y JSON inválido |
 | `BackupHoldingDedupeTest` | holdings repetidos en un respaldo (mismo símbolo, cuenta, moneda y tipo) colapsados al más reciente, cuentas GALICIA/IEB separadas y activos distintos intactos |
+| `HoldingMovementEngineTest` | alta de ingresos y egresos sobre un activo, recálculo de valuación/costo/cantidad, validación de egresos mayores al saldo y reversión exacta |
+| `ComparatasasScraperTest` | parseo del feed JSON `comparatasas.ar/api/entidades.json` y `argentinadatos.com/v1/finanzas/fci/otros/ultimo` y matching con billeteras/FCI |
 
 ---
 

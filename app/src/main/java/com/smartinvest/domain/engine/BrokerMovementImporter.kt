@@ -63,7 +63,7 @@ object BrokerMovementImporter {
     private val DATE_DD_MM_YYYY = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     private val DATE_DD_MM_YY = DateTimeFormatter.ofPattern("dd/MM/yy")
     private val NOTE_LINE_REGEX = Regex(
-        """^(\d{2}/\d{2}/\d{2,4})\s*:\s*([+-−])\s*(?:US\$|\$|USD|ARS)?\s*([\d.,]+)(?:.*?\[cant:\s*([+-]?\d+(?:[.,]\d+)?)\])?""",
+        """^(\d{2}/\d{2}/\d{2,4})\s*:\s*([+-−])\s*(?:US\$|\$|USD|ARS)?\s*([\d.,]+)(?:\s*\(([^)]+)\))?(?:.*?\[cant:\s*([+-]?\d+(?:[.,]\d+)?)\])?""",
     )
 
     /**
@@ -356,11 +356,45 @@ object BrokerMovementImporter {
                 val sign = if (match.groupValues[2] == "+") 1L else -1L
                 val cents = MoneyParser.parseToCents(match.groupValues[3]) ?: return@mapNotNull null
                 if (cents <= 0L) return@mapNotNull null
-                val qty = match.groupValues.getOrNull(4)?.takeIf { it.isNotBlank() }?.let(::parseDecimal)
-                HoldingMovement(date = date, signedAmountCents = sign * cents, quantity = qty)
+                val opCode = match.groupValues.getOrNull(4)?.trim().orEmpty()
+                val qty = match.groupValues.getOrNull(5)?.takeIf { it.isNotBlank() }?.let(::parseDecimal)
+                HoldingMovement(
+                    date = date,
+                    signedAmountCents = sign * cents,
+                    operationCode = opCode,
+                    quantity = qty,
+                )
             }
             .sortedBy { it.date }
             .toList()
+    }
+
+    fun formatMovementNoteLine(
+        date: LocalDate,
+        signedAmountCents: Long,
+        currency: CurrencyCode,
+        note: String = "",
+        quantityDelta: Double? = null,
+    ): String {
+        val sign = if (signedAmountCents >= 0L) "+" else "-"
+        val absCents = kotlin.math.abs(signedAmountCents)
+        val formatted = if (currency == CurrencyCode.USD) {
+            MoneyFormatter.usd(absCents)
+        } else {
+            MoneyFormatter.ars(absCents)
+        }
+        val cleanNote = note.trim().replace("(", "").replace(")", "")
+        val opTag = if (cleanNote.isNotBlank()) " ($cleanNote)" else ""
+        val qtyTag = quantityDelta?.takeIf { kotlin.math.abs(it) > 1e-6 }?.let { q ->
+            val qSign = if (q >= 0.0) "+" else "-"
+            val qAbs = if (kotlin.math.abs(q) % 1.0 == 0.0) {
+                String.format(Locale.US, "%.0f", kotlin.math.abs(q))
+            } else {
+                String.format(Locale.US, "%.4f", kotlin.math.abs(q)).trimEnd('0').trimEnd('.')
+            }
+            " [cant: $qSign$qAbs]"
+        }.orEmpty()
+        return "${date.format(DATE_DD_MM_YYYY)}: $sign$formatted$opTag$qtyTag"
     }
 
     /**

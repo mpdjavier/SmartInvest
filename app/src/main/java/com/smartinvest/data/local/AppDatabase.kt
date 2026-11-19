@@ -9,6 +9,7 @@ import com.smartinvest.data.local.dao.CreditCardDao
 import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.data.local.dao.FundMovementDao
 import com.smartinvest.data.local.dao.HoldingDao
+import com.smartinvest.data.local.dao.HoldingMovementDao
 import com.smartinvest.data.local.dao.InstallmentDao
 import com.smartinvest.data.local.dao.InstrumentQuoteDao
 import com.smartinvest.data.local.dao.MemberDao
@@ -25,6 +26,7 @@ import com.smartinvest.data.local.entity.ExpenseEntity
 import com.smartinvest.data.local.entity.FundMovementEntity
 import com.smartinvest.data.local.entity.FxRateEntity
 import com.smartinvest.data.local.entity.HoldingEntity
+import com.smartinvest.data.local.entity.HoldingMovementEntity
 import com.smartinvest.data.local.entity.InstallmentEntity
 import com.smartinvest.data.local.entity.InstrumentQuoteEntity
 import com.smartinvest.data.local.entity.MemberEntity
@@ -44,6 +46,7 @@ import com.smartinvest.data.local.entity.WalletEntity
         FundMovementEntity::class,
         WalletEntity::class,
         HoldingEntity::class,
+        HoldingMovementEntity::class,
         PortfolioSnapshotEntity::class,
         FxRateEntity::class,
         RateHistoryEntity::class,
@@ -52,7 +55,7 @@ import com.smartinvest.data.local.entity.WalletEntity
         SettlementEntity::class,
         InstrumentQuoteEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -66,6 +69,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun settlementDao(): SettlementDao
     abstract fun walletDao(): WalletDao
     abstract fun holdingDao(): HoldingDao
+    abstract fun holdingMovementDao(): HoldingMovementDao
     abstract fun instrumentQuoteDao(): InstrumentQuoteDao
     abstract fun snapshotDao(): SnapshotDao
     abstract fun fxRateDao(): FxRateDao

@@ -8,6 +8,7 @@ import com.smartinvest.domain.model.AlertSeverity
 import com.smartinvest.domain.model.AlertType
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
+import com.smartinvest.domain.model.HoldingMovementType
 import com.smartinvest.domain.model.MarketSource
 import com.smartinvest.domain.model.QuoteUnit
 import com.smartinvest.domain.model.WalletType
@@ -49,6 +50,21 @@ data class HoldingEntity(
     @ColumnInfo(defaultValue = "'PER_UNIT'") val quoteUnit: QuoteUnit = QuoteUnit.PER_UNIT,
     @ColumnInfo(defaultValue = "0") val isWallet: Boolean = false,
     @ColumnInfo(defaultValue = "1") val settlementDays: Int = 1,
+)
+
+@Entity(
+    tableName = "holding_movements",
+    indices = [Index("holdingId"), Index("dateEpochDay")],
+)
+data class HoldingMovementEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val holdingId: Long,
+    val type: HoldingMovementType,
+    val amountCents: Long,
+    val currency: CurrencyCode = CurrencyCode.ARS,
+    val dateEpochDay: Long,
+    val note: String = "",
+    val createdAt: Long,
 )
 
 @Entity(

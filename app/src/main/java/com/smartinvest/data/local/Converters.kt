@@ -7,6 +7,7 @@ import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.ExpensePaymentMethod
 import com.smartinvest.domain.model.FundMovementType
+import com.smartinvest.domain.model.HoldingMovementType
 import com.smartinvest.domain.model.MarketSource
 import com.smartinvest.domain.model.QuoteUnit
 import com.smartinvest.domain.model.WalletType
@@ -46,4 +47,8 @@ class Converters {
     @TypeConverter fun fromQuoteUnit(value: QuoteUnit): String = value.name
     @TypeConverter fun toQuoteUnit(value: String): QuoteUnit =
         QuoteUnit.entries.firstOrNull { it.name == value } ?: QuoteUnit.PER_UNIT
+
+    @TypeConverter fun fromHoldingMovementType(value: HoldingMovementType): String = value.name
+    @TypeConverter fun toHoldingMovementType(value: String): HoldingMovementType =
+        HoldingMovementType.entries.firstOrNull { it.name == value } ?: HoldingMovementType.INGRESO
 }

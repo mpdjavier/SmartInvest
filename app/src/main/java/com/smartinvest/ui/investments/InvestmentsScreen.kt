@@ -3,6 +3,7 @@
 package com.smartinvest.ui.investments
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -76,6 +77,7 @@ fun InvestmentsScreen(
     onOpenEmergency: () -> Unit,
     onOpenDailyInterest: () -> Unit = {},
     onOpenInstrumentDetail: (Long) -> Unit = {},
+    onOpenHoldingDetail: (Long) -> Unit = {},
     onOpenRebalancing: () -> Unit = {},
     onOpenReconciliation: () -> Unit = {},
     onOpenFundEvaluator: () -> Unit = {},
@@ -262,6 +264,7 @@ fun InvestmentsScreen(
                     valueArsCents = valuation?.valueArsCents ?: holding.currentValueCents,
                     mepRate = mepRate,
                     dailyInterestCents = valuation?.dailyInterestCents ?: 0L,
+                    onOpenDetail = { onOpenHoldingDetail(holding.id) },
                     onOpenEvolution = { onOpenInstrumentDetail(holding.id) },
                     onEdit = { onEditHolding(holding.id) },
                 )
@@ -507,6 +510,7 @@ private fun HoldingRow(
     valueArsCents: Long,
     mepRate: Double,
     dailyInterestCents: Long,
+    onOpenDetail: () -> Unit,
     onOpenEvolution: () -> Unit,
     onEdit: () -> Unit,
 ) {
@@ -522,6 +526,7 @@ private fun HoldingRow(
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onOpenDetail)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

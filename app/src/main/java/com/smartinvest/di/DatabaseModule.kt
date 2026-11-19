@@ -12,6 +12,7 @@ import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.data.local.dao.FundMovementDao
 import com.smartinvest.data.local.dao.FxRateDao
 import com.smartinvest.data.local.dao.HoldingDao
+import com.smartinvest.data.local.dao.HoldingMovementDao
 import com.smartinvest.data.local.dao.InstallmentDao
 import com.smartinvest.data.local.dao.InstrumentQuoteDao
 import com.smartinvest.data.local.dao.MemberDao
@@ -35,7 +36,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "smartinvest.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .build()
 
     @Provides fun memberDao(db: AppDatabase): MemberDao = db.memberDao()
@@ -46,6 +47,7 @@ object DatabaseModule {
     @Provides fun fundDao(db: AppDatabase): FundMovementDao = db.fundMovementDao()
     @Provides fun walletDao(db: AppDatabase): WalletDao = db.walletDao()
     @Provides fun holdingDao(db: AppDatabase): HoldingDao = db.holdingDao()
+    @Provides fun holdingMovementDao(db: AppDatabase): HoldingMovementDao = db.holdingMovementDao()
     @Provides fun snapshotDao(db: AppDatabase): SnapshotDao = db.snapshotDao()
     @Provides fun fxRateDao(db: AppDatabase): FxRateDao = db.fxRateDao()
     @Provides fun rateHistoryDao(db: AppDatabase): RateHistoryDao = db.rateHistoryDao()
@@ -135,6 +137,33 @@ object DatabaseModule {
     val MIGRATION_5_6 = object : Migration(5, 6) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `expenses` ADD COLUMN `recurrenceMonths` INTEGER NOT NULL DEFAULT 1")
+        }
+    }
+
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `holding_movements` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `holdingId` INTEGER NOT NULL,
+                    `type` TEXT NOT NULL,
+                    `amountCents` INTEGER NOT NULL,
+                    `currency` TEXT NOT NULL,
+                    `dateEpochDay` INTEGER NOT NULL,
+                    `note` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_holding_movements_holdingId` " +
+                    "ON `holding_movements` (`holdingId`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_holding_movements_dateEpochDay` " +
+                    "ON `holding_movements` (`dateEpochDay`)",
+            )
         }
     }
 }

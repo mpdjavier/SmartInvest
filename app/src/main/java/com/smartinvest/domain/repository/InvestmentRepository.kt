@@ -3,6 +3,8 @@ package com.smartinvest.domain.repository
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
+import com.smartinvest.domain.model.HoldingMovement
+import com.smartinvest.domain.model.HoldingMovementType
 import com.smartinvest.domain.model.InstrumentQuote
 import com.smartinvest.domain.model.MacroMarketSnapshot
 import com.smartinvest.domain.model.MarketSyncOutcome
@@ -15,11 +17,14 @@ import com.smartinvest.domain.model.SalaryPlan
 import com.smartinvest.domain.model.SyncOutcome
 import com.smartinvest.domain.model.Wallet
 import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 
 interface InvestmentRepository {
     fun observeWallets(): Flow<List<Wallet>>
     fun observeActiveWallets(): Flow<List<Wallet>>
     fun observeHoldings(): Flow<List<Holding>>
+    /** Manual income / withdrawals registered against a holding, newest first. */
+    fun observeHoldingMovements(holdingId: Long): Flow<List<HoldingMovement>>
     /** Holdings flagged as the wallet/transaction account (FCI). */
     fun observeWalletHoldings(): Flow<List<Holding>>
     fun observeQuotes(marketKey: String): Flow<List<InstrumentQuote>>
@@ -35,6 +40,19 @@ interface InvestmentRepository {
 
     suspend fun upsertHolding(holding: Holding): Long
     suspend fun deleteHolding(id: Long)
+    /**
+     * Registers a manual income / withdrawal on [holdingId] and updates the
+     * holding valuation, cost and quantity accordingly.
+     */
+    suspend fun addHoldingMovement(
+        holdingId: Long,
+        type: HoldingMovementType,
+        amountCents: Long,
+        date: LocalDate,
+        note: String = "",
+    ): Long
+    /** Deletes a movement and reverts its effect on the holding. */
+    suspend fun deleteHoldingMovement(id: Long)
 
     suspend fun syncRates(): SyncOutcome
     suspend fun syncMarketQuotes(): MarketSyncOutcome
