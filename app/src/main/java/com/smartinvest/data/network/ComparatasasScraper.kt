@@ -2,6 +2,9 @@ package com.smartinvest.data.network
 
 import com.smartinvest.data.local.entity.WalletEntity
 import com.smartinvest.di.IoDispatcher
+import com.smartinvest.domain.model.ComparaTasasCatalog
+import com.smartinvest.domain.model.ComparaTasasCategory
+import com.smartinvest.domain.model.ComparaTasasItem
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -23,6 +26,7 @@ data class ScrapedRates(
 
 interface RateScraper {
     suspend fun fetchRates(): ScrapedRates
+    suspend fun fetchCatalog(): ComparaTasasCatalog
 }
 
 @Serializable
@@ -114,6 +118,14 @@ class ComparatasasScraper @Inject constructor(
         )
     }
 
+    override suspend fun fetchCatalog(): ComparaTasasCatalog = withContext(io) {
+        val entitiesJson = runCatching { fetchText(ENTITIES_JSON_URL, acceptJson = true) }.getOrNull().orEmpty()
+        val accountsJson = runCatching { fetchText(ARGENTINADATOS_ACCOUNTS_URL, acceptJson = true) }.getOrNull().orEmpty()
+        val catalog = parseFullCatalog(entitiesJson, accountsJson)
+        if (catalog.items.isEmpty()) error("No se pudo obtener el catálogo de ComparaTasas")
+        catalog
+    }
+
     private fun fetchText(url: String, acceptJson: Boolean): String {
         val request = Request.Builder()
             .url(url)
@@ -198,6 +210,112 @@ class ComparatasasScraper @Inject constructor(
                 if (key.length >= 3) rates.putIfAbsent(key, percent)
             }
             return rates
+        }
+
+        internal fun parseFullCatalog(
+            entitiesRaw: String,
+            accountsRaw: String = "",
+        ): ComparaTasasCatalog {
+            val accountsByKey = if (accountsRaw.isNotBlank()) {
+                runCatching { json.decodeFromString<List<ArgentinaDatosAccountRateDto>>(accountsRaw) }
+                    .getOrDefault(emptyList())
+                    .filter { (it.tna ?: 0.0) > 0.0 }
+                    .associateBy { normalize(it.fondo) }
+            } else {
+                emptyMap()
+            }
+
+            val items = mutableListOf<ComparaTasasItem>()
+            var updatedAt = ""
+            val sources = mutableListOf<String>()
+
+            if (entitiesRaw.isNotBlank()) {
+                val dto = runCatching {
+                    json.decodeFromString<ComparatasasEntitiesResponseDto>(entitiesRaw)
+                }.getOrNull()
+                if (dto != null) {
+                    updatedAt = dto.updatedAt
+                    sources += "comparatasas.ar"
+                    dto.entities.forEach { entity ->
+                        val entityKey = normalize(entity.name)
+                        entity.products.forEach { prod ->
+                            val category = ComparaTasasCategory.fromRawCategory(prod.category)
+                                ?: return@forEach
+                            val ratePct = prod.value?.let { raw ->
+                                val scaled = if (kotlin.math.abs(raw) <= 2.0) raw * 100.0 else raw
+                                (scaled * 100.0).roundToLong() / 100.0
+                            }
+                            // Skip negative short-term equity FCI variations in the savings summary.
+                            if (category == ComparaTasasCategory.FONDOS_PESOS && (ratePct ?: 0.0) <= 0.0) {
+                                return@forEach
+                            }
+                            if (category == ComparaTasasCategory.INVERSIONES_USD && (ratePct ?: 0.0) <= 0.0 && prod.metric.isBlank()) {
+                                return@forEach
+                            }
+                            val prodKey = normalize(prod.product)
+                            val accountMeta = if (category == ComparaTasasCategory.CUENTAS_REMUNERADAS) {
+                                accountsByKey[prodKey] ?: accountsByKey[entityKey]
+                            } else {
+                                null
+                            }
+                            val teaPct = accountMeta?.tea?.takeIf { it > 0.0 }?.let { raw ->
+                                val scaled = if (raw <= 2.0) raw * 100.0 else raw
+                                (scaled * 100.0).roundToLong() / 100.0
+                            }
+                            val cap = accountMeta?.tope?.toLong()?.takeIf { it > 0L }
+                            items += ComparaTasasItem(
+                                entityName = entity.name.ifBlank { entity.slug },
+                                entityType = entity.type,
+                                categoryName = category.name,
+                                rawCategory = prod.category,
+                                productName = prod.product.ifBlank { entity.name },
+                                ratePercent = ratePct,
+                                teaPercent = teaPct,
+                                capPesos = cap,
+                                conditions = accountMeta?.condicionesCorto?.trim().orEmpty(),
+                                metricLabel = prod.metric.trim(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (accountsByKey.isNotEmpty()) {
+                sources += "ArgentinaDatos · cuentas"
+                val existingAccountKeys = items
+                    .filter { it.categoryName == ComparaTasasCategory.CUENTAS_REMUNERADAS.name }
+                    .map { normalize(it.productName) }
+                    .toSet()
+                accountsByKey.forEach { (key, acc) ->
+                    if (key !in existingAccountKeys) {
+                        val tnaPct = toPercent(acc.tna) ?: return@forEach
+                        val teaPct = acc.tea?.takeIf { it > 0.0 }?.let { raw ->
+                            val scaled = if (raw <= 2.0) raw * 100.0 else raw
+                            (scaled * 100.0).roundToLong() / 100.0
+                        }
+                        items += ComparaTasasItem(
+                            entityName = acc.fondo,
+                            entityType = "billetera",
+                            categoryName = ComparaTasasCategory.CUENTAS_REMUNERADAS.name,
+                            rawCategory = "cuentas-remuneradas",
+                            productName = acc.fondo,
+                            ratePercent = tnaPct,
+                            teaPercent = teaPct,
+                            capPesos = acc.tope?.toLong()?.takeIf { it > 0L },
+                            conditions = acc.condicionesCorto.trim(),
+                            metricLabel = "TNA ${String.format(java.util.Locale.forLanguageTag("es-AR"), "%.2f", tnaPct)}%",
+                        )
+                        if (updatedAt.isBlank()) updatedAt = acc.fecha
+                    }
+                }
+            }
+
+            return ComparaTasasCatalog(
+                updatedAt = updatedAt,
+                fetchedAtMillis = System.currentTimeMillis(),
+                source = sources.distinct().joinToString(" + ").ifBlank { "comparatasas.ar" },
+                items = items,
+            )
         }
 
         internal fun parseHtmlTables(html: String): Map<String, Double> {

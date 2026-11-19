@@ -60,6 +60,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val paymentAgenda = stringPreferencesKey("payment_agenda_json")
         val fundWatchlist = stringPreferencesKey("fund_watchlist_json")
         val remConfig = stringPreferencesKey("rem_config_json")
+        val comparaTasasConfig = stringPreferencesKey("comparatasas_config_json")
     }
 
     override val settings: Flow<AppSettings> = context.settingsDataStore.data
@@ -101,6 +102,7 @@ class SettingsRepositoryImpl @Inject constructor(
             prefs[Keys.paymentAgenda] = settings.paymentAgendaJson
             prefs[Keys.fundWatchlist] = settings.fundWatchlistJson
             prefs[Keys.remConfig] = settings.remConfigJson
+            prefs[Keys.comparaTasasConfig] = settings.comparaTasasConfigJson
             prefs[Keys.initialized] = true
         }
     }
@@ -158,5 +160,6 @@ class SettingsRepositoryImpl @Inject constructor(
         fundWatchlistJson = this[Keys.fundWatchlist] ?: "",
         remConfigJson = this[Keys.remConfig] ?: "",
         macroMarketJson = this[Keys.macroMarket] ?: "",
+        comparaTasasConfigJson = this[Keys.comparaTasasConfig] ?: "",
     )
 }

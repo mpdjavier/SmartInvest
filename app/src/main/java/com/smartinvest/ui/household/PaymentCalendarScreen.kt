@@ -57,7 +57,9 @@ import com.smartinvest.domain.engine.PaymentAgendaMonthSummary
 import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.engine.PaymentAgendaStatus
 import com.smartinvest.domain.engine.PaymentAgendaTemplate
+import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.ExpenseRecurrence
+import com.smartinvest.domain.repository.HouseholdRepository
 import com.smartinvest.domain.repository.SettingsRepository
 import com.smartinvest.ui.components.EmptyState
 import com.smartinvest.ui.components.HeroAmountText
@@ -95,11 +97,13 @@ data class PaymentCalendarUiState(
 private data class CalendarSources(
     val expenses: List<HistoricalExpenseRecord>,
     val agendaJson: String,
+    val creditCards: List<CreditCard> = emptyList(),
 )
 
 @HiltViewModel
 class PaymentCalendarViewModel @Inject constructor(
     expenseDao: ExpenseDao,
+    householdRepository: HouseholdRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
@@ -110,7 +114,8 @@ class PaymentCalendarViewModel @Inject constructor(
     private val sourcesFlow = combine(
         expenseDao.observeAll(),
         settingsRepository.settings,
-    ) { expenses, settings ->
+        householdRepository.observeCards(includeInactive = false),
+    ) { expenses, settings, cards ->
         val records = expenses.map {
             HistoricalExpenseRecord(
                 id = it.id,
@@ -122,7 +127,7 @@ class PaymentCalendarViewModel @Inject constructor(
                 recurrenceMonths = it.recurrenceMonths,
             )
         }
-        CalendarSources(records, settings.paymentAgendaJson)
+        CalendarSources(records, settings.paymentAgendaJson, cards)
     }
 
     val uiState = combine(
@@ -140,6 +145,7 @@ class PaymentCalendarViewModel @Inject constructor(
             serviceCategoryIds = emptySet(),
             templates = templates,
             recurringOnly = true,
+            creditCards = sources.creditCards,
         )
         val effectiveSelected = picked
             ?.takeIf { YearMonth.from(it) == selectedMonth }

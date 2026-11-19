@@ -26,6 +26,7 @@ class AppViewModel @Inject constructor(
             runCatching { bootstrap.seedIfNeeded() }
             runCatching { investments.refreshDollarRates() }
             runCatching { investments.refreshSnapshot() }
+            runCatching { investments.refreshComparaTasasCatalog() }
             runCatching { alerts.scanAlerts() }
         }
     }

@@ -68,6 +68,8 @@ data class AppSettings(
     val remConfigJson: String = "",
     /** Serialized [MacroMarketSnapshot] with the last automatic market reading. */
     val macroMarketJson: String = "",
+    /** Serialized [ComparaTasasConfig] with selected scraping categories and cached catalog. */
+    val comparaTasasConfigJson: String = "",
 ) {
     val previousCarryBand: CarryRiskBand?
         get() = previousCarryBandName
@@ -77,6 +79,9 @@ data class AppSettings(
     /** Automatic market reading; empty snapshot when nothing was fetched yet. */
     val macroMarket: MacroMarketSnapshot
         get() = MacroMarketSnapshot.decode(macroMarketJson)
+
+    val comparaTasasConfig: ComparaTasasConfig
+        get() = ComparaTasasConfig.decode(comparaTasasConfigJson)
 
     val salaryWeights: List<Int>
         get() = listOf(salaryFciPercent, salaryLecapPercent, salaryMepPercent, salaryBondPercent)

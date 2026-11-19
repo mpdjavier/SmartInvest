@@ -81,6 +81,7 @@ fun InvestmentsScreen(
     onOpenRebalancing: () -> Unit = {},
     onOpenReconciliation: () -> Unit = {},
     onOpenFundEvaluator: () -> Unit = {},
+    onOpenComparaTasas: () -> Unit = {},
     onOpenRem: () -> Unit = {},
     viewModel: InvestmentsViewModel = hiltViewModel(),
 ) {
@@ -165,16 +166,31 @@ fun InvestmentsScreen(
         }
 
         item {
-            Button(
-                onClick = viewModel::syncRates,
-                enabled = !state.isWorking,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Sincronizar TNA", maxLines = 1, softWrap = false)
+                Button(
+                    onClick = viewModel::syncRates,
+                    enabled = !state.isWorking,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Sincronizar TNA", maxLines = 1, softWrap = false)
+                }
+                OutlinedButton(
+                    onClick = onOpenComparaTasas,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                ) {
+                    Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("ComparaTasas", maxLines = 1, softWrap = false)
+                }
             }
         }
 

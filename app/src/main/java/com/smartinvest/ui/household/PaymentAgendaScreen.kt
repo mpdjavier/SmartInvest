@@ -60,6 +60,7 @@ import com.smartinvest.domain.engine.PaymentAgendaMonthSummary
 import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.engine.PaymentAgendaStatus
 import com.smartinvest.domain.engine.PaymentAgendaTemplate
+import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.ExpensePaymentMethod
 import com.smartinvest.domain.model.ExpenseRecurrence
 import com.smartinvest.domain.model.Holding
@@ -134,6 +135,7 @@ private data class AgendaSources(
     val members: List<HouseholdMember>,
     val walletHoldings: List<Holding>,
     val agendaJson: String,
+    val creditCards: List<CreditCard> = emptyList(),
 )
 
 @HiltViewModel
@@ -155,7 +157,7 @@ class PaymentAgendaViewModel @Inject constructor(
     private var latestWallets: List<Holding> = emptyList()
     private var latestTemplates: List<PaymentAgendaTemplate> = emptyList()
 
-    private val sourcesFlow = combine(
+    private val baseSourcesFlow = combine(
         expenseDao.observeAll(),
         householdRepository.observeCategories(includeArchived = false),
         householdRepository.observeMembers(),
@@ -176,6 +178,13 @@ class PaymentAgendaViewModel @Inject constructor(
         AgendaSources(records, categories, members, wallets, settings.paymentAgendaJson)
     }
 
+    private val sourcesFlow = combine(
+        baseSourcesFlow,
+        householdRepository.observeCards(includeInactive = false),
+    ) { base, cards ->
+        base.copy(creditCards = cards)
+    }
+
     val uiState = combine(
         month,
         sourcesFlow,
@@ -187,7 +196,7 @@ class PaymentAgendaViewModel @Inject constructor(
         latestMembers = sources.members
         latestWallets = sources.walletHoldings
         val templates = PaymentAgendaEngine.decodeTemplates(sources.agendaJson)
-        latestTemplates = templates
+        latestTemplates = PaymentAgendaEngine.mergeCreditCardTemplates(templates, sources.creditCards)
 
         val serviceCatIds = sources.categories
             .filter { it.name.contains("servicio", ignoreCase = true) }
@@ -200,6 +209,7 @@ class PaymentAgendaViewModel @Inject constructor(
             expenses = sources.expenses,
             serviceCategoryIds = serviceCatIds,
             templates = templates,
+            creditCards = sources.creditCards,
         )
 
         PaymentAgendaUiState(

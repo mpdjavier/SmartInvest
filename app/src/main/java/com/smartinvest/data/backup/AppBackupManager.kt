@@ -85,6 +85,7 @@ data class BackupSettingsDto(
     val fundWatchlistJson: String = "",
     val remConfigJson: String = "",
     val macroMarketJson: String = "",
+    val comparaTasasConfigJson: String = "",
 )
 
 @Serializable
@@ -367,6 +368,7 @@ class AppBackupManager @Inject constructor(
                 fundWatchlistJson = s.fundWatchlistJson,
                 remConfigJson = s.remConfigJson,
                 macroMarketJson = s.macroMarketJson,
+                comparaTasasConfigJson = s.comparaTasasConfigJson,
             ),
             members = memberDao.getAll().map {
                 BackupMemberDto(it.id, it.name, it.isCurrentUser, it.colorHex, it.isActive)
@@ -820,6 +822,7 @@ class AppBackupManager @Inject constructor(
                 fundWatchlistJson = s.fundWatchlistJson,
                 remConfigJson = s.remConfigJson,
                 macroMarketJson = s.macroMarketJson,
+                comparaTasasConfigJson = s.comparaTasasConfigJson,
             ),
         )
 

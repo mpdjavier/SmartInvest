@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **180 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **182 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -25,7 +25,8 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 
 ### Inicio
 
-- **Pagos de hoy y mañana**: card con los pagos recurrentes y los ítems de la agenda que vencen hoy o mañana, monto total y acceso directo al calendario completo. Si no hay vencimientos, explica cómo marcar un gasto como recurrente.
+- **Pagos de hoy y mañana**: card con los pagos recurrentes, los ítems de la agenda y los **cierres y vencimientos de tarjetas de crédito configuradas** que vencen hoy o mañana, monto total y acceso directo al calendario completo. Si no hay vencimientos, explica cómo marcar un gasto como recurrente.
+- **Resumen ComparaTasas configurable en Inicio**: tarjeta con el top 3 de cada categoría tildada en el formulario de ComparaTasas (cuentas remuneradas, FCI en pesos, plazos fijos, inversiones en USD, cripto, comisiones de brókers, créditos UVA y cobro/remesas) y botón directo **«Qué ver / Ver todo»** (más chip rápido **«ComparaTasas»** en Acciones rápidas).
 - Patrimonio total valuado a MEP, evolución, flujo estimado, cuentas del hogar, dólar y alertas.
 - Acciones rápidas: nuevo gasto, fondo común, repartir sueldo, rescate, analítica, búsqueda/reportes y comparador REM.
 
@@ -36,7 +37,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - Gastos en efectivo, transferencia, tarjeta de crédito, **fondo común** o **FCI billetera** (descuenta el saldo del FCI marcado como billetera). El medio predeterminado es el FCI billetera si está configurado; si no, efectivo.
 - **Sugerencias de descripción**: al escribir los primeros caracteres, propone descripciones de gastos anteriores para cargar compras recurrentes con un toque.
 - **Gastos recurrentes**: el interruptor **«Recurrente»** del editor marca el gasto y habilita la **frecuencia** (mensual, bimestral, trimestral, semestral o anual). La cadencia se ancla al mes del primer pago: un gasto bimestral cargado en enero se proyecta en enero, marzo, mayo…, no todos los meses.
-- **Calendario de pagos**: grilla mensual con indicador en los días que tienen uno o más pagos; al tocar un día se listan sus pagos recurrentes/agendados. Solo aparecen los gastos marcados como recurrentes y los ítems manuales de la agenda; los meses con un pago real o un tilde manual siempre se muestran aunque salgan de la cadencia. Los pagos registrados desde Hogar se tildan solos y los demás se pueden tildar a mano (se guarda en `manualPaidMonths` de la agenda). Cuando llega la factura, **«Cambiar fecha de pago»** permite mover el vencimiento dentro del mes visible: se guarda como override mensual (`monthDateOverrides[YYYY-MM]`) sin tocar la frecuencia, el monto ni los demás meses.
+- **Calendario y Agenda de pagos**: grilla mensual con indicador en los días que tienen uno o más pagos; al tocar un día se listan sus pagos recurrentes/agendados. Incluye automáticamente los **cierres (`Cierre <Tarjeta>`) y vencimientos (`Resumen <Tarjeta>`) de todas las tarjetas de crédito activas configuradas** (fusionándolos con cualquier resumen importado por PDF o cambio manual de fecha/monto), además de los gastos marcados como recurrentes y los ítems manuales de la agenda. Los pagos registrados desde Hogar se tildan solos y los demás se pueden tildar a mano (se guarda en `manualPaidMonths` de la agenda). Cuando llega la factura o el resumen, **«Cambiar fecha de pago»** permite mover el vencimiento dentro del mes visible: se guarda como override mensual (`monthDateOverrides[YYYY-MM]`) sin tocar la frecuencia, el monto ni los demás meses.
 - **Cuotas**: una compra en N cuotas impacta cada mes solo por el valor de la cuota, nunca por el total.
 - Tarjetas con **cierre y vencimiento manuales**; la primera cuota se imputa según la fecha de compra y el día de cierre.
 - Fondo común: aportes, extracciones y compras pagadas con el fondo, con saldo en tiempo real.
@@ -193,6 +194,7 @@ Pantallas secundarias (con barra superior y flecha de volver):
 | `holding_detail/{holdingId}` | Detalle de activo e histórico de movimientos (alta manual de ingresos/egresos y reversión con ajuste automático de valuación, costo y cantidad) |
 | `portfolio_reconciliation` | Ajuste manual de saldos en ARS y USD, carga de lista por texto y verificación de cálculos/evolución |
 | `fund_evaluator` | Evaluador FCI con rentabilidad y estabilidad configurables: universo Eco Valores (Clases A) por defecto o «Todo el catálogo», orden por rentabilidad/estabilidad/caída/volatilidad, piso de estabilidad, rango de fechas personalizado, superposición de dos clases, referencia Adcap Balanceado III, simulador y buscador |
+| `comparatasas` | Resumen de ComparaTasas con formulario de casillas (tildes) para elegir qué categorías ver (cuentas remuneradas, FCI, plazos fijos, USD, cripto, comisiones de brókers, créditos UVA y cobro/remesas) y acceso sincronizado en Inicio |
 | `analytics` | Analítica de cartera |
 | `salary` | Repartir sueldo |
 | `emergency` | Rescate de emergencia |
@@ -726,7 +728,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**180 tests, 0 fallos, 25 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**182 tests, 0 fallos, 25 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 

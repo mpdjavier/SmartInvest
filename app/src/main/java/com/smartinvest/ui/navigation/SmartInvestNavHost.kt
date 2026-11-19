@@ -62,6 +62,7 @@ import com.smartinvest.ui.household.ReceiptImportScreen
 import com.smartinvest.ui.importer.ImportScreen
 import com.smartinvest.ui.investments.DailyInterestScreen
 import com.smartinvest.ui.investments.FundEvaluatorScreen
+import com.smartinvest.ui.investments.ComparaTasasScreen
 import com.smartinvest.ui.investments.HoldingEditorScreen
 import com.smartinvest.ui.investments.HoldingDetailScreen
 import com.smartinvest.ui.investments.InstrumentDetailScreen
@@ -105,6 +106,7 @@ object Routes {
     const val EXPENSE_REPORT = "expense_report"
     const val PORTFOLIO_RECONCILIATION = "portfolio_reconciliation"
     const val FUND_EVALUATOR = "fund_evaluator"
+    const val COMPARATASAS = "comparatasas"
 
     fun expenseEditor(month: YearMonth, expenseId: Long = 0L): String =
         "expense_editor/$month?expenseId=$expenseId"
@@ -149,6 +151,7 @@ private val secondaryTitles = mapOf(
     Routes.EXPENSE_REPORT to "Reportes de gastos",
     Routes.PORTFOLIO_RECONCILIATION to "Ajuste y control de cartera",
     Routes.FUND_EVALUATOR to "Evaluador FCI",
+    Routes.COMPARATASAS to "Resumen ComparaTasas",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -268,6 +271,7 @@ fun SmartInvestNavHost(
                     onOpenPortfolioReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
                     onOpenRem = { navController.navigate(Routes.REM) },
                     onOpenPaymentCalendar = { navController.navigate(Routes.PAYMENT_CALENDAR) },
+                    onOpenComparaTasas = { navController.navigate(Routes.COMPARATASAS) },
                 )
             }
 
@@ -325,12 +329,17 @@ fun SmartInvestNavHost(
                     onOpenRebalancing = { navController.navigate(Routes.REBALANCING) },
                     onOpenReconciliation = { navController.navigate(Routes.PORTFOLIO_RECONCILIATION) },
                     onOpenFundEvaluator = { navController.navigate(Routes.FUND_EVALUATOR) },
+                    onOpenComparaTasas = { navController.navigate(Routes.COMPARATASAS) },
                     onOpenRem = { navController.navigate(Routes.REM) },
                 )
             }
 
             composable(Routes.FUND_EVALUATOR) {
                 FundEvaluatorScreen()
+            }
+
+            composable(Routes.COMPARATASAS) {
+                ComparaTasasScreen()
             }
 
             composable(Routes.PORTFOLIO_RECONCILIATION) {

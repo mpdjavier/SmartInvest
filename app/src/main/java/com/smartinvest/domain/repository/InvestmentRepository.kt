@@ -1,5 +1,6 @@
 package com.smartinvest.domain.repository
 
+import com.smartinvest.domain.model.ComparaTasasCatalog
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
@@ -55,6 +56,7 @@ interface InvestmentRepository {
     suspend fun deleteHoldingMovement(id: Long)
 
     suspend fun syncRates(): SyncOutcome
+    suspend fun refreshComparaTasasCatalog(): Result<ComparaTasasCatalog>
     suspend fun syncMarketQuotes(): MarketSyncOutcome
     suspend fun syncInstrument(
         marketKey: String,

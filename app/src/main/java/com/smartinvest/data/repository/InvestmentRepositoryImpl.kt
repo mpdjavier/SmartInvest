@@ -22,6 +22,7 @@ import com.smartinvest.data.network.ArgentinaDolarPointDto
 import com.smartinvest.data.network.DolarApiService
 import com.smartinvest.data.network.MarketDataService
 import com.smartinvest.data.network.MarketKeyParser
+import com.smartinvest.data.network.RateScraper
 import com.smartinvest.data.network.toDomain
 import com.smartinvest.data.widget.WidgetRefresher
 import com.smartinvest.di.IoDispatcher
@@ -31,6 +32,8 @@ import com.smartinvest.domain.engine.PortfolioReconciliationEngine
 import com.smartinvest.domain.engine.PortfolioValuationEngine
 import com.smartinvest.domain.model.AllocationBucket
 import com.smartinvest.domain.model.AssetType
+import com.smartinvest.domain.model.ComparaTasasCatalog
+import com.smartinvest.domain.model.ComparaTasasConfig
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
@@ -72,6 +75,7 @@ class InvestmentRepositoryImpl @Inject constructor(
     private val rateHistoryDao: RateHistoryDao,
     private val salaryPlanDao: SalaryPlanDao,
     private val rateSyncService: RateSyncService,
+    private val rateScraper: RateScraper,
     private val marketDataService: MarketDataService,
     private val dolarApi: DolarApiService,
     private val argentinaDatos: ArgentinaDatosService,
@@ -370,8 +374,21 @@ class InvestmentRepositoryImpl @Inject constructor(
 
     override suspend fun syncRates(): SyncOutcome {
         val outcome = rateSyncService.sync()
+        runCatching { refreshComparaTasasCatalog() }
         widgetRefresher.refresh()
         return outcome
+    }
+
+    override suspend fun refreshComparaTasasCatalog(): Result<ComparaTasasCatalog> = withContext(io) {
+        runCatching {
+            val catalog = rateScraper.fetchCatalog()
+            val currentSettings = settingsRepository.currentSettings()
+            val updatedConfig = currentSettings.comparaTasasConfig.copy(catalog = catalog)
+            settingsRepository.update(
+                currentSettings.copy(comparaTasasConfigJson = ComparaTasasConfig.encode(updatedConfig)),
+            )
+            catalog
+        }
     }
 
     override suspend fun syncMarketQuotes(): MarketSyncOutcome = withContext(io) {

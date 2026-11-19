@@ -1,5 +1,6 @@
 package com.smartinvest.domain.engine
 
+import com.smartinvest.domain.model.CreditCard
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -334,5 +335,52 @@ class PaymentAgendaEngineTest {
             LocalDate.of(2026, 5, 12),
             summary(YearMonth.of(2026, 5)).rows.single().scheduledDate,
         )
+    }
+
+    @Test
+    fun `automatically projects configured credit card closing and due dates and merges overrides`() {
+        val cards = listOf(
+            CreditCard(
+                id = 1,
+                name = "Mastercard Black",
+                issuer = "Galicia",
+                brand = "MASTERCARD",
+                closingDay = 17,
+                dueDay = 26,
+                colorHex = "#F59E0B",
+                isActive = true,
+            ),
+        )
+        val templates = listOf(
+            PaymentAgendaTemplate(
+                key = PaymentAgendaEngine.normalizeKey("Resumen Mastercard Black"),
+                name = "Resumen Mastercard Black",
+                customDayOfMonth = 26,
+                estimatedAmountCents = 247_282_15L,
+                monthDateOverrides = mapOf("2026-11" to "2026-11-20"),
+            ),
+        )
+
+        val summary = PaymentAgendaEngine.buildForMonth(
+            month = YearMonth.of(2026, 11),
+            today = LocalDate.of(2026, 11, 15),
+            expenses = emptyList(),
+            serviceCategoryIds = emptySet(),
+            templates = templates,
+            recurringOnly = true,
+            creditCards = cards,
+        )
+
+        assertEquals(2, summary.rows.size)
+        val closing = summary.rows.first { it.name.startsWith("Cierre") }
+        val due = summary.rows.first { it.name.startsWith("Resumen") }
+
+        assertEquals("Cierre Mastercard Black", closing.name)
+        assertEquals(LocalDate.of(2026, 11, 17), closing.scheduledDate)
+        assertEquals(2L, closing.daysUntilDue)
+
+        assertEquals("Resumen Mastercard Black", due.name)
+        assertEquals(LocalDate.of(2026, 11, 20), due.scheduledDate)
+        assertEquals(247_282_15L, due.amountCents)
     }
 }

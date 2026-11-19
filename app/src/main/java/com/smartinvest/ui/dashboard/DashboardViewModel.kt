@@ -8,12 +8,14 @@ import com.smartinvest.domain.engine.HistoricalExpenseRecord
 import com.smartinvest.domain.engine.PaymentAgendaEngine
 import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.model.AppAlert
+import com.smartinvest.domain.model.ComparaTasasConfig
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.HouseholdSummary
 import com.smartinvest.domain.usecase.ObserveHouseholdSummaryUseCase
 import com.smartinvest.domain.usecase.ObservePortfolioOverviewUseCase
 import com.smartinvest.domain.usecase.PortfolioOverview
 import com.smartinvest.domain.repository.AlertsRepository
+import com.smartinvest.domain.repository.HouseholdRepository
 import com.smartinvest.domain.repository.InvestmentRepository
 import com.smartinvest.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,6 +40,7 @@ data class DashboardUiState(
     val hideAmounts: Boolean = false,
     /** Pending recurring payments scheduled for today or tomorrow. */
     val upcomingPayments: List<PaymentAgendaRow> = emptyList(),
+    val comparaTasas: ComparaTasasConfig = ComparaTasasConfig(),
     val today: LocalDate = DateUtils.today(),
 )
 
@@ -59,6 +62,7 @@ class DashboardViewModel @Inject constructor(
     observePortfolio: ObservePortfolioOverviewUseCase,
     observeHousehold: ObserveHouseholdSummaryUseCase,
     expenseDao: ExpenseDao,
+    householdRepository: HouseholdRepository,
     private val investments: InvestmentRepository,
     private val alertsRepository: AlertsRepository,
     private val settingsRepository: SettingsRepository,
@@ -92,7 +96,8 @@ class DashboardViewModel @Inject constructor(
     private val upcomingPayments = combine(
         expenseDao.observeAll(),
         settingsRepository.settings,
-    ) { expenses, settings ->
+        householdRepository.observeCards(includeInactive = false),
+    ) { expenses, settings, cards ->
         val today = DateUtils.today()
         val tomorrow = today.plusDays(1)
         val records = expenses.map {
@@ -116,6 +121,7 @@ class DashboardViewModel @Inject constructor(
                 serviceCategoryIds = emptySet(),
                 templates = templates,
                 recurringOnly = true,
+                creditCards = cards,
             ).rows
         }.filter { row ->
             !row.isPaid && (row.scheduledDate == today || row.scheduledDate == tomorrow)
@@ -140,6 +146,7 @@ class DashboardViewModel @Inject constructor(
             message = e.message,
             hideAmounts = settings.hideAmounts,
             upcomingPayments = payments,
+            comparaTasas = settings.comparaTasasConfig,
             today = DateUtils.today(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
@@ -150,6 +157,7 @@ class DashboardViewModel @Inject constructor(
             refreshing.value = true
             message.value = null
             val fx = investments.refreshDollarRates()
+            runCatching { investments.refreshComparaTasasCatalog() }
             investments.refreshSnapshot()
             alertsRepository.scanAlerts()
             message.value = if (fx.isSuccess) {

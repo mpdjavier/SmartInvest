@@ -63,6 +63,8 @@ import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.model.AlertSeverity
 import com.smartinvest.domain.model.AppAlert
+import com.smartinvest.domain.model.ComparaTasasCategory
+import com.smartinvest.domain.model.ComparaTasasConfig
 import com.smartinvest.domain.model.ExpenseRecurrence
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.HouseholdSummary
@@ -79,7 +81,10 @@ import com.smartinvest.ui.components.PortfolioChart
 import com.smartinvest.ui.components.SectionHeader
 import com.smartinvest.ui.components.SmartCard
 import com.smartinvest.ui.components.StatTile
+import com.smartinvest.ui.components.TagPill
 import com.smartinvest.ui.components.ThinDivider
+import com.smartinvest.ui.investments.categoryAccent
+import com.smartinvest.ui.investments.sortItemsForCategory
 import com.smartinvest.ui.theme.Amber
 import com.smartinvest.ui.theme.Emerald
 import com.smartinvest.ui.theme.EmeraldSoft
@@ -109,6 +114,7 @@ fun DashboardScreen(
     onOpenPortfolioReconciliation: () -> Unit = {},
     onOpenRem: () -> Unit = {},
     onOpenPaymentCalendar: () -> Unit = {},
+    onOpenComparaTasas: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -258,6 +264,15 @@ fun DashboardScreen(
             DollarCard(rates = state.fxRates)
         }
 
+        if (state.comparaTasas.showOnDashboard) {
+            item {
+                ComparaTasasDashboardCard(
+                    config = state.comparaTasas,
+                    onOpenComparaTasas = onOpenComparaTasas,
+                )
+            }
+        }
+
         if (state.alerts.isNotEmpty()) {
             item {
                 AlertsCard(
@@ -319,6 +334,11 @@ fun DashboardScreen(
                     AssistChip(
                         onClick = onOpenRem,
                         label = { Text("Comparador REM") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(17.dp)) },
+                    )
+                    AssistChip(
+                        onClick = onOpenComparaTasas,
+                        label = { Text("ComparaTasas") },
                         leadingIcon = { Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(17.dp)) },
                     )
                 }
@@ -717,6 +737,77 @@ private fun DollarCard(rates: List<FxRate>) {
                                 ),
                                 color = if (rate.house == "bolsa") Emerald else MaterialTheme.colorScheme.onSurface,
                             )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ComparaTasasDashboardCard(
+    config: ComparaTasasConfig,
+    onOpenComparaTasas: () -> Unit,
+) {
+    val active = config.activeCategories
+    val items = config.catalog.items
+    val locale = java.util.Locale.forLanguageTag("es-AR")
+    SmartCard {
+        SectionHeader(
+            title = "Resumen ComparaTasas",
+            subtitle = if (active.isEmpty()) {
+                "Elegí qué secciones ver desde el formulario"
+            } else {
+                "${active.size} secciones tildadas · top por categoría"
+            },
+            actionLabel = "Qué ver / Ver todo",
+            onAction = onOpenComparaTasas,
+        )
+        Spacer(Modifier.height(10.dp))
+        if (active.isEmpty()) {
+            Text(
+                "No hay categorías seleccionadas. Tocá «Qué ver / Ver todo» para tildar cuentas remuneradas, FCI, plazos fijos, USD, cripto o comisiones.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else if (items.isEmpty()) {
+            Text(
+                "Tocá «Qué ver / Ver todo» o el botón Actualizar arriba a la derecha para descargar el relevamiento de ComparaTasas.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                active.forEach { category ->
+                    val topItems = sortItemsForCategory(
+                        category,
+                        items.filter { it.categoryName == category.name },
+                    ).take(3)
+                    if (topItems.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                category.label.uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = categoryAccent(category),
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                topItems.forEach { item ->
+                                    val badge = item.metricLabel.ifBlank {
+                                        item.ratePercent?.let {
+                                            "TNA " + String.format(locale, "%.2f%%", it)
+                                        } ?: ""
+                                    }
+                                    TagPill(
+                                        text = "${item.entityName}: $badge",
+                                        color = categoryAccent(category),
+                                    )
+                                }
+                            }
                         }
                     }
                 }

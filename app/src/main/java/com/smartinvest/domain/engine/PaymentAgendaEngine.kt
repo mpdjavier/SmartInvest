@@ -1,6 +1,7 @@
 package com.smartinvest.domain.engine
 
 import com.smartinvest.data.importer.ReceiptParser
+import com.smartinvest.domain.model.CreditCard
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -125,8 +126,10 @@ object PaymentAgendaEngine {
         serviceCategoryIds: Set<Long>,
         templates: List<PaymentAgendaTemplate>,
         recurringOnly: Boolean = false,
+        creditCards: List<CreditCard> = emptyList(),
     ): PaymentAgendaMonthSummary {
-        val templateMap = templates.associateBy { it.key }
+        val effectiveTemplates = mergeCreditCardTemplates(templates, creditCards)
+        val templateMap = effectiveTemplates.associateBy { it.key }
         val templateKeys = templateMap.keys
 
         val relevantExpenses = expenses.filter { exp ->
@@ -256,5 +259,88 @@ object PaymentAgendaEngine {
         if (intervalMonths <= 1) return true
         val diff = ChronoUnit.MONTHS.between(anchorMonth, month)
         return diff >= 0L && diff % intervalMonths == 0L
+    }
+
+    /**
+     * Synthesizes `Resumen <Tarjeta>` (due date) and `Cierre <Tarjeta>` (closing date)
+     * templates for every active configured [CreditCard], merging with any user-saved
+     * or receipt-imported template so date overrides, amounts and paid ticks are preserved.
+     */
+    fun mergeCreditCardTemplates(
+        templates: List<PaymentAgendaTemplate>,
+        creditCards: List<CreditCard>,
+    ): List<PaymentAgendaTemplate> {
+        val activeCards = creditCards.filter {
+            it.isActive &&
+                it.name.isNotBlank() &&
+                !it.name.contains("SplitHome", ignoreCase = true)
+        }
+        if (activeCards.isEmpty()) return templates
+
+        val byKey = templates.associateBy { it.key }.toMutableMap()
+
+        for (card in activeCards) {
+            val cleanCardName = card.name.trim()
+            val cardKeyToken = normalizeKey(cleanCardName)
+            if (cardKeyToken.isBlank()) continue
+
+            val dueTitle = "Resumen $cleanCardName"
+            val dueKey = normalizeKey(dueTitle)
+            val matchingDueKey = byKey.keys.firstOrNull { k ->
+                k == dueKey || (k.startsWith("resumen ") && (k.contains(cardKeyToken) || cardKeyToken.contains(k.removePrefix("resumen ").trim())))
+            } ?: dueKey
+            val existingDue = byKey[matchingDueKey]
+            val dueNotesDefault = buildString {
+                append("Vencimiento tarjeta ${cleanCardName}")
+                if (card.issuer.isNotBlank()) append(" (${card.issuer})")
+                append(" · Cierra día ${card.closingDay} · Vence día ${card.dueDay}")
+            }
+            byKey[matchingDueKey] = if (existingDue != null) {
+                existingDue.copy(
+                    customDayOfMonth = existingDue.customDayOfMonth ?: card.dueDay.coerceIn(1, 31),
+                    notes = existingDue.notes.ifBlank { dueNotesDefault },
+                )
+            } else {
+                PaymentAgendaTemplate(
+                    key = dueKey,
+                    name = dueTitle,
+                    customDayOfMonth = card.dueDay.coerceIn(1, 31),
+                    estimatedAmountCents = 0L,
+                    alertEnabled = true,
+                    alertDaysBefore = 5,
+                    notes = dueNotesDefault,
+                )
+            }
+
+            val closeTitle = "Cierre $cleanCardName"
+            val closeKey = normalizeKey(closeTitle)
+            val matchingCloseKey = byKey.keys.firstOrNull { k ->
+                k == closeKey || (k.startsWith("cierre ") && (k.contains(cardKeyToken) || cardKeyToken.contains(k.removePrefix("cierre ").trim())))
+            } ?: closeKey
+            val existingClose = byKey[matchingCloseKey]
+            val closeNotesDefault = buildString {
+                append("Cierre de resumen de ${cleanCardName}")
+                if (card.issuer.isNotBlank()) append(" (${card.issuer})")
+                append(" · Vence día ${card.dueDay}")
+            }
+            byKey[matchingCloseKey] = if (existingClose != null) {
+                existingClose.copy(
+                    customDayOfMonth = existingClose.customDayOfMonth ?: card.closingDay.coerceIn(1, 31),
+                    notes = existingClose.notes.ifBlank { closeNotesDefault },
+                )
+            } else {
+                PaymentAgendaTemplate(
+                    key = closeKey,
+                    name = closeTitle,
+                    customDayOfMonth = card.closingDay.coerceIn(1, 31),
+                    estimatedAmountCents = 0L,
+                    alertEnabled = true,
+                    alertDaysBefore = 3,
+                    notes = closeNotesDefault,
+                )
+            }
+        }
+
+        return byKey.values.toList()
     }
 }
