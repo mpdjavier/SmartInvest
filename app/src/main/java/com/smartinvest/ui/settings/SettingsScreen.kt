@@ -389,10 +389,11 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     if (settings.pesoReferenceTnaPercent > 0.0) {
-                        "Se usa la TNA manual para comparar contra la devaluación."
+                        "Se usa la TNA manual como respaldo para el colchón de carry."
                     } else {
-                        "Automática: promedio ponderado por saldo de billeteras ARS y " +
-                            "tenencias en pesos (LECAP, BONCAP, FCI, bonos)."
+                        "Automática: la mediana de TNA de plazo fijo 30 d (BCRA vía " +
+                            "ArgentinaDatos). Si no hay dato, se usa el promedio ponderado de " +
+                            "billeteras y tenencias en pesos."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -434,14 +435,22 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Nivel > 800 o suba > 150 pts en 30 días pone techo AMARILLO: no se puede " +
-                        "estar en VERDE aunque la brecha esté planchada.",
+                    "Nivel >800 o suba >150 pts en 30 días pone techo AMARILLO: no se puede " +
+                        "estar en VERDE aunque la brecha esté planchada. La variación se apaga " +
+                        "recién cuando la suba de 30 días baja de +75 pts (histéresis).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Automatico: ArgentinaDatos (riesgo país, MEP, mayorista, blue y tasas " +
+                        "de plazo fijo). Estos campos quedan como respaldo manual.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "Brecha MEP de hace 30 días",
+                    "Brecha MEP de hace 14 días",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -464,7 +473,8 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "Se usa para medir la velocidad, no solo el nivel: una brecha que se duplica " +
-                        "en dos semanas es señal defensiva aunque siga siendo baja.",
+                        "en dos semanas o sube ≥5 pp suma +15 puntos. Solo se usa si la serie " +
+                        "automática no está disponible.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -678,7 +688,8 @@ fun SettingsScreen(
         item {
             Text(
                 "SmartInvest · Datos locales con Room y DataStore. Las tasas se sincronizan desde " +
-                    "Comparatasas y las cotizaciones desde DolarAPI. Sin asesoramiento financiero.",
+                    "Comparatasas, las cotizaciones desde DolarAPI y las series macro desde " +
+                    "ArgentinaDatos. Sin asesoramiento financiero.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

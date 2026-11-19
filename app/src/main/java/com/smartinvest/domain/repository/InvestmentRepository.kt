@@ -4,6 +4,7 @@ import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.InstrumentQuote
+import com.smartinvest.domain.model.MacroMarketSnapshot
 import com.smartinvest.domain.model.MarketSyncOutcome
 import com.smartinvest.domain.model.PortfolioSnapshot
 import com.smartinvest.domain.model.PortfolioValuation
@@ -44,6 +45,12 @@ interface InvestmentRepository {
         quoteUnit: QuoteUnit = QuoteUnit.PER_UNIT,
     ): Result<Int>
     suspend fun refreshDollarRates(): Result<Unit>
+    /**
+     * Fetches the alternative macro market series (country risk, MEP/wholesale/blue
+     * and 30-day fixed-term rates), persists them and returns the snapshot. When
+     * [force] is false a snapshot younger than 12 hours is reused.
+     */
+    suspend fun refreshMacroMarket(force: Boolean = false): Result<MacroMarketSnapshot>
     suspend fun refreshSnapshot(): PortfolioValuation
     suspend fun saveSalaryPlan(plan: SalaryPlan)
 }

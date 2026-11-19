@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,17 +29,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.domain.model.AllocationBucket
 import com.smartinvest.domain.model.CarryRiskAssessment
 import com.smartinvest.domain.model.CarryRiskBand
+import com.smartinvest.domain.model.CarryRiskComponent
 import com.smartinvest.domain.model.MacroRiskFactor
 import com.smartinvest.domain.model.OrganicAllocationLeg
 import com.smartinvest.domain.usecase.MacroRebalanceContext
@@ -190,6 +197,7 @@ private fun RiskSemaphoreCard(
     onOpenSettings: () -> Unit,
 ) {
     val color = riskColor(assessment?.band)
+    var showBreakdown by remember { mutableStateOf(false) }
     SmartCard {
         SectionHeader(
             title = "Semáforo macro",
@@ -245,21 +253,37 @@ private fun RiskSemaphoreCard(
             assessment.factors.forEach { factor ->
                 RiskFactorRow(factor = factor, color = color)
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(onClick = { showBreakdown = true }) {
+                    Text("Ver desglose")
+                }
+                val automatic = assessment.breakdown.dataPoints.any { !it.isFallback }
+                Text(
+                    if (automatic) {
+                        "Fuentes: ArgentinaDatos + DolarAPI"
+                    } else {
+                        "Datos manuales de Ajustes"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             if (assessment.countryRiskCeilingActive) {
+                val trend = if (assessment.countryRiskTrendActive) {
+                    " y variación 30 días " +
+                        "${if (assessment.countryRisk30dChange >= 0) "+" else "−"}" +
+                        "${kotlin.math.abs(assessment.countryRisk30dChange)} pts activa"
+                } else {
+                    ""
+                }
                 InfoBanner(
                     "Techo AMARILLO por riesgo país: nivel ${assessment.countryRiskPoints} pts " +
-                        "(umbral 800) y variación 30 días " +
-                        "${if (assessment.countryRisk30dChange >= 0) "+" else "−"}" +
-                        "${kotlin.math.abs(assessment.countryRisk30dChange)} pts (umbral +150).",
-                    color = Amber,
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            if (assessment.fxGapSpeedCeilingActive) {
-                InfoBanner(
-                    "Techo AMARILLO por velocidad de la brecha: se expandió " +
-                        "${Fmt.pp(assessment.fxGapSpeedPp)} en 30 días aunque el nivel siga bajo.",
+                        "(umbral 800)$trend.",
                     color = Amber,
                 )
                 Spacer(Modifier.height(8.dp))
@@ -267,8 +291,8 @@ private fun RiskSemaphoreCard(
             if (assessment.hysteresisApplied) {
                 InfoBanner(
                     "Histéresis: el estado se mantiene en " +
-                        "${assessment.band.label.lowercase()} hasta cruzar el umbral de salida " +
-                        "(ROJO sale en 55; VERDE sale en 35).",
+                        "${assessment.band.label.lowercase()} hasta que el índice caiga 10 puntos " +
+                        "por debajo del umbral (ROJO sale en 55; VERDE se entra en 20).",
                     color = color,
                 )
                 Spacer(Modifier.height(8.dp))
@@ -282,6 +306,196 @@ private fun RiskSemaphoreCard(
                 )
             }
         }
+    }
+    if (showBreakdown && assessment != null) {
+        MacroBreakdownDialog(
+            assessment = assessment,
+            onDismiss = { showBreakdown = false },
+        )
+    }
+}
+
+/**
+ * Full explanation of the index: every scored component, the rule applied, the
+ * raw data and its source. Scrollable so it works on small screens.
+ */
+@Composable
+private fun MacroBreakdownDialog(
+    assessment: CarryRiskAssessment,
+    onDismiss: () -> Unit,
+) {
+    val breakdown = assessment.breakdown
+    Dialog(onDismissRequest = onDismiss) {
+        SmartCard(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f),
+            contentPadding = PaddingValues(18.dp),
+        ) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                SectionHeader(
+                    title = "Desglose del índice",
+                    subtitle = "${assessment.score} / 100 · ${assessment.band.emoji} " +
+                        assessment.band.label,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "El índice solo usa variables de mercado. El desvío de cartera no suma: " +
+                        "solo dimensiona el flujo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "COMPONENTES",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                breakdown.components.forEach { component ->
+                    BreakdownComponentRow(component)
+                }
+                ThinDivider()
+                KeyValueRow(
+                    "Suma de componentes",
+                    "${breakdown.scoreBeforeCap} pts",
+                    strong = true,
+                )
+                KeyValueRow("Índice final (tope 100)", "${assessment.score} pts", strong = true)
+                breakdown.scoreCapNote?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Amber,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "DATOS Y FUENTES",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                breakdown.dataPoints.forEach { point ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                point.label,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                point.value,
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                        }
+                        Text(
+                            buildString {
+                                append(point.source)
+                                point.asOf?.let { append(" · $it") }
+                                if (point.isFallback) append(" · respaldo manual")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (point.isFallback) Amber else Emerald,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "ESTADO Y TECHOS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                KeyValueRow("Banda por puntaje", "${assessment.rawBand.emoji} ${assessment.rawBand.label}")
+                KeyValueRow(
+                    "Banda vigente",
+                    "${assessment.band.emoji} ${assessment.band.label}",
+                    strong = true,
+                )
+                KeyValueRow(
+                    "Meta en pesos",
+                    "${Fmt.percent(assessment.riskAdjustedTargetPesoPercent, 0)} · " +
+                        "estratégica ${Fmt.percent(assessment.strategicTargetPesoPercent, 0)}",
+                )
+                KeyValueRow(
+                    "Techo VERDE electoral",
+                    Fmt.percent(assessment.electoralCapPesoPercent, 0),
+                    valueColor = if (assessment.electoralCapApplied) Amber else Emerald,
+                )
+                KeyValueRow(
+                    "Riesgo país",
+                    if (assessment.countryRiskConfigured) {
+                        "${assessment.countryRiskPoints} pts · " +
+                            "${if (assessment.countryRisk30dChange >= 0) "+" else "−"}" +
+                            "${kotlin.math.abs(assessment.countryRisk30dChange)} en 30 d"
+                    } else {
+                        "Sin dato"
+                    },
+                    valueColor = if (assessment.countryRiskCeilingActive) Amber else Emerald,
+                )
+                KeyValueRow(
+                    "Colchón de carry",
+                    Fmt.signedPercent(assessment.carryCushionPercent, 2) + "/mes",
+                    valueColor = if (assessment.carryCushionPercent > 0.0) Emerald else Rose,
+                )
+                KeyValueRow(
+                    "Brecha MEP / blue",
+                    "${Fmt.percent(assessment.fxGapPercent, 2)} · " +
+                        "${Fmt.percent(assessment.blueGapPercent, 2)}",
+                )
+                KeyValueRow(
+                    "Histéresis",
+                    if (assessment.hysteresisApplied) "Activa" else "No aplica",
+                    valueColor = if (assessment.hysteresisApplied) Amber else Emerald,
+                )
+                if (breakdown.notes.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    InfoBanner(breakdown.notes.joinToString("\n\n"), color = Sky)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Cerrar")
+            }
+        }
+    }
+}
+
+@Composable
+private fun BreakdownComponentRow(component: CarryRiskComponent) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                component.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                if (component.isInformational) "Info" else "${component.points}/${component.maxPoints}",
+                style = MaterialTheme.typography.titleSmall,
+                color = if (component.isInformational) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    if (component.points == 0) Emerald else if (component.points >= component.maxPoints) Rose else Amber
+                },
+            )
+        }
+        Text(
+            component.input,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            component.rule,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            component.detail,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -647,7 +861,7 @@ private fun MacroAssumptionsCard(
     SmartCard {
         SectionHeader(
             title = "Supuestos y fuentes",
-            subtitle = "DolarAPI + TNA de tus cuentas en pesos",
+            subtitle = "ArgentinaDatos + DolarAPI + tasas BCRA",
             actionLabel = "Editar",
             onAction = onOpenSettings,
         )
@@ -661,16 +875,25 @@ private fun MacroAssumptionsCard(
         } else {
             val assessment = context.assessment
             KeyValueRow(
-                "TNA de referencia en pesos",
-                if (context.settings.pesoReferenceTnaPercent > 0.0) {
-                    Fmt.rate(assessment.referenceTnaPercent) + " (manual)"
-                } else {
-                    Fmt.rate(assessment.referenceTnaPercent) + " (ponderada)"
-                },
+                "TNA corta en pesos (TEM base)",
+                Fmt.rate(assessment.referenceTnaPercent) +
+                    if (context.settings.macroMarket.shortTnaPercent != null) {
+                        " · mediana plazo fijo 30 d"
+                    } else if (context.settings.pesoReferenceTnaPercent > 0.0) {
+                        " · manual"
+                    } else {
+                        " · ponderada de cartera"
+                    },
             )
             KeyValueRow(
                 "Devaluación mensual esperada",
                 Fmt.percent(assessment.monthlyDevaluationPercent, 1),
+            )
+            KeyValueRow(
+                "Colchón de carry (TEM − crawl)",
+                Fmt.signedPercent(assessment.carryCushionPercent, 2) + "/mes",
+                valueColor = if (assessment.carryCushionPercent > 0.0) Emerald else Rose,
+                strong = true,
             )
             KeyValueRow(
                 "Dólar oficial",
@@ -681,8 +904,12 @@ private fun MacroAssumptionsCard(
                 Fmt.ars((assessment.mepRate * 100.0).roundToLong()),
             )
             KeyValueRow(
-                "Brecha cambiaria",
-                Fmt.percent(assessment.fxGapPercent, 1),
+                "Dólar mayorista",
+                Fmt.ars((assessment.wholesaleRate * 100.0).roundToLong()),
+            )
+            KeyValueRow(
+                "Brecha MEP (MEP ÷ mayorista)",
+                Fmt.percent(assessment.fxGapPercent, 2),
                 valueColor = when {
                     assessment.fxGapPercent < 5.0 -> Emerald
                     assessment.fxGapPercent <= 12.0 -> Amber
@@ -690,20 +917,26 @@ private fun MacroAssumptionsCard(
                 },
             )
             KeyValueRow(
-                "Velocidad de la brecha (30 días)",
-                if (assessment.fxGap30dAgoPercent == null) {
+                "Velocidad de la brecha (14 días)",
+                if (assessment.fxGapPreviousPercent == null) {
                     "Sin lectura previa"
                 } else {
                     Fmt.pp(assessment.fxGapSpeedPp)
                 },
-                valueColor = if (assessment.fxGapSpeedCeilingActive) Rose else Emerald,
+                valueColor = if (assessment.fxGapSpeedPp > 0.0) Amber else Emerald,
+            )
+            KeyValueRow(
+                "Brecha del blue",
+                Fmt.percent(assessment.blueGapPercent, 2),
+                valueColor = if (assessment.blueGapPercent > 5.0) Rose else Emerald,
             )
             KeyValueRow(
                 "Riesgo país",
                 if (assessment.countryRiskConfigured) {
                     "${assessment.countryRiskPoints} pts · " +
                         "${if (assessment.countryRisk30dChange >= 0) "+" else "−"}" +
-                        "${kotlin.math.abs(assessment.countryRisk30dChange)} en 30 días"
+                        "${kotlin.math.abs(assessment.countryRisk30dChange)} en 30 días" +
+                        (assessment.countryRiskDate?.let { " · $it" } ?: "")
                 } else {
                     "Sin dato"
                 },
@@ -732,9 +965,10 @@ private fun MacroAssumptionsCard(
             )
             Spacer(Modifier.height(10.dp))
             InfoBanner(
-                "El índice mide solo el escenario: tasa real (40%), brecha cambiaria " +
-                    "nivel (25%) + velocidad (10%) y riesgo país (25%). El desvío de cartera " +
-                    "no suma puntos: se usa para dimensionar el flujo. La ratio excluye " +
+                "El índice mide solo el mercado: brecha MEP nivel (30) + velocidad (15) + " +
+                    "brecha blue (10) + colchón de carry (30) + riesgo país nivel (20) + " +
+                    "variación 30 d (10), con tope 100. El desvío de cartera no suma puntos: " +
+                    "se usa para dimensionar el flujo. La ratio excluye " +
                     "«${context.settings.carryExcludedPatterns}»; los CEDEARs y los bonos " +
                     "(AO27 / AO27D) suman exposición en dólares aunque coticen en pesos.",
                 color = Sky,

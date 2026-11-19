@@ -11,6 +11,10 @@ interface SettingsRepository {
     suspend fun update(settings: AppSettings)
     /** Persists the last effective band so hysteresis survives app restarts. */
     suspend fun setPreviousCarryBand(bandName: String)
+    /** Persists the automatic market snapshot (JSON) used by the macro engine. */
+    suspend fun setMacroMarket(snapshotJson: String)
+    /** Persists the country-risk trend flag (entry +150, exit +75). */
+    suspend fun setCountryRiskTrendActive(active: Boolean)
     suspend fun setNotificationsEnabled(enabled: Boolean)
     suspend fun isInitialized(): Boolean
     suspend fun markInitialized()

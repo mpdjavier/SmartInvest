@@ -1,16 +1,111 @@
 package com.smartinvest.domain.model
 
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.time.LocalDate
+
+/**
+ * Market data fetched automatically from public sources (ArgentinaDatos) and
+ * persisted in settings. Every field is optional: when a source fails the engine
+ * falls back to the manual settings, so the assistant always has an input.
+ */
+@Serializable
+data class MacroMarketSnapshot(
+    val fetchedAtMillis: Long = 0L,
+    /** Country-risk level in basis points, e.g. 848. */
+    val countryRiskPoints: Int? = null,
+    /** Date of the country-risk observation ("YYYY-MM-DD"). */
+    val countryRiskDate: String? = null,
+    /** Country-risk change over the last 30 days, in points. */
+    val countryRisk30dChange: Int? = null,
+    /** MEP ÷ wholesale − 1, in percent. */
+    val fxGapPercent: Double? = null,
+    /** Same gap 14 days ago, in percent. */
+    val fxGap14dAgoPercent: Double? = null,
+    /** Blue ÷ wholesale − 1, in percent. */
+    val blueGapPercent: Double? = null,
+    /** Short peso rate: median 30-day fixed-term TNA, in percent. */
+    val shortTnaPercent: Double? = null,
+    /** Date of the fixed-term rate or of the FX series used ("YYYY-MM-DD"). */
+    val shortTnaDate: String? = null,
+    val officialRate: Double? = null,
+    val mepRate: Double? = null,
+    val wholesaleRate: Double? = null,
+    val blueRate: Double? = null,
+    /** Closing date common to the FX series ("YYYY-MM-DD"). */
+    val fxDate: String? = null,
+    val sources: List<String> = emptyList(),
+) {
+    val hasAnyData: Boolean
+        get() = countryRiskPoints != null ||
+            fxGapPercent != null ||
+            blueGapPercent != null ||
+            shortTnaPercent != null
+
+    companion object {
+        private val json = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
+
+        fun decode(raw: String): MacroMarketSnapshot {
+            val clean = raw.trim()
+            if (clean.isEmpty()) return MacroMarketSnapshot()
+            return runCatching { json.decodeFromString<MacroMarketSnapshot>(clean) }
+                .getOrDefault(MacroMarketSnapshot())
+        }
+
+        fun encode(snapshot: MacroMarketSnapshot): String = json.encodeToString(snapshot)
+    }
+}
+
+/** One scored component of the carry index, with the numbers behind it. */
+data class CarryRiskComponent(
+    val key: String,
+    val label: String,
+    val points: Int,
+    val maxPoints: Int,
+    /** Short value used as input, e.g. "Brecha 4,4%". */
+    val input: String,
+    /** Thresholds that define the points, e.g. "0 si <5% · 15 si 5–12% · 30 si >12%". */
+    val rule: String,
+    /** Full explanation with the exact numbers. */
+    val detail: String,
+    val isInformational: Boolean = false,
+)
+
+/** One raw datum used by the index, with its source and timestamp. */
+data class CarryRiskDataPoint(
+    val label: String,
+    val value: String,
+    val source: String,
+    val asOf: String? = null,
+    /** True when the value comes from a manual setting instead of an automatic source. */
+    val isFallback: Boolean = false,
+)
+
+/** Everything needed to explain the index in detail. */
+data class CarryRiskBreakdown(
+    val components: List<CarryRiskComponent> = emptyList(),
+    val dataPoints: List<CarryRiskDataPoint> = emptyList(),
+    /** Sum of the components before the 100-point cap. */
+    val scoreBeforeCap: Int = 0,
+    /** Reason the index was capped at 100, or the band ceiling applied. */
+    val scoreCapNote: String? = null,
+    /** Notes about hysteresis, ceilings and the electoral calendar. */
+    val notes: List<String> = emptyList(),
+)
 
 /**
  * Macro carry-risk bands. The score is always in 0..100.
  *
- * - LOW (0..30): high real yield and a calm FX gap.
- * - MODERATE (31..65): normal equilibrium.
- * - HIGH (66..100): FX tension, rate compression or a widening gap.
+ * - LOW (0..30): carry favorable.
+ * - MODERATE (31..65): equilibrium.
+ * - HIGH (66..100): defensive.
  *
- * The band has hysteresis: once HIGH, it only leaves at 55 or less; once LOW,
- * it only leaves at 35 or more.
+ * Hysteresis only delays improvements: RED is left at ≤55 and GREEN is entered
+ * from AMBER at ≤20 (10 points below the entry threshold of 30).
  */
 enum class CarryRiskBand(
     val label: String,
@@ -64,9 +159,9 @@ data class LiquidityGuardrail(
 /**
  * Result of the macro carry-risk engine.
  *
- * The index only measures the macro scenario: real rate, FX gap level and
- * speed, and country risk. Portfolio deviation is intentionally excluded from
- * the score and used only to size the flow.
+ * The index only measures market variables: MEP gap level, gap speed, blue gap,
+ * carry cushion and country risk. Portfolio deviation is intentionally excluded
+ * from the score and used only to size the flow.
  */
 data class CarryRiskAssessment(
     val score: Int,
@@ -76,11 +171,19 @@ data class CarryRiskAssessment(
     val suggestion: String,
     val realMonthlyRatePercent: Double,
     val realAnnualRatePercent: Double,
+    /** TEM short rate minus the monthly crawl, in percentage points. */
+    val carryCushionPercent: Double,
+    /** Short peso TEM used for the cushion, in percent. */
+    val shortTemPercent: Double,
     val fxGapPercent: Double,
-    val fxGap30dAgoPercent: Double?,
+    /** MEP gap 14 days ago, in percent (null when there is no history). */
+    val fxGapPreviousPercent: Double?,
     val fxGapSpeedPp: Double,
+    val blueGapPercent: Double,
     val officialRate: Double,
     val mepRate: Double,
+    val wholesaleRate: Double,
+    val blueRate: Double,
     val referenceTnaPercent: Double,
     val monthlyDevaluationPercent: Double,
     val pesoSharePercent: Double,
@@ -90,10 +193,11 @@ data class CarryRiskAssessment(
     val redTargetPesoPercent: Double,
     val countryRiskPoints: Int,
     val countryRisk30dChange: Int,
-    /** Level > 800 or a +150 point move in 30 days caps the band at AMBER. */
+    val countryRiskDate: String?,
+    /** The +10 for the 30-day move is active (entry at +150, exit at +75). */
+    val countryRiskTrendActive: Boolean,
+    /** Level > 800 or an active trend caps the band at AMBER. */
     val countryRiskCeilingActive: Boolean,
-    /** The gap expanded fast enough in 30 days to cap the band at AMBER. */
-    val fxGapSpeedCeilingActive: Boolean,
     val hysteresisApplied: Boolean,
     val previousBand: CarryRiskBand?,
     /** Peso ceiling for the GREEN state imposed by the electoral calendar. */
@@ -101,6 +205,9 @@ data class CarryRiskAssessment(
     val electoralCapApplied: Boolean,
     val liquidityGuardrail: LiquidityGuardrail,
     val factors: List<MacroRiskFactor>,
+    /** Timestamp of the market snapshot used, when it came from an automatic source. */
+    val marketFetchedAtMillis: Long? = null,
+    val breakdown: CarryRiskBreakdown = CarryRiskBreakdown(),
 ) {
     val dollarSharePercent: Double get() = 100.0 - pesoSharePercent
     val riskAdjustedTargetDollarPercent: Double get() = 100.0 - riskAdjustedTargetPesoPercent

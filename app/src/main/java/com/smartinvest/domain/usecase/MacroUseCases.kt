@@ -44,14 +44,20 @@ class ObserveMacroRebalanceUseCase @Inject constructor(
         )
         val referenceRate = MacroRiskEngine.referencePesoRate(wallets, holdings, currentSettings)
         val investable = MacroRiskEngine.investableValuation(valuation, currentSettings)
+        val market = currentSettings.macroMarket
         val assessment = MacroRiskEngine.assess(
             valuation = investable,
             fxRates = fxRates,
             settings = currentSettings,
             referenceTnaPercent = referenceRate,
+            market = market,
+            countryRiskTrendActive = currentSettings.countryRiskTrendActive,
         )
         if (currentSettings.previousCarryBand != assessment.band) {
             settings.setPreviousCarryBand(assessment.band.name)
+        }
+        if (currentSettings.countryRiskTrendActive != assessment.countryRiskTrendActive) {
+            settings.setCountryRiskTrendActive(assessment.countryRiskTrendActive)
         }
         MacroRebalanceContext(
             valuation = investable,

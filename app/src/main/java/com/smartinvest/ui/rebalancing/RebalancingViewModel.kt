@@ -52,6 +52,10 @@ class RebalancingViewModel @Inject constructor(
                 }
             }
         }
+        // Automatic macro refresh when the persisted snapshot is older than 12 h.
+        viewModelScope.launch {
+            runCatching { investments.refreshMacroMarket(force = false) }
+        }
     }
 
     val uiState = combine(
@@ -105,6 +109,7 @@ class RebalancingViewModel @Inject constructor(
             working.value = true
             message.value = null
             val fx = investments.refreshDollarRates()
+            val macro = investments.refreshMacroMarket(force = true)
             val rates = runCatching { investments.syncRates() }.getOrNull()
             val quotes = runCatching { investments.syncMarketQuotes() }.getOrNull()
             investments.refreshSnapshot()
@@ -116,6 +121,26 @@ class RebalancingViewModel @Inject constructor(
                         "DolarAPI sin respuesta (se usa el último MEP / respaldo)"
                     },
                 )
+                val snapshot = macro.getOrNull()
+                if (snapshot != null) {
+                    append(" · macro: ")
+                    snapshot.countryRiskPoints?.let { append("riesgo país $it pts") }
+                    snapshot.fxGapPercent?.let {
+                        if (snapshot.countryRiskPoints != null) append(" · ")
+                        append("brecha ${percentText(it)}%")
+                    }
+                    snapshot.shortTnaPercent?.let {
+                        if (snapshot.countryRiskPoints != null || snapshot.fxGapPercent != null) {
+                            append(" · ")
+                        }
+                        append("TNA 30 d ${percentText(it)}%")
+                    }
+                    if (snapshot.hasAnyData && snapshot.sources.isNotEmpty()) {
+                        append(" (${snapshot.sources.first()})")
+                    }
+                } else {
+                    append(" · fuentes macro sin respuesta (se usa el último dato)")
+                }
                 if (rates != null) {
                     append(" · ")
                     append(rates.message)
@@ -135,4 +160,7 @@ class RebalancingViewModel @Inject constructor(
 
     private fun centsToInput(cents: Long): String =
         String.format(Locale.forLanguageTag("es-AR"), "%.2f", cents / 100.0)
+
+    private fun percentText(value: Double): String =
+        String.format(Locale.forLanguageTag("es-AR"), "%.2f", value)
 }

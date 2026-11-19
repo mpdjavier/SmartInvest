@@ -117,10 +117,15 @@ class ObservePortfolioOverviewUseCase @Inject constructor(
                 fxRates = data.fx,
                 settings = currentSettings,
                 referenceTnaPercent = referenceRate,
+                market = currentSettings.macroMarket,
+                countryRiskTrendActive = currentSettings.countryRiskTrendActive,
                 today = today,
             )
             if (currentSettings.previousCarryBand != macro.band) {
                 settings.setPreviousCarryBand(macro.band.name)
+            }
+            if (currentSettings.countryRiskTrendActive != macro.countryRiskTrendActive) {
+                settings.setCountryRiskTrendActive(macro.countryRiskTrendActive)
             }
             PortfolioOverview(
                 valuation = valuation,

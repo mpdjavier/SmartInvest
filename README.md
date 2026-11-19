@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **160 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **169 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -73,7 +73,7 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - Analítica 7 días / 30 días / YTD, ganancia diaria y mensual, serie para gráfico.
 - **Rebalanceo elástico 60/40** con banda de tolerancia configurable: **tanto los CEDEARs (`SPY`) como los bonos soberanos (`AO27` y `AO27D`) y FCI en dólares (`MP-USD`) se computan como exposición en dólares aunque estén valuados en pesos**, ya que mantienen su valor en moneda dura.
 - **Ajuste manual y control de saldos** (`portfolio_reconciliation`): permite fijar la cifra exacta disponible hoy en cada activo en **ARS o USD** (con conversión inmediata al MEP y bloqueo manual `[ajuste manual: dd/MM/yyyy]` para que la sincronización de Rava/CAFCI no pise el saldo real), pegar una lista de saldos (`TICKER (CUENTA) MONTO ARS/USD`) o restaurar la cartera del 16/11/2026 en 1 toque (saldos **y** cantidades de AO27D, ADCAP-BAL3, MP-ARS y MP-USD, para que los 9 activos se actualicen solos), y comparar **Valor real fijado vs. Valor calculado por cotizaciones**, precio implícito por unidad/nominal y evolución real frente al costo neto invertido.
-- **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 (tasa real en pesos, brecha oficial/MEP con nivel y velocidad, y riesgo país), histéresis y techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
+- **Asistente macro de carry + rebalanceo orgánico** (`rebalancing`): semáforo de riesgo 0–100 con el criterio vigente del 11/11/2026 (brecha MEP, velocidad a 14 días, brecha del blue, colchón TEM−crawl y riesgo país con histéresis), datos automáticos desde ArgentinaDatos, desglose detallado componente por componente, techo AMARILLO por riesgo país, techo VERDE por calendario electoral, guardarraíl de liquidez para el sobrepeso en pesos, vencimientos como flujo orgánico, meta de pesos ajustada por riesgo y reparto exacto del **próximo ingreso** entre pesos y cobertura en dólares. **Nunca vende activos**: solo canaliza flujo nuevo.
 - **Comparador REM de corto plazo** (`rem`): usa las medianas del **Relevamiento de Expectativas de Mercado** del BCRA (IPC mensual, tipo de cambio oficial y TAMAR) para proyectar letras, bonos CER, dollar linked y tasa en pesos, y las compara contra un **crawling peg ficticio** configurable (1% mensual por defecto). Cada instrumento se proyecta hasta su vencimiento o hasta el horizonte elegido, **nunca más allá de abril de 2027** por el calendario electoral. Muestra retorno nominal, mensual, real, en dólares, break-even de devaluación y veredicto (conviene / empata / no conviene). El REM de octubre 2026 viene embebido y se puede **actualizar importando el XLSX oficial del BCRA**; TIR, TNA y vencimientos se editan a mano.
 - **Evaluador FCI con estabilidad configurable** (`fund_evaluator`): arranca en el **universo Eco Valores** con las Clases A de la planilla del usuario (148 publicadas en compararfondos.com.ar; las que no tienen publicación quedan documentadas aparte) y permite cambiar a **«Todo el catálogo»** con las 2.300+ clases, siempre con la rentabilidad y la estabilidad como parámetros independientes. El matching de nombres ignora acentos, guiones y mayúsculas. Podés ordenar por rentabilidad, estabilidad, máxima caída o volatilidad, elegir el horizonte de rentabilidad (7d/30d/12m) y poner un **piso de estabilidad opcional** (slider 0–100; por ejemplo ≥ 70) para descartar fondos con saltos. **Rango de fechas personalizado**: además de las ventanas fijas (30/90/180/365 días) podés fijar «desde» y «hasta» (o atajos como año actual / últimos 90 días / 12 meses), y el ranking, el gráfico, la comparación y el simulador usan exactamente esas cuotapartes. **Superposición de dos FCI**: elegís otra clase del seguimiento y ves las dos curvas normalizadas a 100 en el mismo gráfico, con retorno, caída, volatilidad y diferencia en puntos porcentuales del período. En el seguimiento las métricas salen de la serie diaria; en el catálogo completo y en Eco Valores se estiman con volatilidad, caída y días positivos a 90 días. Referencia **Adcap Balanceado III**, detalle y simulador en la misma fila, y buscador para seguir cualquier clase. Datos de CAFCI/CNV vía compararfondos.com.ar.
 - Planificador de sueldo y simulador de rescate de emergencia.
@@ -166,7 +166,7 @@ Data (Room · DataStore · Retrofit · Jsoup · repositorios)
 - **`domain/repository`**: contratos de acceso a datos.
 - **`domain/usecase`**: composición de flujos para las pantallas (`ObserveHouseholdSummaryUseCase`, `ObservePortfolioOverviewUseCase`).
 - **`data/local`**: Room (entidades, DAOs, convertidores, mappers) y DataStore para ajustes.
-- **`data/network`**: DolarAPI (Retrofit + kotlinx.serialization) y scraper best-effort de Comparatasas (Jsoup).
+- **`data/network`**: DolarAPI y ArgentinaDatos (Retrofit + kotlinx.serialization) y scraper best-effort de Comparatasas (Jsoup).
 - **`data/repository`**: implementaciones, sincronización de tasas, bootstrap y alertas.
 - **`data/worker`** / **`work`**: workers de Hilt + programación periódica.
 - **`ui`**: tema oscuro, componentes reutilizables, pantallas Compose y ViewModels Hilt.
@@ -404,28 +404,31 @@ El índice mide **solo el escenario macro**. El desvío de cartera quedó fuera 
 es la variable de control, no una señal de mercado, y usarlo en el índice lo volvía circular.
 
 ```
-componente_tasa_real   = 40 × clamp((4% − tasa_real_mensual) / 5, 0, 1)
-componente_brecha_nivel = 25 × clamp((brecha_MEP − 5%) / 7, 0, 1)
-componente_brecha_vel   = 10 × clamp((brecha_hoy − brecha_hace_30d − 1 pp) / 1,5, 0, 1)
-componente_riesgo_país  = 15 × clamp((nivel − 500) / 500, 0, 1)
-                        + 10 × clamp(variación_30d / 150, 0, 1)
-riesgo = clamp(tasa_real + brecha_nivel + brecha_vel + riesgo_país, 0, 100)
+brecha_MEP       = (MEP / mayorista − 1) × 100
+brecha_blue      = (blue / mayorista − 1) × 100
+TEM_corta        = TNA_plazo_fijo_30d / 12
+colchón          = TEM_corta − crawl_mensual
+
+componente_brecha_nivel = 0 si <5% · 15 si 5–12% · 30 si >12%
+componente_brecha_vel   = +15 si la brecha se duplicó en 2 semanas o subió ≥5 pp
+componente_brecha_blue  = +10 si brecha_blue > 5%
+componente_colchón      = 0 si ≥1,5% · 10 si 0,5–1,5% · 20 si 0–0,5% · 30 si negativo
+componente_país_nivel   = 0 si <600 · 10 si 600–800 · 20 si >800
+componente_país_var     = +10 si la suba de 30 días supera 150 pts (salida con histéresis en +75)
+riesgo = min(brecha_nivel + brecha_vel + brecha_blue + colchón + país_nivel + país_var, 100)
 ```
 
-Tasa real y brecha:
+Tasa real informativa:
 
 ```
 tasa_real_mensual = (1 + TNA/12) / (1 + devaluación_mensual) − 1
 tasa_real_anual   = (1 + tasa_real_mensual)^12 − 1
-brecha_%          = (MEP / oficial − 1) × 100
-velocidad_brecha  = max(brecha_hoy − brecha_hace_30d, 0)
 ```
 
 Reglas de estado:
 
-- **Techo AMARILLO por riesgo país**: nivel > 800 pts o suba > 150 pts en 30 días ⇒ la banda no puede ser VERDE.
-- **Techo AMARILLO por velocidad**: si la brecha se expande ≥ 2,5 pp en 30 días, la banda no puede ser VERDE aunque el nivel siga bajo.
-- **Histéresis**: se entra a ROJO en 66 pero se sale recién en 55; se entra a VERDE en 30 y se sale recién en 35. La banda efectiva se persiste en DataStore.
+- **Techo AMARILLO por riesgo país**: nivel > 800 pts o variación de 30 días activa (suba > 150, salida con histéresis en +75) ⇒ la banda no puede ser VERDE.
+- **Histéresis**: se entra a ROJO en 66 y se sale recién en ≤ 55; para pasar de AMARILLO a VERDE el índice debe caer a ≤ 20 (10 puntos debajo del umbral de 30). La banda efectiva se persiste en DataStore.
 - **Calendario electoral** (techo del VERDE en pesos): hasta feb/2027 70%; mar–jun/2027 65%; jul–nov/2027 60% (elección general + balotaje); después vuelve a 70%.
 - **Cadencia**: la lectura puede ser semanal, pero la decisión de flujo se toma una vez al mes, en la fecha del sueldo.
 
@@ -435,9 +438,10 @@ Reglas de estado:
 | 31 – 65 | 🟡 Riesgo moderado | objetivo estratégico (por defecto 60%) |
 | 66 – 100 | 🔴 Riesgo alto | objetivo ROJO configurable (por defecto 50%) |
 
-- **TNA de referencia**: si hay una TNA manual (> 0) se usa esa; si no, el promedio ponderado por saldo de las billeteras ARS y de las tenencias en pesos con TNA (LECAP, BONCAP, FCI, bonos y otros).
-- **Brecha**: dólar oficial vs. MEP de DolarAPI. Si falta el oficial se usa el MEP (brecha 0).
-- **Riesgo país**: se carga a mano en Ajustes (nivel actual y variación de 30 días). Si no hay dato, el componente suma 0 y la UI lo advierte.
+- **Fuentes automáticas**: **ArgentinaDatos** aporta la serie de riesgo país, las cotizaciones MEP/mayorista/blue/oficial y la mediana de TNA de plazo fijo 30 días (BCRA). El snapshot se persiste en Ajustes (`macroMarketJson`) y se reutiliza 12 h; el botón de actualizar lo fuerza. DolarAPI sigue alimentando las cotizaciones vivas.
+- **Respaldo manual**: si una fuente falla se usan los campos de Ajustes (riesgo país, variación 30 d, brecha previa de 14 d y TNA manual). El desglose indica qué dato vino de fuente automática y cuál es respaldo.
+- **Desglose**: la tarjeta del semáforo tiene **Ver desglose**, con cada componente, la regla aplicada, los puntos, la suma antes del tope de 100, los datos usados con fuente y fecha, y las notas de techos e histéresis.
+- **Brecha**: MEP ÷ mayorista. El mayorista cae al oficial si la serie no está disponible.
 - **Exposición**: se mide por riesgo subyacente. Los CEDEARs cuentan como dólares aunque coticen en pesos. El pozo de liquidez de Mercado Pago y la cubeta de viajes quedan fuera de la ratio invertible; los patrones de exclusión se editan en Ajustes (`carryExcludedPatterns`, por defecto `Mercado Pago, viaje`).
 
 Canalización del próximo ingreso (rebalanceo orgánico, sin vender activos):
@@ -634,7 +638,8 @@ En el primer arranque se crean:
 
 ### Fuentes externas
 
-- **DolarAPI** (`https://dolarapi.com/v1/dolares`) para cotizaciones.
+- **DolarAPI** (`https://dolarapi.com/v1/dolares`) para cotizaciones vivas.
+- **ArgentinaDatos** (`https://api.argentinadatos.com/`) para las series macro: riesgo país (`v1/finanzas/indices/riesgo-pais`), MEP/mayorista/blue/oficial (`v1/cotizaciones/dolares/...`) y TNA de plazo fijo 30 días (`v1/finanzas/tasas/plazoFijo`, BCRA).
 - **Comparatasas.ar** con Jsoup para TNA de billeteras. El scraping es *best-effort*: si el sitio cambia, se conservan las tasas manuales.
 - **Rava Bursátil** (`https://www.rava.com/perfil/{TICKER}`) para precio actual y tabla de cierres históricos de letras, bonos y CEDEARs (`S30N6`, `AO27D`, `SPY`, etc.).
 - **CAFCI** (`https://estadisticas.cafci.org.ar/fondos/{FONDO}?clase={CLASE}`) para valor de cuotaparte y rendimientos históricos de FCI (ej. Adcap Balanceado III `1402/4070`, Mercado Fondo ARS `798/1982`, Mercado Fondo USD `1522/4557`).
@@ -718,7 +723,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**160 tests, 0 fallos, 23 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**169 tests, 0 fallos, 23 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 
@@ -746,7 +751,7 @@ Tests unitarios JVM (sin emulador):
 | `PaymentAgendaEngineTest` | fecha heredada del pago anterior, estados de vencimiento, fechas y montos personalizados, filtro de solo recurrentes para el calendario, cadencia mensual/bimestral/trimestral anclada al primer pago, pagos reales fuera de cadencia, cambio de fecha de un mes puntual sin alterar la cadencia y tildado manual por mes (`manualPaidMonths`) |
 | `ReceiptParserTest` | comprobantes de transferencia (Mercado Pago), pago de servicio (Galicia), resumen de tarjeta de crédito (`MASTERCARD BLACK` con vencimiento, próximo cierre y total a pagar), fechas con mes en texto y comprobantes sin datos |
 | `MarketClientsTest` | normalización de claves/URLs y parseo HTML de Rava (tabla histórica y encabezado con cierre anterior) y CAFCI |
-| `MacroRiskTest` | bandas de carry, techo por riesgo país, velocidad de la brecha, calendario electoral, histéresis, guardarraíl de liquidez, alcance por riesgo subyacente, vencimientos como flujo y reparto orgánico 100% pesos / 100% dólares |
+| `MacroRiskTest` | criterio vigente del índice: brecha MEP por nivel, velocidad a 14 días, brecha blue, colchón TEM−crawl, riesgo país nivel y variación con histéresis, tope 100, snapshot automático vs. respaldo manual, techos e histéresis de banda, calendario electoral, guardarraíl de liquidez, alcance por riesgo subyacente, vencimientos como flujo y reparto orgánico 100% pesos / 100% dólares |
 | `RemComparisonEngineTest` | proyección de tasa fija vs. crawling peg, dollar linked cuando el FX del REM corre más rápido, recorte del horizonte a abril 2027, ausencia de FX sin crash y bono CER con inflación del REM |
 | `RemXlsxParserTest` | medianas mensuales de IPC, FX y TAMAR del XLSX del BCRA, fecha de publicación derivada del título y conversión de fechas seriales |
 | `PlanningTest` | sueldo, rebalanceo y rescate de emergencia |

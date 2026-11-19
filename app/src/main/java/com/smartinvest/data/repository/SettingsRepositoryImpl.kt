@@ -52,6 +52,8 @@ class SettingsRepositoryImpl @Inject constructor(
         val liquidityGuardrail = booleanPreferencesKey("liquidity_guardrail_enabled")
         val liquidityGuardrailMonths = intPreferencesKey("liquidity_guardrail_max_months")
         val previousCarryBand = stringPreferencesKey("previous_carry_band")
+        val countryRiskTrendActive = booleanPreferencesKey("country_risk_trend_active")
+        val macroMarket = stringPreferencesKey("macro_market_json")
         val carryExcludedPatterns = stringPreferencesKey("carry_excluded_patterns")
         val lastSync = stringPreferencesKey("last_sync_at")
         val hideAmounts = booleanPreferencesKey("hide_amounts")
@@ -91,6 +93,8 @@ class SettingsRepositoryImpl @Inject constructor(
             prefs[Keys.liquidityGuardrail] = settings.liquidityGuardrailEnabled
             prefs[Keys.liquidityGuardrailMonths] = settings.liquidityGuardrailMaxMonths
             prefs[Keys.previousCarryBand] = settings.previousCarryBandName
+            prefs[Keys.countryRiskTrendActive] = settings.countryRiskTrendActive
+            prefs[Keys.macroMarket] = settings.macroMarketJson
             prefs[Keys.carryExcludedPatterns] = settings.carryExcludedPatterns
             prefs[Keys.notifications] = settings.notificationsEnabled
             prefs[Keys.hideAmounts] = settings.hideAmounts
@@ -107,6 +111,14 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setPreviousCarryBand(bandName: String) {
         context.settingsDataStore.edit { it[Keys.previousCarryBand] = bandName }
+    }
+
+    override suspend fun setMacroMarket(snapshotJson: String) {
+        context.settingsDataStore.edit { it[Keys.macroMarket] = snapshotJson }
+    }
+
+    override suspend fun setCountryRiskTrendActive(active: Boolean) {
+        context.settingsDataStore.edit { it[Keys.countryRiskTrendActive] = active }
     }
 
     override suspend fun isInitialized(): Boolean =
@@ -129,11 +141,12 @@ class SettingsRepositoryImpl @Inject constructor(
         maturityAlertDays = this[Keys.maturityDays] ?: 30,
         rateDropThresholdPp = this[Keys.rateDrop] ?: 0.5,
         fallbackMepRate = this[Keys.fallbackMep] ?: 1_000.0,
-        monthlyDevaluationPercent = this[Keys.monthlyDevaluation] ?: 2.0,
+        monthlyDevaluationPercent = this[Keys.monthlyDevaluation] ?: 1.0,
         pesoReferenceTnaPercent = this[Keys.pesoReferenceTna] ?: 0.0,
         countryRiskPoints = this[Keys.countryRiskPoints] ?: 0,
         countryRisk30dChange = this[Keys.countryRisk30dChange] ?: 0,
         previousFxGapPercent = this[Keys.previousFxGap] ?: -1.0,
+        countryRiskTrendActive = this[Keys.countryRiskTrendActive] ?: false,
         electoralCalendarEnabled = this[Keys.electoralCalendar] ?: true,
         liquidityGuardrailEnabled = this[Keys.liquidityGuardrail] ?: true,
         liquidityGuardrailMaxMonths = this[Keys.liquidityGuardrailMonths] ?: 6,
@@ -144,5 +157,6 @@ class SettingsRepositoryImpl @Inject constructor(
         paymentAgendaJson = this[Keys.paymentAgenda] ?: "",
         fundWatchlistJson = this[Keys.fundWatchlist] ?: "",
         remConfigJson = this[Keys.remConfig] ?: "",
+        macroMarketJson = this[Keys.macroMarket] ?: "",
     )
 }

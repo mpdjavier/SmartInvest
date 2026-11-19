@@ -15,6 +15,8 @@ import com.smartinvest.data.local.entity.RateHistoryEntity
 import com.smartinvest.data.local.entity.SalaryPlanEntity
 import com.smartinvest.data.mapper.toDomain
 import com.smartinvest.data.mapper.toEntity
+import com.smartinvest.data.network.ArgentinaDatosService
+import com.smartinvest.data.network.ArgentinaDolarPointDto
 import com.smartinvest.data.network.DolarApiService
 import com.smartinvest.data.network.MarketDataService
 import com.smartinvest.data.network.MarketKeyParser
@@ -29,6 +31,7 @@ import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.InstrumentQuote
+import com.smartinvest.domain.model.MacroMarketSnapshot
 import com.smartinvest.domain.model.MarketSource
 import com.smartinvest.domain.model.MarketSyncOutcome
 import com.smartinvest.domain.model.PortfolioSnapshot
@@ -46,6 +49,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import kotlin.math.abs
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -62,6 +66,7 @@ class InvestmentRepositoryImpl @Inject constructor(
     private val rateSyncService: RateSyncService,
     private val marketDataService: MarketDataService,
     private val dolarApi: DolarApiService,
+    private val argentinaDatos: ArgentinaDatosService,
     private val settingsRepository: SettingsRepository,
     private val widgetRefresher: WidgetRefresher,
     @IoDispatcher private val io: CoroutineDispatcher,
@@ -351,6 +356,141 @@ class InvestmentRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun refreshMacroMarket(force: Boolean): Result<MacroMarketSnapshot> =
+        withContext(io) {
+            val current = settingsRepository.currentSettings()
+            val previous = current.macroMarket
+            val age = System.currentTimeMillis() - previous.fetchedAtMillis
+            val fresh = previous.fetchedAtMillis > 0L &&
+                age in 0..MACRO_SNAPSHOT_TTL_MILLIS &&
+                previous.hasAnyData
+            if (!force && fresh) return@withContext Result.success(previous)
+
+            runCatching {
+                val sources = mutableListOf<String>()
+
+                val countrySeries = runCatching { argentinaDatos.countryRiskHistory() }
+                    .onSuccess { if (it.isNotEmpty()) sources += "ArgentinaDatos · riesgo país" }
+                    .getOrDefault(emptyList())
+                val fxSeries = listOf(
+                    "MEP" to runCatching { argentinaDatos.mepHistory() },
+                    "mayorista" to runCatching { argentinaDatos.wholesaleHistory() },
+                    "blue" to runCatching { argentinaDatos.blueHistory() },
+                    "oficial" to runCatching { argentinaDatos.officialHistory() },
+                ).map { (label, result) ->
+                    val series = result.getOrDefault(emptyList())
+                    if (series.isNotEmpty()) sources += "ArgentinaDatos · dólar $label"
+                    label to series
+                }.toMap()
+
+                val fixedTerm = runCatching { argentinaDatos.fixedTermRates() }
+                    .onSuccess { if (it.isNotEmpty()) sources += "ArgentinaDatos · tasas plazo fijo (BCRA)" }
+                    .getOrDefault(emptyList())
+
+                fun latestCountryOnOrBefore(date: LocalDate) = countrySeries
+                    .filter { it.fecha.isNotBlank() && it.fecha <= date.toString() }
+                    .maxByOrNull { it.fecha }
+
+                fun saleOnOrBefore(series: List<ArgentinaDolarPointDto>, date: LocalDate?): Double? {
+                    val point = series
+                        .filter { date == null || it.fecha <= date.toString() }
+                        .maxByOrNull { it.fecha }
+                    return point?.venta?.takeIf { it > 0.0 }
+                }
+
+                val countryLast = countrySeries
+                    .filter { it.fecha.isNotBlank() }
+                    .maxByOrNull { it.fecha }
+                val countryDate = countryLast?.fecha
+                val countryBase = countryDate
+                    ?.let { runCatching { LocalDate.parse(it).minusDays(30) }.getOrNull() }
+                    ?.let { latestCountryOnOrBefore(it) }
+                val countryChange = if (countryLast != null && countryBase != null) {
+                    countryLast.valor - countryBase.valor
+                } else {
+                    previous.countryRisk30dChange
+                }
+
+                val mepSeries = fxSeries["MEP"].orEmpty()
+                val wholesaleSeries = fxSeries["mayorista"].orEmpty()
+                val blueSeries = fxSeries["blue"].orEmpty()
+
+                val mepLast = mepSeries.filter { it.fecha.isNotBlank() }.maxByOrNull { it.fecha }
+                val wholesaleLast = wholesaleSeries.filter { it.fecha.isNotBlank() }.maxByOrNull { it.fecha }
+                val blueLast = blueSeries.filter { it.fecha.isNotBlank() }.maxByOrNull { it.fecha }
+                val fxDate = listOfNotNull(mepLast?.fecha, wholesaleLast?.fecha).minOrNull()
+
+                val mep = saleOnOrBefore(mepSeries, null)
+                val wholesale = saleOnOrBefore(wholesaleSeries, null)
+                val blue = saleOnOrBefore(blueSeries, null)
+                val fxGap = if (mep != null && wholesale != null && wholesale > 0.0) {
+                    (mep / wholesale - 1.0) * 100.0
+                } else {
+                    previous.fxGapPercent
+                }
+                val blueGap = if (blue != null && wholesale != null && wholesale > 0.0) {
+                    (blue / wholesale - 1.0) * 100.0
+                } else {
+                    previous.blueGapPercent
+                }
+                val fxGap14dAgo = fxDate
+                    ?.let { runCatching { LocalDate.parse(it).minusDays(14) }.getOrNull() }
+                    ?.let { target ->
+                        val mep14 = saleOnOrBefore(mepSeries, target)
+                        val wholesale14 = saleOnOrBefore(wholesaleSeries, target)
+                        if (mep14 != null && wholesale14 != null && wholesale14 > 0.0) {
+                            (mep14 / wholesale14 - 1.0) * 100.0
+                        } else {
+                            null
+                        }
+                    }
+                    ?: previous.fxGap14dAgoPercent
+                    ?: current.previousFxGapPercent.takeIf { it >= 0.0 }
+
+                val rawTna = fixedTerm
+                    .mapNotNull { (it.tnaClientes ?: it.tnaNoClientes)?.takeIf { value -> value > 0.0 } }
+                    .sorted()
+                val medianTna = when {
+                    rawTna.isEmpty() -> null
+                    rawTna.size % 2 == 1 -> rawTna[rawTna.size / 2]
+                    else -> (rawTna[rawTna.size / 2 - 1] + rawTna[rawTna.size / 2]) / 2.0
+                }
+                val shortTna = medianTna?.let { if (it <= 1.0) it * 100.0 else it }
+
+                val snapshot = MacroMarketSnapshot(
+                    fetchedAtMillis = System.currentTimeMillis(),
+                    countryRiskPoints = countryLast?.valor
+                        ?: previous.countryRiskPoints
+                        ?: current.countryRiskPoints.takeIf { it > 0 },
+                    countryRiskDate = countryDate ?: previous.countryRiskDate,
+                    countryRisk30dChange = countryChange,
+                    fxGapPercent = fxGap,
+                    fxGap14dAgoPercent = fxGap14dAgo,
+                    blueGapPercent = blueGap,
+                    shortTnaPercent = shortTna ?: previous.shortTnaPercent,
+                    shortTnaDate = if (shortTna != null) {
+                        DateUtils.today().toString()
+                    } else {
+                        previous.shortTnaDate
+                    },
+                    officialRate = saleOnOrBefore(
+                        fxSeries["oficial"].orEmpty(),
+                        null,
+                    ) ?: previous.officialRate,
+                    mepRate = mep ?: previous.mepRate,
+                    wholesaleRate = wholesale ?: previous.wholesaleRate,
+                    blueRate = blue ?: previous.blueRate,
+                    fxDate = fxDate ?: previous.fxDate,
+                    sources = sources.distinct().ifEmpty { previous.sources },
+                )
+                require(snapshot.hasAnyData) {
+                    "Las fuentes alternativas no devolvieron datos macro"
+                }
+                settingsRepository.setMacroMarket(MacroMarketSnapshot.encode(snapshot))
+                snapshot
+            }
+        }
+
     override suspend fun refreshSnapshot(): PortfolioValuation = withContext(io) {
         val settings = settingsRepository.currentSettings()
         val today = DateUtils.today()
@@ -396,3 +536,6 @@ class InvestmentRepositoryImpl @Inject constructor(
         }
     }
 }
+
+/** Reuse a persisted macro snapshot for 12 hours unless the user forces a refresh. */
+private const val MACRO_SNAPSHOT_TTL_MILLIS = 12L * 60L * 60L * 1000L

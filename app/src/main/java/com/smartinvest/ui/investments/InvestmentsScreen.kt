@@ -439,15 +439,16 @@ private fun RebalanceCard(data: PortfolioOverview?, onOpenRebalancing: () -> Uni
             color = riskColor,
         )
         val guardrail = macro.liquidityGuardrail
-        if (macro.countryRiskCeilingActive || macro.fxGapSpeedCeilingActive || !guardrail.isSatisfied) {
+        if (macro.countryRiskCeilingActive || !guardrail.isSatisfied) {
             Spacer(Modifier.height(6.dp))
             Text(
                 buildString {
                     if (macro.countryRiskCeilingActive) {
-                        append("Techo AMARILLO por riesgo país (${macro.countryRiskPoints} pts). ")
-                    }
-                    if (macro.fxGapSpeedCeilingActive) {
-                        append("Brecha acelerando ${Fmt.pp(macro.fxGapSpeedPp)} en 30 días. ")
+                        append("Techo AMARILLO por riesgo país (${macro.countryRiskPoints} pts")
+                        if (macro.countryRiskTrendActive) {
+                            append(" · 30 días ${Fmt.pp(macro.countryRisk30dChange.toDouble())}")
+                        }
+                        append("). ")
                     }
                     if (!guardrail.isSatisfied) {
                         append("Guardarraíl de liquidez: ")

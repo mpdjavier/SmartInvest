@@ -65,11 +65,12 @@ data class BackupSettingsDto(
     val maturityAlertDays: Int = 30,
     val rateDropThresholdPp: Double = 0.5,
     val fallbackMepRate: Double = 1_000.0,
-    val monthlyDevaluationPercent: Double = 2.0,
+    val monthlyDevaluationPercent: Double = 1.0,
     val pesoReferenceTnaPercent: Double = 0.0,
     val countryRiskPoints: Int = 0,
     val countryRisk30dChange: Int = 0,
     val previousFxGapPercent: Double = -1.0,
+    val countryRiskTrendActive: Boolean = false,
     val electoralCalendarEnabled: Boolean = true,
     val liquidityGuardrailEnabled: Boolean = true,
     val liquidityGuardrailMaxMonths: Int = 6,
@@ -80,6 +81,7 @@ data class BackupSettingsDto(
     val paymentAgendaJson: String = "",
     val fundWatchlistJson: String = "",
     val remConfigJson: String = "",
+    val macroMarketJson: String = "",
 )
 
 @Serializable
@@ -336,6 +338,7 @@ class AppBackupManager @Inject constructor(
                 countryRiskPoints = s.countryRiskPoints,
                 countryRisk30dChange = s.countryRisk30dChange,
                 previousFxGapPercent = s.previousFxGapPercent,
+                countryRiskTrendActive = s.countryRiskTrendActive,
                 electoralCalendarEnabled = s.electoralCalendarEnabled,
                 liquidityGuardrailEnabled = s.liquidityGuardrailEnabled,
                 liquidityGuardrailMaxMonths = s.liquidityGuardrailMaxMonths,
@@ -346,6 +349,7 @@ class AppBackupManager @Inject constructor(
                 paymentAgendaJson = s.paymentAgendaJson,
                 fundWatchlistJson = s.fundWatchlistJson,
                 remConfigJson = s.remConfigJson,
+                macroMarketJson = s.macroMarketJson,
             ),
             members = memberDao.getAll().map {
                 BackupMemberDto(it.id, it.name, it.isCurrentUser, it.colorHex, it.isActive)
@@ -754,6 +758,7 @@ class AppBackupManager @Inject constructor(
                 countryRiskPoints = s.countryRiskPoints,
                 countryRisk30dChange = s.countryRisk30dChange,
                 previousFxGapPercent = s.previousFxGapPercent,
+                countryRiskTrendActive = s.countryRiskTrendActive,
                 electoralCalendarEnabled = s.electoralCalendarEnabled,
                 liquidityGuardrailEnabled = s.liquidityGuardrailEnabled,
                 liquidityGuardrailMaxMonths = s.liquidityGuardrailMaxMonths,
@@ -764,6 +769,7 @@ class AppBackupManager @Inject constructor(
                 paymentAgendaJson = s.paymentAgendaJson,
                 fundWatchlistJson = s.fundWatchlistJson,
                 remConfigJson = s.remConfigJson,
+                macroMarketJson = s.macroMarketJson,
             ),
         )
 

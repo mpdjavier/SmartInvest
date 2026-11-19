@@ -1,6 +1,7 @@
 package com.smartinvest.di
 
 import com.smartinvest.BuildConfig
+import com.smartinvest.data.network.ArgentinaDatosService
 import com.smartinvest.data.network.DolarApiService
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -17,6 +18,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -76,4 +78,19 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideDolarApi(retrofit: Retrofit): DolarApiService = retrofit.create(DolarApiService::class.java)
+
+    @Provides
+    @Singleton
+    @Named("argentinaDatos")
+    fun provideArgentinaDatosRetrofit(client: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
+        .baseUrl("https://api.argentinadatos.com/")
+        .client(client)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideArgentinaDatos(
+        @Named("argentinaDatos") retrofit: Retrofit,
+    ): ArgentinaDatosService = retrofit.create(ArgentinaDatosService::class.java)
 }

@@ -8,10 +8,14 @@ import com.smartinvest.domain.model.AppSettings
 import com.smartinvest.domain.model.AssetType
 import com.smartinvest.domain.model.CarryRiskAssessment
 import com.smartinvest.domain.model.CarryRiskBand
+import com.smartinvest.domain.model.CarryRiskBreakdown
+import com.smartinvest.domain.model.CarryRiskComponent
+import com.smartinvest.domain.model.CarryRiskDataPoint
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
 import com.smartinvest.domain.model.LiquidityGuardrail
+import com.smartinvest.domain.model.MacroMarketSnapshot
 import com.smartinvest.domain.model.MacroRiskFactor
 import com.smartinvest.domain.model.MaturityFlowLine
 import com.smartinvest.domain.model.OrganicAllocationLeg
@@ -27,50 +31,54 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
- * Macro carry-risk engine.
+ * Macro carry-risk engine (criterion of 11/11/2026, amendments of 19/11/2026).
  *
- * The index measures only the macro scenario:
+ * The index only uses market variables, with a theoretical maximum of 115 that is
+ * capped at 100:
  *
- *   real rate (40) + FX gap level (25) + FX gap speed (10) + country risk (25)
+ *   MEP gap level (30) + gap speed (15) + blue gap (10) + carry cushion (30)
+ *   + country risk level (20) + country risk 30-day trend (10)
  *
- * Portfolio deviation is deliberately excluded: it is the control variable, not
- * a market signal. It is still reported so the UI can size the flow.
+ * Portfolio deviation is deliberately excluded: it is the control variable, not a
+ * market signal. It is still reported so the UI can size the flow.
  *
- * Real rate compares the reference peso TNA (weighted FCI/LECAP/wallet rate)
- * against the expected monthly official devaluation (crawling peg):
+ * The carry cushion compares the short peso TEM (median 30-day fixed-term TNA)
+ * against the expected monthly crawl:
  *
- *   realMonthly = (1 + TNA / 12) / (1 + devaluation) − 1
+ *   cushion = TNA / 12 − monthlyDevaluation
  *
- * The FX gap is MEP vs. official from DolarAPI. Country risk level and its
- * 30-day change are manual inputs (see [AppSettings]).
+ * Market inputs come from [MacroMarketSnapshot] (ArgentinaDatos) when available,
+ * falling back to the manual [AppSettings] fields.
  */
 object MacroRiskEngine {
 
     private val localeAr: Locale = Locale.forLanguageTag("es-AR")
 
-    private const val REAL_MAX_SCORE = 40
-    private const val GAP_LEVEL_MAX_SCORE = 25
-    private const val GAP_SPEED_MAX_SCORE = 10
-    private const val COUNTRY_LEVEL_MAX_SCORE = 15
+    private const val GAP_LEVEL_MAX_SCORE = 30
+    private const val GAP_SPEED_MAX_SCORE = 15
+    private const val BLUE_GAP_MAX_SCORE = 10
+    private const val CUSHION_MAX_SCORE = 30
+    private const val COUNTRY_LEVEL_MAX_SCORE = 20
     private const val COUNTRY_TREND_MAX_SCORE = 10
-
-    private const val COMFORTABLE_REAL_MONTHLY = 4.0
-    private const val REAL_SCORE_RANGE = 5.0
+    private const val TOTAL_CAP = 100
 
     private const val CALM_FX_GAP = 5.0
     private const val TENSE_FX_GAP = 12.0
-    private const val FX_GAP_SPEED_ZERO_PP = 1.0
-    private const val FX_GAP_SPEED_ALERT_PP = 2.5
+    private const val FX_GAP_SPEED_PP = 5.0
+    private const val BLUE_GAP_ALERT = 5.0
 
-    private const val COUNTRY_LEVEL_FLOOR = 500.0
-    private const val COUNTRY_LEVEL_CEILING = 1000.0
-    private const val COUNTRY_CEILING_LEVEL = 800
-    private const val COUNTRY_CEILING_CHANGE = 150
+    private const val CUSHION_FULL = 1.5
+    private const val CUSHION_HALF = 0.5
 
-    private const val LOW_ENTER = 30
-    private const val LOW_EXIT = 35
+    private const val COUNTRY_LEVEL_LOW = 600
+    private const val COUNTRY_LEVEL_HIGH = 800
+    private const val COUNTRY_TREND_ENTER = 150
+    private const val COUNTRY_TREND_EXIT = 75
+
     private const val HIGH_ENTER = 66
     private const val HIGH_EXIT = 55
+    private const val LOW_ENTER = 30
+    private const val LOW_EXIT_IMPROVE = 20
 
     private const val GREEN_MAX_PESO = 70.0
 
@@ -198,112 +206,108 @@ object MacroRiskEngine {
         fxRates: List<FxRate>,
         settings: AppSettings,
         referenceTnaPercent: Double,
+        market: MacroMarketSnapshot? = null,
+        countryRiskTrendActive: Boolean = false,
         today: LocalDate = DateUtils.today(),
     ): CarryRiskAssessment {
         val scoped = investableValuation(valuation, settings)
         val target = settings.rebalanceTargetPesoPercent.toDouble().coerceIn(0.0, 100.0)
         val redTarget = settings.redTargetPesoPercent.toDouble().coerceIn(0.0, 100.0)
-        val (mep, _) = PortfolioValuationEngine.mepRate(fxRates, settings.fallbackMepRate)
-        val official = officialRate(fxRates) ?: mep
-        val fxGap = if (official > 0.0 && mep > 0.0) {
-            ((mep / official - 1.0) * 100.0).coerceAtLeast(0.0)
+
+        val (liveMep, _) = PortfolioValuationEngine.mepRate(fxRates, settings.fallbackMepRate)
+        val official = officialRate(fxRates) ?: market?.officialRate ?: liveMep
+        val mep = market?.mepRate?.takeIf { it > 0.0 } ?: liveMep
+        val wholesale = market?.wholesaleRate?.takeIf { it > 0.0 } ?: official
+        val blue = market?.blueRate?.takeIf { it > 0.0 } ?: 0.0
+
+        val fxGap = market?.fxGapPercent ?: if (wholesale > 0.0) {
+            ((mep / wholesale - 1.0) * 100.0).coerceAtLeast(0.0)
+        } else {
+            0.0
+        }
+        val previousGap = market?.fxGap14dAgoPercent
+            ?: settings.previousFxGapPercent.takeIf { it >= 0.0 }
+        val gapSpeed = previousGap?.let { fxGap - it } ?: 0.0
+        val blueGap = market?.blueGapPercent ?: if (blue > 0.0 && wholesale > 0.0) {
+            ((blue / wholesale - 1.0) * 100.0).coerceAtLeast(0.0)
         } else {
             0.0
         }
 
-        val previousGap = settings.previousFxGapPercent.takeIf { it >= 0.0 }
-        val gapSpeed = previousGap
-            ?.let { (fxGap - it).coerceAtLeast(0.0) }
-            ?: 0.0
-        val gapSpeedAlert = previousGap != null && gapSpeed >= FX_GAP_SPEED_ALERT_PP
-
-        val hasReference = referenceTnaPercent > 0.0
+        val shortTna = market?.shortTnaPercent?.takeIf { it > 0.0 }
+            ?: referenceTnaPercent.takeIf { it > 0.0 }
+        val shortTem = (shortTna ?: 0.0) / 12.0
         val devaluation = settings.monthlyDevaluationPercent.coerceAtLeast(0.0)
-        val nominalMonthly = referenceTnaPercent / 12.0 / 100.0
-        val devaluationBase = 1.0 + devaluation / 100.0
-        val realMonthly = if (hasReference && devaluationBase > 0.0) {
-            ((1.0 + nominalMonthly) / devaluationBase - 1.0) * 100.0
+        val realMonthly = if (shortTna != null) {
+            ((1.0 + shortTem / 100.0) / (1.0 + devaluation / 100.0) - 1.0) * 100.0
         } else {
             0.0
         }
-        val realAnnual = if (hasReference) {
+        val realAnnual = if (shortTna != null) {
             ((1.0 + realMonthly / 100.0).pow(12.0) - 1.0) * 100.0
         } else {
             0.0
         }
+        val carryCushion = if (shortTna != null) shortTem - devaluation else 0.0
 
-        val realScore = if (hasReference) {
-            (REAL_MAX_SCORE * (COMFORTABLE_REAL_MONTHLY - realMonthly) / REAL_SCORE_RANGE)
-                .roundToInt()
-                .coerceIn(0, REAL_MAX_SCORE)
-        } else {
-            20
+        val gapLevelScore = when {
+            fxGap < CALM_FX_GAP -> 0
+            fxGap <= TENSE_FX_GAP -> 15
+            else -> GAP_LEVEL_MAX_SCORE
+        }
+        val gapDoubled = previousGap != null && previousGap > 0.0 && fxGap >= previousGap * 2.0
+        val gapRoseFive = previousGap != null && gapSpeed >= FX_GAP_SPEED_PP
+        val gapSpeedScore = if (gapDoubled || gapRoseFive) GAP_SPEED_MAX_SCORE else 0
+        val blueGapScore = if (blueGap > BLUE_GAP_ALERT) BLUE_GAP_MAX_SCORE else 0
+        val cushionScore = when {
+            shortTna == null -> 20
+            carryCushion >= CUSHION_FULL -> 0
+            carryCushion >= CUSHION_HALF -> 10
+            carryCushion >= 0.0 -> 20
+            else -> CUSHION_MAX_SCORE
         }
 
-        val gapLevelScore = ramp(
-            value = fxGap,
-            zeroAt = CALM_FX_GAP,
-            fullAt = TENSE_FX_GAP,
-            maxScore = GAP_LEVEL_MAX_SCORE,
-        )
-        val gapSpeedScore = if (previousGap == null) {
-            0
-        } else {
-            ramp(
-                value = gapSpeed,
-                zeroAt = FX_GAP_SPEED_ZERO_PP,
-                fullAt = FX_GAP_SPEED_ALERT_PP,
-                maxScore = GAP_SPEED_MAX_SCORE,
-            )
-        }
-        val gapScore = gapLevelScore + gapSpeedScore
-
-        val countryLevel = settings.countryRiskPoints
-        val countryChange = settings.countryRisk30dChange
+        val countryLevel = market?.countryRiskPoints ?: settings.countryRiskPoints
+        val countryChange = market?.countryRisk30dChange ?: settings.countryRisk30dChange
         val countryConfigured = countryLevel > 0
-        val countryLevelScore = if (countryConfigured) {
-            ramp(
-                value = countryLevel.toDouble(),
-                zeroAt = COUNTRY_LEVEL_FLOOR,
-                fullAt = COUNTRY_LEVEL_CEILING,
-                maxScore = COUNTRY_LEVEL_MAX_SCORE,
-            )
-        } else {
-            0
+        val countryLevelScore = when {
+            !countryConfigured -> 0
+            countryLevel < COUNTRY_LEVEL_LOW -> 0
+            countryLevel <= COUNTRY_LEVEL_HIGH -> 10
+            else -> COUNTRY_LEVEL_MAX_SCORE
         }
-        val countryTrendScore = if (countryConfigured) {
-            ramp(
-                value = countryChange.toDouble(),
-                zeroAt = 0.0,
-                fullAt = COUNTRY_CEILING_CHANGE.toDouble(),
-                maxScore = COUNTRY_TREND_MAX_SCORE,
-            )
-        } else {
-            0
+        val trendActive = countryConfigured && when {
+            countryChange > COUNTRY_TREND_ENTER -> true
+            countryRiskTrendActive && countryChange >= COUNTRY_TREND_EXIT -> true
+            else -> false
         }
+        val countryTrendScore = if (trendActive) COUNTRY_TREND_MAX_SCORE else 0
         val countryScore = countryLevelScore + countryTrendScore
         val countryCeiling = countryConfigured &&
-            (countryLevel > COUNTRY_CEILING_LEVEL || countryChange > COUNTRY_CEILING_CHANGE)
+            (countryLevel > COUNTRY_LEVEL_HIGH || trendActive)
 
-        val score = (realScore + gapScore + countryScore).coerceIn(0, 100)
+        val scoreBeforeCap = gapLevelScore + gapSpeedScore + blueGapScore +
+            cushionScore + countryScore
+        val score = scoreBeforeCap.coerceAtMost(TOTAL_CAP)
 
-        val rawBand = when {
+        val plainBand = when {
             score >= HIGH_ENTER -> CarryRiskBand.HIGH
             score <= LOW_ENTER -> CarryRiskBand.LOW
             else -> CarryRiskBand.MODERATE
         }
         val previousBand = settings.previousCarryBand
-        val hysteresisBand = when (previousBand) {
-            CarryRiskBand.HIGH -> if (score > HIGH_EXIT) CarryRiskBand.HIGH else rawBand
-            CarryRiskBand.LOW -> if (score < LOW_EXIT) CarryRiskBand.LOW else rawBand
-            else -> rawBand
+        val hysteresisBand = when {
+            previousBand == CarryRiskBand.HIGH ->
+                if (score > HIGH_EXIT) CarryRiskBand.HIGH else plainBand
+            previousBand == CarryRiskBand.MODERATE && score <= LOW_ENTER ->
+                if (score <= LOW_EXIT_IMPROVE) CarryRiskBand.LOW else CarryRiskBand.MODERATE
+            previousBand == CarryRiskBand.LOW && score <= LOW_ENTER -> CarryRiskBand.LOW
+            else -> plainBand
         }
-        val hysteresisApplied = hysteresisBand != rawBand
+        val hysteresisApplied = hysteresisBand != plainBand
 
         var band = hysteresisBand
-        if (countryCeiling || gapSpeedAlert) {
-            band = atLeast(band, CarryRiskBand.MODERATE)
-        }
+        if (countryCeiling) band = atLeast(band, CarryRiskBand.MODERATE)
 
         val electoralCap = electoralGreenCapPercent(today, settings.electoralCalendarEnabled)
         val riskAdjustedTarget = when (band) {
@@ -323,43 +327,58 @@ object MacroRiskEngine {
             greenTarget = riskAdjustedTarget,
             electoralCapApplied = electoralCapApplied,
             countryCeiling = countryCeiling,
-            gapSpeedAlert = gapSpeedAlert,
             countryLevel = countryLevel,
-            gapSpeed = gapSpeed,
+            trendActive = trendActive,
+            countryChange = countryChange,
+            gapSpeedAlert = gapSpeedScore > 0,
             guardrailMonths = settings.liquidityGuardrailMaxMonths,
             hasOverweight = guardrail.overweightCents > 0L,
         )
 
+        val gapSpeedDetail = if (previousGap == null) {
+            "Sin lectura de 14 días atrás: no se puede medir la velocidad."
+        } else {
+            "Hace 14 días ${formatPercent(previousGap, 1)} → " +
+                "${formatSignedPp(gapSpeed)} en dos semanas" +
+                if (gapDoubled) " (se duplicó)." else "."
+        }
         val factors = listOf(
             MacroRiskFactor(
-                key = "real_rate",
-                label = "Tasa real en pesos",
-                score = realScore,
-                maxScore = REAL_MAX_SCORE,
-                detail = if (hasReference) {
-                    "TNA ${formatPercent(referenceTnaPercent, 2)} vs. devaluación " +
-                        "${formatPercent(devaluation, 1)} mensual → " +
-                        "${formatSignedPercent(realMonthly, 2)} real mensual " +
-                        "(${formatSignedPercent(realAnnual, 1)} anual)."
-                } else {
-                    "Sin TNA de referencia en pesos. Se usa un puntaje neutro (20/40)."
-                },
+                key = "fx_gap",
+                label = "Brecha MEP",
+                score = gapLevelScore,
+                maxScore = GAP_LEVEL_MAX_SCORE,
+                detail = "MEP ${formatFx(mep)} ÷ mayorista ${formatFx(wholesale)} → " +
+                    "brecha ${formatPercent(fxGap, 1)} (0 si <5%; 15 si 5–12%; " +
+                    "30 si >12%).",
             ),
             MacroRiskFactor(
-                key = "fx_gap",
-                label = "Brecha cambiaria",
-                score = gapScore,
-                maxScore = GAP_LEVEL_MAX_SCORE + GAP_SPEED_MAX_SCORE,
-                detail = buildString {
-                    append("Oficial ${formatFx(official)} · MEP ${formatFx(mep)} → ")
-                    append("brecha ${formatPercent(fxGap, 1)} (calma <5%, atención 5–12%, ")
-                    append("tensión >12%). ")
-                    if (previousGap == null) {
-                        append("Sin lectura previa: cargala en Ajustes para medir la velocidad.")
-                    } else {
-                        append("Hace 30 días ${formatPercent(previousGap, 1)} → ")
-                        append("${formatSignedPp(gapSpeed)} de expansión.")
-                    }
+                key = "gap_speed",
+                label = "Velocidad de la brecha (14 días)",
+                score = gapSpeedScore,
+                maxScore = GAP_SPEED_MAX_SCORE,
+                detail = gapSpeedDetail,
+            ),
+            MacroRiskFactor(
+                key = "blue_gap",
+                label = "Brecha del blue",
+                score = blueGapScore,
+                maxScore = BLUE_GAP_MAX_SCORE,
+                detail = "Blue ${formatFx(blue)} ÷ mayorista → " +
+                    "${formatPercent(blueGap, 1)} · +10 si supera 5%.",
+            ),
+            MacroRiskFactor(
+                key = "carry_cushion",
+                label = "Colchón de carry",
+                score = cushionScore,
+                maxScore = CUSHION_MAX_SCORE,
+                detail = if (shortTna != null) {
+                    "TEM corta ${formatPercent(shortTem, 2)} − crawl " +
+                        "${formatPercent(devaluation, 1)} = " +
+                        "${formatSignedPercent(carryCushion, 2)}/mes " +
+                        "(0 si ≥1,5; 10 si 0,5–1,5; 20 si 0–0,5; 30 si negativo)."
+                } else {
+                    "Sin TNA corta en pesos. Se usa un puntaje neutro (20/30)."
                 },
             ),
             MacroRiskFactor(
@@ -368,11 +387,11 @@ object MacroRiskEngine {
                 score = countryScore,
                 maxScore = COUNTRY_LEVEL_MAX_SCORE + COUNTRY_TREND_MAX_SCORE,
                 detail = if (countryConfigured) {
-                    "Nivel ${countryLevel} pts (techo AMARILLO desde 800) · " +
+                    "Nivel $countryLevel pts ($countryLevelScore/20) · " +
                         "30 días ${formatSignedPoints(countryChange)} pts " +
-                        "(techo desde +$COUNTRY_CEILING_CHANGE)."
+                        "($countryTrendScore/10, entrada +150, salida +75)."
                 } else {
-                    "Sin dato. Cargá el nivel y la variación de 30 días en Ajustes."
+                    "Sin dato. Se puede cargar a mano en Ajustes."
                 },
             ),
             MacroRiskFactor(
@@ -386,19 +405,198 @@ object MacroRiskEngine {
             ),
         )
 
+        val components = listOf(
+            CarryRiskComponent(
+                key = "fx_gap",
+                label = "Brecha MEP",
+                points = gapLevelScore,
+                maxPoints = GAP_LEVEL_MAX_SCORE,
+                input = "Brecha ${formatPercent(fxGap, 2)}",
+                rule = "<5% → 0 · 5–12% → 15 · >12% → 30",
+                detail = "MEP ${formatFx(mep)} ÷ mayorista ${formatFx(wholesale)} − 1.",
+            ),
+            CarryRiskComponent(
+                key = "gap_speed",
+                label = "Velocidad de la brecha",
+                points = gapSpeedScore,
+                maxPoints = GAP_SPEED_MAX_SCORE,
+                input = if (previousGap == null) {
+                    "Sin dato previo"
+                } else {
+                    "${formatSignedPp(gapSpeed)} en 14 días"
+                },
+                rule = "+15 si se duplicó en 2 semanas o subió ≥5 pp",
+                detail = gapSpeedDetail,
+            ),
+            CarryRiskComponent(
+                key = "blue_gap",
+                label = "Brecha del blue",
+                points = blueGapScore,
+                maxPoints = BLUE_GAP_MAX_SCORE,
+                input = "Brecha ${formatPercent(blueGap, 2)}",
+                rule = ">5% → +10; si no, 0",
+                detail = "Blue ${formatFx(blue)} ÷ mayorista ${formatFx(wholesale)} − 1.",
+            ),
+            CarryRiskComponent(
+                key = "carry_cushion",
+                label = "Colchón de carry",
+                points = cushionScore,
+                maxPoints = CUSHION_MAX_SCORE,
+                input = if (shortTna == null) {
+                    "Sin dato"
+                } else {
+                    "${formatSignedPercent(carryCushion, 2)}/mes"
+                },
+                rule = "≥1,5% → 0 · 0,5–1,5% → 10 · 0–0,5% → 20 · negativo → 30",
+                detail = "TEM corta ${formatPercent(shortTem, 2)} − crawl " +
+                    "${formatPercent(devaluation, 1)}.",
+            ),
+            CarryRiskComponent(
+                key = "country_level",
+                label = "Riesgo país (nivel)",
+                points = countryLevelScore,
+                maxPoints = COUNTRY_LEVEL_MAX_SCORE,
+                input = if (countryConfigured) "$countryLevel pts" else "Sin dato",
+                rule = "<600 → 0 · 600–800 → 10 · >800 → 20",
+                detail = "Nivel del último cierre disponible.",
+            ),
+            CarryRiskComponent(
+                key = "country_trend",
+                label = "Riesgo país (30 días)",
+                points = countryTrendScore,
+                maxPoints = COUNTRY_TREND_MAX_SCORE,
+                input = formatSignedPoints(countryChange) + " pts",
+                rule = "+10 con suba >150; se apaga recién por debajo de +75",
+                detail = "Entrada en +150 y salida con histéresis en +75 " +
+                    (if (trendActive) "(activo)." else "(inactivo)."),
+            ),
+            CarryRiskComponent(
+                key = "deviation",
+                label = "Desvío de cartera",
+                points = 0,
+                maxPoints = 0,
+                input = formatPp(deviation),
+                rule = "Informativo: no suma al índice",
+                detail = "Cartera ${formatPercent(scoped.pesoSharePercent, 1)} vs. meta " +
+                    "${formatPercent(target, 1)}. Se usa para dimensionar el flujo.",
+                isInformational = true,
+            ),
+        )
+
+        val marketMep = market?.mepRate != null
+        val marketCountry = market?.countryRiskPoints != null
+        val marketTna = market?.shortTnaPercent != null
+        val dataPoints = listOf(
+            CarryRiskDataPoint(
+                label = "Dólar MEP",
+                value = formatFx(mep),
+                source = if (marketMep) "ArgentinaDatos · bolsa" else "DolarAPI / respaldo",
+                asOf = market?.fxDate,
+                isFallback = !marketMep,
+            ),
+            CarryRiskDataPoint(
+                label = "Dólar mayorista",
+                value = formatFx(wholesale),
+                source = if (market?.wholesaleRate != null) {
+                    "ArgentinaDatos · mayorista"
+                } else {
+                    "Dólar oficial / respaldo"
+                },
+                asOf = market?.fxDate,
+                isFallback = market?.wholesaleRate == null,
+            ),
+            CarryRiskDataPoint(
+                label = "Dólar blue",
+                value = formatFx(blue),
+                source = if (market?.blueRate != null) {
+                    "ArgentinaDatos · blue"
+                } else {
+                    "Sin dato automático"
+                },
+                asOf = market?.fxDate,
+                isFallback = market?.blueRate == null,
+            ),
+            CarryRiskDataPoint(
+                label = "Riesgo país",
+                value = if (countryConfigured) "$countryLevel pts" else "Sin dato",
+                source = if (marketCountry) "ArgentinaDatos · riesgo país" else "Ajustes (manual)",
+                asOf = market?.countryRiskDate,
+                isFallback = !marketCountry,
+            ),
+            CarryRiskDataPoint(
+                label = "Variación 30 d del riesgo país",
+                value = formatSignedPoints(countryChange) + " pts",
+                source = if (marketCountry) "ArgentinaDatos · riesgo país" else "Ajustes (manual)",
+                asOf = market?.countryRiskDate,
+                isFallback = !marketCountry,
+            ),
+            CarryRiskDataPoint(
+                label = "TNA plazo fijo 30 d (mediana)",
+                value = if (shortTna != null) formatPercent(shortTna, 2) else "Sin dato",
+                source = if (marketTna) {
+                    "ArgentinaDatos · BCRA"
+                } else if (referenceTnaPercent > 0.0) {
+                    "Cartera / TNA manual"
+                } else {
+                    "Sin dato automático"
+                },
+                asOf = market?.shortTnaDate,
+                isFallback = !marketTna,
+            ),
+            CarryRiskDataPoint(
+                label = "Crawl mensual esperado",
+                value = formatPercent(devaluation, 1),
+                source = "Ajustes",
+            ),
+        )
+
+        val notes = buildList {
+            if (scoreBeforeCap > TOTAL_CAP) {
+                add("El total teórico ($scoreBeforeCap) se topa en 100.")
+            }
+            if (countryCeiling) {
+                add(
+                    "Techo AMARILLO: riesgo país > 800 o variación de 30 días activa " +
+                        "(${formatSignedPoints(countryChange)} pts).",
+                )
+            }
+            if (hysteresisApplied) {
+                add(
+                    "Histéresis: para mejorar de estado el índice debe caer 10 puntos " +
+                        "por debajo del umbral (ROJO sale en ≤55; VERDE se entra en ≤20).",
+                )
+            }
+            if (electoralCapApplied) {
+                add(
+                    "Calendario electoral: techo VERDE de " +
+                        "${formatPercent(electoralCap, 0)} en pesos.",
+                )
+            }
+            if (market == null || !market.hasAnyData) {
+                add("Sin datos automáticos: se usan los valores manuales de Ajustes.")
+            } else if (market.sources.isNotEmpty()) {
+                add("Fuentes: ${market.sources.joinToString(" · ")}.")
+            }
+        }
+
         return CarryRiskAssessment(
             score = score,
             band = band,
-            rawBand = rawBand,
+            rawBand = plainBand,
             suggestion = suggestion,
             realMonthlyRatePercent = realMonthly,
             realAnnualRatePercent = realAnnual,
+            carryCushionPercent = carryCushion,
+            shortTemPercent = shortTem,
             fxGapPercent = fxGap,
-            fxGap30dAgoPercent = previousGap,
+            fxGapPreviousPercent = previousGap,
             fxGapSpeedPp = gapSpeed,
+            blueGapPercent = blueGap,
             officialRate = official,
             mepRate = mep,
-            referenceTnaPercent = referenceTnaPercent,
+            wholesaleRate = wholesale,
+            blueRate = blue,
+            referenceTnaPercent = shortTna ?: 0.0,
             monthlyDevaluationPercent = devaluation,
             pesoSharePercent = scoped.pesoSharePercent,
             deviationPp = deviation,
@@ -407,14 +605,27 @@ object MacroRiskEngine {
             redTargetPesoPercent = redTarget,
             countryRiskPoints = countryLevel,
             countryRisk30dChange = countryChange,
+            countryRiskDate = market?.countryRiskDate,
+            countryRiskTrendActive = trendActive,
             countryRiskCeilingActive = countryCeiling,
-            fxGapSpeedCeilingActive = gapSpeedAlert,
             hysteresisApplied = hysteresisApplied,
             previousBand = previousBand,
             electoralCapPesoPercent = electoralCap,
             electoralCapApplied = electoralCapApplied,
             liquidityGuardrail = guardrail,
             factors = factors,
+            marketFetchedAtMillis = market?.fetchedAtMillis?.takeIf { it > 0L },
+            breakdown = CarryRiskBreakdown(
+                components = components,
+                dataPoints = dataPoints,
+                scoreBeforeCap = scoreBeforeCap,
+                scoreCapNote = if (scoreBeforeCap > TOTAL_CAP) {
+                    "El máximo teórico es 115; el índice se topa en 100."
+                } else {
+                    null
+                },
+                notes = notes,
+            ),
         )
     }
 
@@ -493,9 +704,10 @@ object MacroRiskEngine {
         greenTarget: Double,
         electoralCapApplied: Boolean,
         countryCeiling: Boolean,
-        gapSpeedAlert: Boolean,
         countryLevel: Int,
-        gapSpeed: Double,
+        trendActive: Boolean,
+        countryChange: Int,
+        gapSpeedAlert: Boolean,
         guardrailMonths: Int,
         hasOverweight: Boolean,
     ): String {
@@ -505,7 +717,8 @@ object MacroRiskEngine {
                     "${formatPercent(greenTarget, 0)} en pesos."
             } else {
                 "Entorno favorable para carry: se tolera hasta " +
-                    "${formatPercent(greenTarget, 0)} en pesos."
+                    "${formatPercent(greenTarget, 0)} en pesos en instrumentos ≤$guardrailMonths " +
+                    "meses o T+0."
             }
             CarryRiskBand.MODERATE ->
                 "Mantener la base estructural ${formatPercent(target, 0)} Pesos / " +
@@ -517,22 +730,21 @@ object MacroRiskEngine {
         }
         val notes = buildList {
             if (countryCeiling && band != CarryRiskBand.HIGH) {
-                add("Techo AMARILLO por riesgo país ($countryLevel pts).")
+                val trend = if (trendActive) {
+                    " · variación 30 días ${formatSignedPoints(countryChange)} pts activa"
+                } else {
+                    ""
+                }
+                add("Techo AMARILLO por riesgo país ($countryLevel pts$trend).")
             }
-            if (gapSpeedAlert && band != CarryRiskBand.HIGH) {
-                add("Techo AMARILLO por velocidad de la brecha (${formatSignedPp(gapSpeed)} en 30 días).")
+            if (gapSpeedAlert) {
+                add("La brecha sumó +15 por velocidad (se duplicó o subió ≥5 pp en 2 semanas).")
             }
             if (hasOverweight && band != CarryRiskBand.LOW) {
                 add("El sobrepeso en pesos debe estar en instrumentos ≤$guardrailMonths meses o T+0.")
             }
         }
         return if (notes.isEmpty()) base else "$base ${notes.joinToString(" ")}"
-    }
-
-    private fun ramp(value: Double, zeroAt: Double, fullAt: Double, maxScore: Int): Int {
-        if (maxScore <= 0 || fullAt <= zeroAt) return 0
-        val fraction = ((value - zeroAt) / (fullAt - zeroAt)).coerceIn(0.0, 1.0)
-        return (maxScore * fraction).roundToInt().coerceIn(0, maxScore)
     }
 
     private fun atLeast(band: CarryRiskBand, floor: CarryRiskBand): CarryRiskBand =

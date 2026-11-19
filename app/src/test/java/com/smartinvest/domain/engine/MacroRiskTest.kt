@@ -6,6 +6,7 @@ import com.smartinvest.domain.model.CarryRiskBand
 import com.smartinvest.domain.model.CurrencyCode
 import com.smartinvest.domain.model.FxRate
 import com.smartinvest.domain.model.Holding
+import com.smartinvest.domain.model.MacroMarketSnapshot
 import com.smartinvest.domain.model.PortfolioValuation
 import com.smartinvest.domain.model.Wallet
 import com.smartinvest.domain.model.WalletType
@@ -91,6 +92,53 @@ class MacroRiskTest {
         FxRate("bolsa", "MEP", 0.0, mep, 0),
     )
 
+    private fun market(
+        country: Int? = null,
+        change: Int? = null,
+        gap: Double? = null,
+        gap14: Double? = null,
+        blueGap: Double? = null,
+        shortTna: Double? = null,
+        mep: Double? = null,
+        wholesale: Double? = null,
+        blue: Double? = null,
+        official: Double? = null,
+        countryDate: String? = null,
+        sources: List<String> = emptyList(),
+    ) = MacroMarketSnapshot(
+        countryRiskPoints = country,
+        countryRisk30dChange = change,
+        fxGapPercent = gap,
+        fxGap14dAgoPercent = gap14,
+        blueGapPercent = blueGap,
+        shortTnaPercent = shortTna,
+        mepRate = mep,
+        wholesaleRate = wholesale,
+        blueRate = blue,
+        officialRate = official,
+        countryRiskDate = countryDate,
+        sources = sources,
+    )
+
+    private fun assess(
+        settings: AppSettings = AppSettings(),
+        pesoPercent: Double = 60.0,
+        mep: Double = 1_000.0,
+        official: Double = 1_000.0,
+        tna: Double = 60.0,
+        market: MacroMarketSnapshot? = null,
+        trendActive: Boolean = false,
+        day: LocalDate = today,
+    ) = MacroRiskEngine.assess(
+        valuation = valuation(pesoPercent = pesoPercent, mep = mep, official = official),
+        fxRates = fx(mep, official),
+        settings = settings,
+        referenceTnaPercent = tna,
+        market = market,
+        countryRiskTrendActive = trendActive,
+        today = day,
+    )
+
     @Test
     fun `reference tna is balance weighted across ars wallets and peso holdings`() {
         val wallets = listOf(
@@ -120,68 +168,255 @@ class MacroRiskTest {
     }
 
     @Test
-    fun `no reference tna returns zero and yields a neutral real-rate score`() {
+    fun `no short rate yields a neutral cushion score`() {
         val settings = AppSettings(pesoReferenceTnaPercent = 0.0)
-        val valuation = valuation(pesoPercent = 60.0, mep = 1_000.0, official = 1_000.0)
 
         val rate = MacroRiskEngine.referencePesoRate(emptyList(), emptyList(), settings)
-        val assessment = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_000.0),
-            settings = settings,
-            referenceTnaPercent = rate,
-            today = today,
-        )
+        val assessment = assess(settings = settings, tna = rate)
 
         assertEquals(0.0, rate, 0.001)
-        val realFactor = assessment.factors.first { it.key == "real_rate" }
-        assertEquals(20, realFactor.score)
+        val cushion = assessment.factors.first { it.key == "carry_cushion" }
+        assertEquals(20, cushion.score)
         assertEquals(0.0, assessment.realMonthlyRatePercent, 0.001)
     }
 
     @Test
-    fun `low band allows peso overweight up to seventy percent`() {
-        val settings = AppSettings(rebalanceTargetPesoPercent = 60)
-        val valuation = valuation(pesoPercent = 60.0, mep = 1_000.0, official = 1_000.0)
+    fun `gap level uses the criterion thresholds`() {
+        fun points(gap: Double): Int = assess(
+            market = market(gap = gap, shortTna = 60.0),
+        ).breakdown.components.first { it.key == "fx_gap" }.points
 
-        val assessment = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_000.0),
-            settings = settings,
-            referenceTnaPercent = 60.0,
-            today = today,
+        assertEquals(0, points(4.9))
+        assertEquals(15, points(5.0))
+        assertEquals(15, points(12.0))
+        assertEquals(30, points(12.1))
+    }
+
+    @Test
+    fun `gap speed adds fifteen when the gap doubles or rises five points`() {
+        fun speed(gap: Double, previous: Double): Int = assess(
+            market = market(gap = gap, gap14 = previous, shortTna = 60.0),
+        ).breakdown.components.first { it.key == "gap_speed" }.points
+
+        assertEquals(15, speed(6.0, 3.0))
+        assertEquals(0, speed(7.0, 3.6))
+        assertEquals(15, speed(7.0, 2.0))
+        assertEquals(0, speed(4.0, 3.9))
+    }
+
+    @Test
+    fun `manual gap from settings is used when the automatic series is missing`() {
+        val assessment = assess(
+            settings = AppSettings(previousFxGapPercent = 1.0),
+            market = market(gap = 7.0, shortTna = 60.0),
         )
 
-        // real = (1 + 0,05) / 1,02 − 1 = 2,94% monthly → 8/40; no gap; no country risk
-        assertEquals(8, assessment.score)
+        assertEquals(1.0, assessment.fxGapPreviousPercent ?: -1.0, 0.001)
+        assertEquals(15, assessment.breakdown.components.first { it.key == "gap_speed" }.points)
+    }
+
+    @Test
+    fun `blue gap above five adds ten points`() {
+        val assessment = assess(
+            market = market(gap = 0.0, blueGap = 5.1, shortTna = 20.0),
+        )
+
+        assertEquals(10, assessment.breakdown.components.first { it.key == "blue_gap" }.points)
+        // TNA 20 / 12 − crawl 1 = 0,67 → 10 points.
+        assertEquals(10, assessment.breakdown.components.first { it.key == "carry_cushion" }.points)
+        assertEquals(20, assessment.score)
+    }
+
+    @Test
+    fun `carry cushion follows the monthly thresholds`() {
+        fun cushion(tna: Double): Int = assess(
+            market = market(gap = 0.0, shortTna = tna),
+        ).breakdown.components.first { it.key == "carry_cushion" }.points
+
+        assertEquals(0, cushion(30.0))   // 2,50 − 1,00 = 1,50
+        assertEquals(10, cushion(24.0))  // 2,00 − 1,00 = 1,00
+        assertEquals(10, cushion(18.0))  // 1,50 − 1,00 = 0,50
+        assertEquals(20, cushion(12.0))  // 1,00 − 1,00 = 0,00
+        assertEquals(30, cushion(6.0))   // 0,50 − 1,00 = −0,50
+    }
+
+    @Test
+    fun `country risk level uses the criterion thresholds`() {
+        fun points(level: Int): Int = assess(
+            market = market(country = level, change = 0, gap = 0.0, shortTna = 60.0),
+        ).breakdown.components.first { it.key == "country_level" }.points
+
+        assertEquals(0, points(599))
+        assertEquals(10, points(600))
+        assertEquals(10, points(800))
+        assertEquals(20, points(801))
+    }
+
+    @Test
+    fun `country risk trend enters at 150 and exits below 75 with hysteresis`() {
+        fun active(change: Int, previousActive: Boolean): Boolean = assess(
+            market = market(country = 500, change = change, gap = 0.0, shortTna = 60.0),
+            trendActive = previousActive,
+        ).countryRiskTrendActive
+
+        assertTrue(active(151, false))
+        assertFalse(active(100, false))
+        assertTrue(active(100, true))
+        assertTrue(active(75, true))
+        assertFalse(active(74, true))
+    }
+
+    @Test
+    fun `total score is capped at one hundred`() {
+        val assessment = assess(
+            market = market(
+                country = 900,
+                change = 200,
+                gap = 13.0,
+                gap14 = 2.0,
+                blueGap = 6.0,
+                shortTna = 6.0,
+            ),
+        )
+
+        assertEquals(115, assessment.breakdown.scoreBeforeCap)
+        assertEquals(100, assessment.score)
+        assertEquals(CarryRiskBand.HIGH, assessment.band)
+        assertTrue(assessment.breakdown.scoreCapNote != null)
+        assertEquals(
+            assessment.breakdown.scoreBeforeCap,
+            assessment.breakdown.components.filterNot { it.isInformational }.sumOf { it.points },
+        )
+    }
+
+    @Test
+    fun `country risk above 800 caps the band at moderate`() {
+        val assessment = assess(
+            market = market(country = 873, change = 0, gap = 0.0, shortTna = 60.0),
+        )
+
+        assertEquals(20, assessment.score)
+        assertEquals(CarryRiskBand.LOW, assessment.rawBand)
+        assertEquals(CarryRiskBand.MODERATE, assessment.band)
+        assertTrue(assessment.countryRiskCeilingActive)
+        assertTrue(assessment.suggestion.contains("Techo AMARILLO"))
+    }
+
+    @Test
+    fun `an active country risk trend also caps the band`() {
+        val assessment = assess(
+            market = market(country = 500, change = 200, gap = 0.0, shortTna = 60.0),
+        )
+
+        assertEquals(10, assessment.score)
+        assertTrue(assessment.countryRiskTrendActive)
+        assertEquals(CarryRiskBand.MODERATE, assessment.band)
+        assertTrue(assessment.countryRiskCeilingActive)
+    }
+
+    @Test
+    fun `automatic snapshot overrides manual settings`() {
+        val settings = AppSettings(countryRiskPoints = 700, countryRisk30dChange = 0)
+        val assessment = assess(
+            settings = settings,
+            market = market(
+                country = 848,
+                change = 176,
+                gap = 4.44,
+                blueGap = 4.52,
+                shortTna = 21.18,
+                mep = 1_628.8,
+                wholesale = 1_559.5,
+                blue = 1_630.0,
+                official = 1_580.0,
+                countryDate = "2026-11-18",
+                sources = listOf("ArgentinaDatos · riesgo país"),
+            ),
+            mep = 1_628.8,
+            official = 1_580.0,
+            tna = 21.18,
+        )
+
+        assertEquals(848, assessment.countryRiskPoints)
+        assertEquals(176, assessment.countryRisk30dChange)
+        assertTrue(assessment.countryRiskTrendActive)
+        assertTrue(assessment.countryRiskCeilingActive)
+        assertEquals(40, assessment.score)
+        assertEquals(CarryRiskBand.MODERATE, assessment.band)
+        assertEquals(4.44, assessment.fxGapPercent, 0.001)
+        assertTrue(
+            assessment.breakdown.dataPoints.any { it.source.contains("ArgentinaDatos") },
+        )
+    }
+
+    @Test
+    fun `hysteresis keeps high until the score drops to fifty five`() {
+        val settings = AppSettings(previousCarryBandName = CarryRiskBand.HIGH.name)
+        val marketSnapshot = market(country = 700, change = 0, gap = 13.0, shortTna = 12.0)
+
+        val withoutHistory = assess(
+            market = marketSnapshot.copy(fxGap14dAgoPercent = 13.0),
+        )
+        val withHighHistory = assess(
+            settings = settings,
+            market = marketSnapshot.copy(fxGap14dAgoPercent = 13.0),
+        )
+
+        // 30 gap + 20 cushion + 10 country = 60: raw MODERATE, kept HIGH by hysteresis.
+        assertEquals(60, withoutHistory.score)
+        assertEquals(CarryRiskBand.MODERATE, withoutHistory.band)
+        assertEquals(CarryRiskBand.HIGH, withHighHistory.band)
+        assertTrue(withHighHistory.hysteresisApplied)
+    }
+
+    @Test
+    fun `hysteresis enters green only ten points below the threshold`() {
+        val amberHistory = AppSettings(previousCarryBandName = CarryRiskBand.MODERATE.name)
+        val scoreThirty = assess(
+            settings = amberHistory,
+            market = market(country = 600, change = 0, gap = 0.0, shortTna = 12.0),
+        )
+        val scoreTwenty = assess(
+            settings = amberHistory,
+            market = market(gap = 0.0, shortTna = 12.0),
+        )
+
+        assertEquals(30, scoreThirty.score)
+        assertEquals(CarryRiskBand.MODERATE, scoreThirty.band)
+        assertTrue(scoreThirty.hysteresisApplied)
+
+        assertEquals(20, scoreTwenty.score)
+        assertEquals(CarryRiskBand.LOW, scoreTwenty.band)
+        assertFalse(scoreTwenty.hysteresisApplied)
+    }
+
+    @Test
+    fun `low band allows peso overweight up to seventy percent`() {
+        val assessment = assess(settings = AppSettings(rebalanceTargetPesoPercent = 60))
+
+        assertEquals(0, assessment.score)
         assertEquals(CarryRiskBand.LOW, assessment.band)
         assertEquals(70.0, assessment.riskAdjustedTargetPesoPercent, 0.001)
-        assertEquals(2.94, assessment.realMonthlyRatePercent, 0.01)
-        assertEquals(41.6, assessment.realAnnualRatePercent, 0.2)
+        assertEquals(4.0, assessment.carryCushionPercent, 0.01)
         assertEquals(0.0, assessment.fxGapPercent, 0.001)
         assertTrue(assessment.suggestion.contains("70%"))
     }
 
     @Test
     fun `moderate band keeps the strict strategic target`() {
-        val settings = AppSettings(rebalanceTargetPesoPercent = 60)
-        val valuation = valuation(pesoPercent = 60.0, mep = 1_100.0, official = 1_000.0)
-
-        val assessment = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_100.0),
-            settings = settings,
-            referenceTnaPercent = 30.0,
-            today = today,
+        val assessment = assess(
+            settings = AppSettings(rebalanceTargetPesoPercent = 60),
+            mep = 1_060.0,
+            official = 1_000.0,
+            tna = 30.0,
         )
 
-        // real = 1,025/1,02 − 1 = 0,49% → 28/40; gap 10% → 18/25; country 0 → 46
-        assertEquals(46, assessment.score)
-        assertEquals(CarryRiskBand.MODERATE, assessment.band)
-        assertEquals(60.0, assessment.riskAdjustedTargetPesoPercent, 0.001)
-        assertEquals(10.0, assessment.fxGapPercent, 0.001)
+        // Gap 6% → 15; cushion 30/12 − 1 = 1,5 → 0. Total 15 → LOW.
+        assertEquals(15, assessment.score)
+        assertEquals(CarryRiskBand.LOW, assessment.band)
+        assertEquals(6.0, assessment.fxGapPercent, 0.001)
         assertEquals(1_000.0, assessment.officialRate, 0.001)
-        assertEquals(1_100.0, assessment.mepRate, 0.001)
+        assertEquals(1_060.0, assessment.mepRate, 0.001)
     }
 
     @Test
@@ -193,18 +428,16 @@ class MacroRiskTest {
             countryRiskPoints = 900,
             countryRisk30dChange = 100,
         )
-        val valuation = valuation(pesoPercent = 90.0, mep = 1_500.0, official = 1_000.0)
-
-        val assessment = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_500.0),
+        val assessment = assess(
             settings = settings,
-            referenceTnaPercent = 10.0,
-            today = today,
+            pesoPercent = 90.0,
+            mep = 1_500.0,
+            official = 1_000.0,
+            tna = 10.0,
         )
 
-        // real ≈ −3,97% → 40/40; gap 50% → 25/25; country 900/+100 → 19/25
-        assertEquals(84, assessment.score)
+        // Gap 50% → 30; cushion 10/12 − 5 = −4,17 → 30; country 900 → 20. Total 80.
+        assertEquals(80, assessment.score)
         assertEquals(CarryRiskBand.HIGH, assessment.band)
         assertEquals(45.0, assessment.riskAdjustedTargetPesoPercent, 0.001)
         assertTrue(assessment.realMonthlyRatePercent < 0.0)
@@ -239,20 +472,8 @@ class MacroRiskTest {
     @Test
     fun `portfolio deviation does not change the score`() {
         val settings = AppSettings(rebalanceTargetPesoPercent = 60)
-        val lowDeviation = MacroRiskEngine.assess(
-            valuation = valuation(pesoPercent = 62.0),
-            fxRates = fx(1_000.0),
-            settings = settings,
-            referenceTnaPercent = 60.0,
-            today = today,
-        )
-        val highDeviation = MacroRiskEngine.assess(
-            valuation = valuation(pesoPercent = 95.0),
-            fxRates = fx(1_000.0),
-            settings = settings,
-            referenceTnaPercent = 60.0,
-            today = today,
-        )
+        val lowDeviation = assess(settings = settings, pesoPercent = 62.0)
+        val highDeviation = assess(settings = settings, pesoPercent = 95.0)
 
         assertEquals(lowDeviation.score, highDeviation.score)
         assertEquals(lowDeviation.band, highDeviation.band)
@@ -260,111 +481,6 @@ class MacroRiskTest {
         assertTrue(deviationFactor.isInformational)
         assertEquals(0, deviationFactor.maxScore)
         assertTrue(deviationFactor.detail.contains("No suma al índice"))
-    }
-
-    @Test
-    fun `country risk above 800 caps the band at moderate`() {
-        val settings = AppSettings(
-            rebalanceTargetPesoPercent = 60,
-            countryRiskPoints = 873,
-            countryRisk30dChange = 291,
-        )
-        val valuation = valuation(pesoPercent = 60.0)
-
-        val assessment = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_000.0),
-            settings = settings,
-            referenceTnaPercent = 60.0,
-            today = today,
-        )
-
-        // real 8 + gap 0 + country (11 + 10) = 29 → raw LOW, capped at MODERATE
-        assertEquals(29, assessment.score)
-        assertEquals(CarryRiskBand.LOW, assessment.rawBand)
-        assertEquals(CarryRiskBand.MODERATE, assessment.band)
-        assertTrue(assessment.countryRiskCeilingActive)
-        assertTrue(assessment.suggestion.contains("Techo AMARILLO"))
-    }
-
-    @Test
-    fun `gap doubling in thirty days caps the band at moderate`() {
-        val settings = AppSettings(
-            rebalanceTargetPesoPercent = 60,
-            previousFxGapPercent = 2.5,
-        )
-        val valuation = valuation(pesoPercent = 60.0, mep = 1_050.0, official = 1_000.0)
-
-        val assessment = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_050.0),
-            settings = settings,
-            referenceTnaPercent = 60.0,
-            today = today,
-        )
-
-        assertEquals(2.5, assessment.fxGapSpeedPp, 0.001)
-        assertTrue(assessment.fxGapSpeedCeilingActive)
-        assertEquals(CarryRiskBand.MODERATE, assessment.band)
-        assertTrue(assessment.suggestion.contains("velocidad"))
-    }
-
-    @Test
-    fun `hysteresis keeps high until the score drops below the exit threshold`() {
-        val base = AppSettings(
-            rebalanceTargetPesoPercent = 60,
-            countryRiskPoints = 700,
-            countryRisk30dChange = 100,
-        )
-        val valuation = valuation(pesoPercent = 60.0, mep = 1_100.0, official = 1_000.0)
-
-        val withoutHistory = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_100.0),
-            settings = base,
-            referenceTnaPercent = 30.0,
-            today = today,
-        )
-        val withHighHistory = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_100.0),
-            settings = base.copy(previousCarryBandName = CarryRiskBand.HIGH.name),
-            referenceTnaPercent = 30.0,
-            today = today,
-        )
-
-        // real 28 + gap 18 + country 13 = 59: raw MODERATE, kept HIGH by hysteresis
-        assertEquals(59, withoutHistory.score)
-        assertEquals(CarryRiskBand.MODERATE, withoutHistory.band)
-        assertEquals(CarryRiskBand.HIGH, withHighHistory.band)
-        assertTrue(withHighHistory.hysteresisApplied)
-    }
-
-    @Test
-    fun `hysteresis keeps low until the score reaches the exit threshold`() {
-        val base = AppSettings(rebalanceTargetPesoPercent = 60)
-        val valuation = valuation(pesoPercent = 60.0, mep = 1_060.0, official = 1_000.0)
-
-        val withoutHistory = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_060.0),
-            settings = base,
-            referenceTnaPercent = 30.0,
-            today = today,
-        )
-        val withLowHistory = MacroRiskEngine.assess(
-            valuation = valuation,
-            fxRates = fx(1_060.0),
-            settings = base.copy(previousCarryBandName = CarryRiskBand.LOW.name),
-            referenceTnaPercent = 30.0,
-            today = today,
-        )
-
-        // real 28 + gap 4 = 32: raw MODERATE, kept LOW by hysteresis
-        assertEquals(32, withoutHistory.score)
-        assertEquals(CarryRiskBand.MODERATE, withoutHistory.band)
-        assertEquals(CarryRiskBand.LOW, withLowHistory.band)
-        assertTrue(withLowHistory.hysteresisApplied)
     }
 
     @Test
@@ -376,12 +492,9 @@ class MacroRiskTest {
         assertEquals(70.0, MacroRiskEngine.electoralGreenCapPercent(LocalDate.of(2027, 12, 15), true), 0.001)
         assertEquals(70.0, MacroRiskEngine.electoralGreenCapPercent(LocalDate.of(2027, 9, 15), false), 0.001)
 
-        val assessment = MacroRiskEngine.assess(
-            valuation = valuation(pesoPercent = 60.0),
-            fxRates = fx(1_000.0),
+        val assessment = assess(
             settings = AppSettings(rebalanceTargetPesoPercent = 60),
-            referenceTnaPercent = 60.0,
-            today = LocalDate.of(2027, 4, 15),
+            day = LocalDate.of(2027, 4, 15),
         )
 
         assertEquals(CarryRiskBand.LOW, assessment.band)

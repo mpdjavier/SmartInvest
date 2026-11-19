@@ -25,16 +25,24 @@ data class AppSettings(
     val maturityAlertDays: Int = 30,
     val rateDropThresholdPp: Double = 0.5,
     val fallbackMepRate: Double = 1_000.0,
-    /** Expected monthly official devaluation (crawling peg) for the real-rate comparison. */
-    val monthlyDevaluationPercent: Double = 2.0,
+    /** Expected monthly official devaluation (crawling peg) used by the carry cushion. */
+    val monthlyDevaluationPercent: Double = 1.0,
     /** 0 = automatic weighted TNA of ARS wallets and peso holdings. */
     val pesoReferenceTnaPercent: Double = 0.0,
     /** Country-risk level in points (0 = no data). Above 800 caps the band at AMBER. */
     val countryRiskPoints: Int = 0,
     /** Country-risk change over the last 30 days, in points (can be negative). */
     val countryRisk30dChange: Int = 0,
-    /** MEP gap reading 30 days ago; negative means no data. Used for the gap velocity. */
+    /**
+     * MEP gap reading 14 days ago; negative means no data. Manual fallback used
+     * only when the automatic series is unavailable.
+     */
     val previousFxGapPercent: Double = -1.0,
+    /**
+     * The +10 for the 30-day country-risk move stays active until the change
+     * falls below +75 (exit hysteresis, amendment of 19/11/2026).
+     */
+    val countryRiskTrendActive: Boolean = false,
     /** Applies the pre-electoral ceiling to the GREEN peso target. */
     val electoralCalendarEnabled: Boolean = true,
     /** Blocks the GREEN overweight if it is not held in short/liquid instruments. */
@@ -58,11 +66,17 @@ data class AppSettings(
     val fundWatchlistJson: String = "",
     /** Serialized REM snapshot, instrument assumptions and crawling-peg benchmark. */
     val remConfigJson: String = "",
+    /** Serialized [MacroMarketSnapshot] with the last automatic market reading. */
+    val macroMarketJson: String = "",
 ) {
     val previousCarryBand: CarryRiskBand?
         get() = previousCarryBandName
             .takeIf { it.isNotBlank() }
             ?.let { name -> runCatching { CarryRiskBand.valueOf(name) }.getOrNull() }
+
+    /** Automatic market reading; empty snapshot when nothing was fetched yet. */
+    val macroMarket: MacroMarketSnapshot
+        get() = MacroMarketSnapshot.decode(macroMarketJson)
 
     val salaryWeights: List<Int>
         get() = listOf(salaryFciPercent, salaryLecapPercent, salaryMepPercent, salaryBondPercent)
