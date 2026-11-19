@@ -413,19 +413,24 @@ class InvestmentRepositoryImpl @Inject constructor(
                         fetchedAt = now,
                     )
                 }
+                if (result.source == MarketSource.CAFCI) {
+                    instrumentQuoteDao.deleteForMarket(effectiveKey)
+                }
                 instrumentQuoteDao.upsertAll(entities)
                 instrumentQuoteDao.deleteForMarketAfter(effectiveKey, result.latestDate.toEpochDay())
                 storedQuotes += entities.size
                 val isLocked = PortfolioReconciliationEngine.isManualValuationLocked(holding)
                 val manualDate = PortfolioReconciliationEngine.manualValuationDate(holding)
                 val isLockedForDate = isLocked && (manualDate == null || !result.latestDate.isAfter(manualDate))
-                if (
-                    holding.quantity > 0.0 &&
-                    result.latestPrice > 0.0 &&
-                    !isLockedForDate
-                ) {
+                if (holding.quantity > 0.0 && result.latestPrice > 0.0) {
                     val newValue = holding.valueCentsFor(result.latestPrice)
-                    holdingDao.updateValuation(holding.id, newValue, result.name)
+                    val isCorrupted = PortfolioValuationEngine.isCorruptedValuation(
+                        holding.currentValueCents,
+                        newValue,
+                    )
+                    if (!isLockedForDate || isCorrupted) {
+                        holdingDao.updateValuation(holding.id, newValue, result.name)
+                    }
                 }
                 updated++
             }
@@ -488,6 +493,9 @@ class InvestmentRepositoryImpl @Inject constructor(
                     fetchedAt = now,
                 )
             }
+            if (fetched.source == MarketSource.CAFCI) {
+                instrumentQuoteDao.deleteForMarket(normalized)
+            }
             instrumentQuoteDao.upsertAll(entities)
             instrumentQuoteDao.deleteForMarketAfter(normalized, fetched.latestDate.toEpochDay())
             // Also update any matching holdings in portfolio.
@@ -497,9 +505,18 @@ class InvestmentRepositoryImpl @Inject constructor(
                     val isLocked = PortfolioReconciliationEngine.isManualValuationLocked(it)
                     val manualDate = PortfolioReconciliationEngine.manualValuationDate(it)
                     val isLockedForDate = isLocked && (manualDate == null || !fetched.latestDate.isAfter(manualDate))
+                    val expectedValue = if (it.quantity > 0.0 && fetched.latestPrice > 0.0) {
+                        it.valueCentsFor(fetched.latestPrice)
+                    } else {
+                        0L
+                    }
+                    val isCorrupted = PortfolioValuationEngine.isCorruptedValuation(
+                        it.currentValueCents,
+                        expectedValue,
+                    )
                     MarketKeyParser.normalize(it.marketKey) == normalized &&
                         it.quantity > 0.0 &&
-                        !isLockedForDate
+                        (!isLockedForDate || isCorrupted)
                 }
                 .forEach { h ->
                     holdingDao.updateValuation(h.id, h.valueCentsFor(fetched.latestPrice), fetched.name)
@@ -513,17 +530,24 @@ class InvestmentRepositoryImpl @Inject constructor(
         runCatching {
             val rates = dolarApi.getDollarRates()
             require(rates.isNotEmpty()) { "DolarAPI devolvió una lista vacía" }
-            val entities = rates.map { dto ->
+            val existingByHouse = fxRateDao.getAll().associateBy { it.house }
+            val entities = rates.mapNotNull { dto ->
                 val domain = dto.toDomain()
+                val prev = existingByHouse[domain.house]
+                val sell = domain.sell.takeIf { it > 0.0 } ?: prev?.sell ?: 0.0
+                if (sell <= 0.0) return@mapNotNull null
+                val buy = domain.buy.takeIf { it > 0.0 } ?: prev?.buy ?: sell
                 FxRateEntity(
                     house = domain.house,
                     name = domain.name,
-                    buy = domain.buy,
-                    sell = domain.sell,
+                    buy = buy,
+                    sell = sell,
                     updatedAt = domain.updatedAt,
                 )
             }
-            fxRateDao.upsertAll(entities)
+            if (entities.isNotEmpty()) {
+                fxRateDao.upsertAll(entities)
+            }
             widgetRefresher.refresh()
         }
     }
@@ -560,18 +584,22 @@ class InvestmentRepositoryImpl @Inject constructor(
                     .getOrDefault(emptyList())
 
                 fun latestCountryOnOrBefore(date: LocalDate) = countrySeries
-                    .filter { it.fecha.isNotBlank() && it.fecha <= date.toString() }
+                    .filter { it.fecha.isNotBlank() && it.valor > 0 && it.fecha <= date.toString() }
                     .maxByOrNull { it.fecha }
 
                 fun saleOnOrBefore(series: List<ArgentinaDolarPointDto>, date: LocalDate?): Double? {
                     val point = series
-                        .filter { date == null || it.fecha <= date.toString() }
+                        .filter {
+                            it.fecha.isNotBlank() &&
+                                (it.venta ?: 0.0) > 0.0 &&
+                                (date == null || it.fecha <= date.toString())
+                        }
                         .maxByOrNull { it.fecha }
                     return point?.venta?.takeIf { it > 0.0 }
                 }
 
                 val countryLast = countrySeries
-                    .filter { it.fecha.isNotBlank() }
+                    .filter { it.fecha.isNotBlank() && it.valor > 0 }
                     .maxByOrNull { it.fecha }
                 val countryDate = countryLast?.fecha
                 val countryBase = countryDate
@@ -587,9 +615,9 @@ class InvestmentRepositoryImpl @Inject constructor(
                 val wholesaleSeries = fxSeries["mayorista"].orEmpty()
                 val blueSeries = fxSeries["blue"].orEmpty()
 
-                val mepLast = mepSeries.filter { it.fecha.isNotBlank() }.maxByOrNull { it.fecha }
-                val wholesaleLast = wholesaleSeries.filter { it.fecha.isNotBlank() }.maxByOrNull { it.fecha }
-                val blueLast = blueSeries.filter { it.fecha.isNotBlank() }.maxByOrNull { it.fecha }
+                val mepLast = mepSeries.filter { it.fecha.isNotBlank() && (it.venta ?: 0.0) > 0.0 }.maxByOrNull { it.fecha }
+                val wholesaleLast = wholesaleSeries.filter { it.fecha.isNotBlank() && (it.venta ?: 0.0) > 0.0 }.maxByOrNull { it.fecha }
+                val blueLast = blueSeries.filter { it.fecha.isNotBlank() && (it.venta ?: 0.0) > 0.0 }.maxByOrNull { it.fecha }
                 val fxDate = listOfNotNull(mepLast?.fecha, wholesaleLast?.fecha).minOrNull()
 
                 val mep = saleOnOrBefore(mepSeries, null)
@@ -666,6 +694,7 @@ class InvestmentRepositoryImpl @Inject constructor(
     override suspend fun refreshSnapshot(): PortfolioValuation = withContext(io) {
         val settings = settingsRepository.currentSettings()
         val today = DateUtils.today()
+        healOffHoursMarketData(today)
         val valuation = PortfolioValuationEngine.calculate(
             wallets = walletDao.getAll().map { it.toDomain() },
             holdings = holdingDao.getAll().map { it.toDomain() },
@@ -688,6 +717,47 @@ class InvestmentRepositoryImpl @Inject constructor(
         snapshotDao.deleteOlderThan(today.minusDays(730).toEpochDay())
         widgetRefresher.refresh()
         valuation
+    }
+
+    /**
+     * Cleans up off-hours quote artifacts (e.g. `$ 2,30% TEM` mistaken for a price on S30N6,
+     * or Rava quotes stamped with today's date before the market opens at 11:00 AM) and
+     * restores any holding valuation that was overwritten by a corrupted quote.
+     */
+    private suspend fun healOffHoursMarketData(today: LocalDate) {
+        val maxMarketEpochDay = DateUtils.latestMarketSessionDate().toEpochDay()
+        val allEntities = instrumentQuoteDao.getAll()
+        if (allEntities.isEmpty()) return
+
+        allEntities.groupBy { it.marketKey }.forEach { (marketKey, rows) ->
+            val sorted = rows.sortedBy { it.dateEpochDay }
+            val domainSeries = sorted.map { it.toDomain() }
+            val validDates = PortfolioValuationEngine.sanitizeQuoteSeries(domainSeries)
+                .map { it.date.toEpochDay() }
+                .toSet()
+
+            sorted.forEach { row ->
+                val isUnoperatedToday = row.source == MarketSource.RAVA &&
+                    row.dateEpochDay > maxMarketEpochDay
+                if (row.price <= 0.0 || row.dateEpochDay !in validDates || isUnoperatedToday) {
+                    instrumentQuoteDao.deleteById(row.id)
+                }
+            }
+        }
+
+        val cleanedQuotes = instrumentQuoteDao.getAll().map { it.toDomain() }
+        holdingDao.getAll().map { it.toDomain() }.forEach { holding ->
+            if (holding.quantity <= 0.0) return@forEach
+            val latest = PortfolioValuationEngine.quotesFor(holding, cleanedQuotes)
+                .filter { !it.date.isAfter(today) }
+                .lastOrNull()
+                ?: return@forEach
+            if (latest.price <= 0.0) return@forEach
+            val expectedValue = holding.valueCentsFor(latest.price)
+            if (PortfolioValuationEngine.isCorruptedValuation(holding.currentValueCents, expectedValue)) {
+                holdingDao.updateValuation(holding.id, expectedValue, holding.name)
+            }
+        }
     }
 
     override suspend fun saveSalaryPlan(plan: SalaryPlan) {

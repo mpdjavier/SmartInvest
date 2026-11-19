@@ -82,10 +82,25 @@ object PortfolioValuationEngine {
             today
         }
 
+        val sanitizedHoldings = holdings.map { holding ->
+            val series = quotesFor(holding, quotes).filter { !it.date.isAfter(today) }
+            val latestQuote = series.lastOrNull()
+            if (holding.quantity > 0.0 && latestQuote != null && latestQuote.price > 0.0) {
+                val expectedCents = holding.valueCentsFor(latestQuote.price)
+                if (isCorruptedValuation(holding.currentValueCents, expectedCents)) {
+                    holding.copy(currentValueCents = expectedCents)
+                } else {
+                    holding
+                }
+            } else {
+                holding
+            }
+        }
+
         val breakdown = DailyInterestEngine.build(
             month = YearMonth.from(effectiveToday),
             wallets = wallets,
-            holdings = holdings,
+            holdings = sanitizedHoldings,
             fxRates = fxRates,
             quotes = quotes,
             fallbackMepRate = fallbackMepRate,
@@ -99,7 +114,7 @@ object PortfolioValuationEngine {
             .orEmpty()
 
         val walletValuations = activeWallets.map { wallet ->
-            val effectiveTna = wallet.effectiveTnaPercent(holdings)
+            val effectiveTna = wallet.effectiveTnaPercent(sanitizedHoldings)
             val valueArs = if (wallet.currency == CurrencyCode.ARS) {
                 wallet.balanceCents
             } else {
@@ -119,7 +134,7 @@ object PortfolioValuationEngine {
             )
         }
 
-        val holdingValuations = holdings.map { holding ->
+        val holdingValuations = sanitizedHoldings.map { holding ->
             val manualDate = PortfolioReconciliationEngine.manualValuationDate(holding)
             // Only closes up to today are valid for the current valuation. A quote dated in
             // the future must never override the balance loaded for today.
@@ -167,7 +182,7 @@ object PortfolioValuationEngine {
             ?: (walletValuations.sumOf { it.dailyInterestCents } + holdingDailyInterest)
         val monthlyInterest = InterestCalculator.monthlyProjectionCents(breakdown.averageDailyArsCents)
 
-        val cost = holdings.sumOf { holding ->
+        val cost = sanitizedHoldings.sumOf { holding ->
             val costNative = if (holding.costCents > 0L) holding.costCents else holding.currentValueCents
             if (holding.currency == CurrencyCode.ARS) costNative else (costNative * mep).roundToLong()
         } + activeWallets.sumOf { it.balanceCents * if (it.currency == CurrencyCode.ARS) 1L else mep.roundToLong() }
@@ -249,7 +264,42 @@ object PortfolioValuationEngine {
                 quotes.filter { it.symbol.trim().equals(symbol, ignoreCase = true) }
             }
         }
-        return matched.sortedBy { it.date }
+        return sanitizeQuoteSeries(matched.filter { it.price > 0.0 }.sortedBy { it.date })
+    }
+
+    /**
+     * Filters out off-hours scraping glitches (such as `$ 2,30% TEM` mistaken for a price of
+     * `2.30` on `S30N6` when the previous close was `129.08`) that drop >55% or spike >120%
+     * within a short window.
+     */
+    internal fun sanitizeQuoteSeries(sorted: List<InstrumentQuote>): List<InstrumentQuote> {
+        if (sorted.size < 2) return sorted
+        val result = mutableListOf<InstrumentQuote>()
+        for (quote in sorted) {
+            if (quote.price <= 0.0) continue
+            val prev = result.lastOrNull()
+            if (prev == null) {
+                result += quote
+            } else {
+                val spanDays = ChronoUnit.DAYS.between(prev.date, quote.date)
+                val ratio = quote.price / prev.price
+                if (spanDays > 60L || ratio in 0.45..2.20) {
+                    result += quote
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Detects when a holding's stored [storedCents] was overwritten by an off-hours
+     * scraping artifact (deviating by more than -55% or +120% from [expectedQuoteCents]).
+     */
+    internal fun isCorruptedValuation(storedCents: Long, expectedQuoteCents: Long): Boolean {
+        if (expectedQuoteCents <= 0L) return false
+        if (storedCents <= 0L) return true
+        val ratio = storedCents.toDouble() / expectedQuoteCents.toDouble()
+        return ratio < 0.45 || ratio > 2.20
     }
 
     private fun toArs(nativeCents: Long, currency: CurrencyCode, mep: Double): Long =

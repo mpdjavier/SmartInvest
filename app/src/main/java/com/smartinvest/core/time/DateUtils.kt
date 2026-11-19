@@ -1,9 +1,12 @@
 package com.smartinvest.core.time
 
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -44,4 +47,29 @@ object DateUtils {
     fun previousMonth(month: YearMonth): YearMonth = month.minusMonths(1)
 
     fun nextMonth(month: YearMonth): YearMonth = month.plusMonths(1)
+
+    fun isWeekend(date: LocalDate): Boolean =
+        date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
+
+    /**
+     * BYMA / Rava trading opens at 11:00 (America/Argentina/Buenos_Aires) Monday–Friday.
+     * Before 11:05 AM on a weekday, or at any time on a weekend, today's market session
+     * has not operated yet, so any quote must belong to the previous business day.
+     */
+    fun hasMarketOperatedToday(at: ZonedDateTime = ZonedDateTime.now(ARGENTINA)): Boolean =
+        !isWeekend(at.toLocalDate()) && !at.toLocalTime().isBefore(LocalTime.of(11, 5))
+
+    /**
+     * Latest date on which the Argentine market could have operated at [at].
+     */
+    fun latestMarketSessionDate(at: ZonedDateTime = ZonedDateTime.now(ARGENTINA)): LocalDate {
+        var date = at.toLocalDate()
+        if (!hasMarketOperatedToday(at)) {
+            date = date.minusDays(1)
+        }
+        while (isWeekend(date)) {
+            date = date.minusDays(1)
+        }
+        return date
+    }
 }

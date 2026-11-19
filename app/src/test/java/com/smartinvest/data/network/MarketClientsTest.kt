@@ -157,4 +157,92 @@ class MarketClientsTest {
         assertEquals(128.415, result.history.first().price, 0.0001)
         assertEquals(128.303, result.history.last().price, 0.0001)
     }
+
+    @Test
+    fun `rava off-hours html for S30N6 ignores TEM percent in meta description and keeps last closed session`() {
+        val html = """
+            <html>
+              <head>
+                <meta property="og:title" content="S30N6 LECAP ${'$'} 2,30% TEM Vto. 30.11.2026 | Cotizaciones | Rava Bursátil" />
+                <meta property="og:description" content="Cotización del bono LECAP ${'$'} 2,30% TEM Vto. 30.11.2026 (S30N6) — precio, paridad, TIR, duration y flujo de fondos." />
+              </head>
+              <body>
+                <header class="p2-hero">
+                  <h1 class="p2-h1">
+                    <span class="p2-ticker">S30N6</span>
+                    <span class="p2-nombre">LECAP ${'$'} 2,30% TEM Vto. 30.11.2026</span>
+                  </h1>
+                </header>
+                <div class="p2-ct-returns">
+                  <div class="p2-ret"><span class="p2-ret-label">Precio</span><span class="p2-ret-val">129,05</span></div>
+                  <div class="p2-ret"><span class="p2-ret-label">% Día</span><span class="p2-ret-val">-%</span></div>
+                </div>
+                <div class="tabla-cotizaciones p2-tabla p2-coti-hist">
+                  <table>
+                    <thead>
+                      <tr><th>Fecha</th><th>Apertura</th><th>Máximo</th><th>Mínimo</th><th>Cierre</th><th>Volumen</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>18/11/2026</td><td>129,49</td><td>129,49</td><td>128,88</td><td>129,05</td><td>164.198.651.078</td></tr>
+                      <tr><td>17/11/2026</td><td>128,92</td><td>129,35</td><td>128,90</td><td>128,96</td><td>93.460.568.828</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </body>
+            </html>
+        """.trimIndent()
+        val json = """
+            {"simbolo":"S30N6","datos":[
+              {"precio":128.962,"volumen":93460568828,"fecha":"2026-11-17T00:00:00.000Z"},
+              {"precio":129.08,"volumen":164198651078,"fecha":"2026-11-18T00:00:00.000Z"}
+            ]}
+        """.trimIndent()
+
+        // Queried on 19/11/2026 before the market opens: must keep 18/11/2026 @ 129.08, never 2.30 or a fake 19/11 point.
+        val result = RavaClient.parseHtml("S30N6", html, LocalDate.of(2026, 11, 19), json)
+
+        assertEquals(LocalDate.of(2026, 11, 18), result.latestDate)
+        assertEquals(129.08, result.latestPrice, 0.0001)
+        assertEquals(2, result.history.size)
+        assertEquals(LocalDate.of(2026, 11, 17), result.history[0].date)
+        assertEquals(LocalDate.of(2026, 11, 18), result.history[1].date)
+    }
+
+    @Test
+    fun `cafci money market TNA table converts annualized TNA to direct period returns without negative daily steps`() {
+        val html = """
+            <html>
+              <body>
+                <div id="consulta" class="divContent">
+                  <h3>Rendimiento Histórico (TNA) — al 18/11/2026</h3>
+                  <table class="tablaRendimientos">
+                    <tr class="titleTable"><td>Período</td><td>Mercado Fondo - Clase A</td></tr>
+                    <tr><td class="flechaTabla">Valor Cuotaparte</td><td>26.484,999</td></tr>
+                    <tr><td class="flechaTabla">7 días</td><td>19,5000 %</td></tr>
+                    <tr><td class="flechaTabla">1 mes</td><td>19,0000 %</td></tr>
+                  </table>
+                  <p>TNA = Tasa Nominal Anual sobre días corridos.</p>
+                </div>
+                <div id="cuotaparte" class="divContent">
+                  <h3>Valores al 18/11/2026</h3>
+                  <p>Valor por cada cuotaparte: 26,484999</p>
+                </div>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = CafciClient.parseHtml("798", "1982", html, LocalDate.of(2026, 11, 19))
+
+        assertEquals(LocalDate.of(2026, 11, 18), result.latestDate)
+        assertEquals(26.484999, result.latestPrice, 0.000001)
+        assertTrue(result.history.size >= 30)
+        // Every consecutive day must grow smoothly (~0.05% per day), never dip when 7d TNA > 30d TNA.
+        for (i in 1 until result.history.size) {
+            val prev = result.history[i - 1].price
+            val curr = result.history[i].price
+            assertTrue("VCP must grow on step $i ($prev -> $curr)", curr > prev)
+            val dailyPct = (curr / prev - 1.0) * 100.0
+            assertTrue("Daily return must be < 0.2% ($dailyPct%)", dailyPct < 0.20)
+        }
+    }
 }

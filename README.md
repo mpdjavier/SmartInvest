@@ -2,7 +2,7 @@
 
 Aplicación Android nativa para **patrimonio personal + gastos compartidos del hogar**, pensada para Argentina: cartera en pesos y dólares, FCI (uno marcado como billetera para gastos), LECAP/BONCAP, cuotas de tarjeta, fondo común, reparto de sueldo, alertas y widget de pantalla de inicio.
 
-> **Estado:** código fuente completo y **177 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
+> **Estado:** código fuente completo y **180 tests unitarios** pasando con JDK 17 y Android SDK 35. Ver [Build y ejecución](#build-y-ejecución).
 
 ---
 
@@ -61,8 +61,8 @@ Aplicación Android nativa para **patrimonio personal + gastos compartidos del h
 - **Plazo de rescate por FCI**: T+0 para money market y **T+1 para Adcap Balanceado III** (rescata a 24 h), configurable con chips en el editor.
 - Activos: LECAP, BONCAP, bonos, FCI, CEDEAR, dólar MEP, cripto y otros, en ARS o USD.
 - **Seguimiento en vivo de instrumentos y FCI**:
-  - **Rava** (`rava:S30N6`, `rava:AO27D`, `rava:SPY` o cualquier ticker/URL de `rava.com/perfil/...`): precio actual y curva histórica de cierres diarios. Si la página no publica la tabla histórica, se lee la cotización del encabezado junto con el cierre **Anterior**, así el activo ya aporta variación diaria desde la primera sincronización.
-  - **CAFCI** (`cafci:1402:4070` Adcap Balanceado III, `cafci:798:1982` Mercado Fondo ARS, `cafci:1522:4557` Mercado Fondo USD o cualquier URL de `estadisticas.cafci.org.ar/fondos/...`): valor de cuotaparte (VCP) y evolución histórica.
+  - **Rava** (`rava:S30N6`, `rava:AO27D`, `rava:SPY` o cualquier ticker/URL de `rava.com/perfil/...`): precio actual y curva histórica de cierres diarios. Si se consulta fuera del horario de mercado (cuando Rava omite `.p2-price`/`.p2-time` o marca `% Día = -%`), conserva el último cierre real de la tabla/JSON sin estampar una rueda ficticia en la fecha del día ni confundir porcentajes de la descripción (`$ 2,30% TEM` en `S30N6`) con un precio.
+  - **CAFCI** (`cafci:1402:4070` Adcap Balanceado III, `cafci:798:1982` Mercado Fondo ARS, `cafci:1522:4557` Mercado Fondo USD o cualquier URL de `estadisticas.cafci.org.ar/fondos/...`): valor de cuotaparte (VCP) y evolución histórica. Detecta automáticamente si la tabla de CAFCI informa `Rendimiento Histórico (Directo)` o `Rendimiento Histórico (TNA)` (fondos money market) y convierte las TNA anualizadas a retorno directo del período (`TNA × días ÷ 365`).
   - Presets de 1 toque en el editor de activos + recálculo automático de valuación según cantidad y unidad (`Por unidad / cuotaparte` o `Por 100 nominales`).
 - **Moneda nativa y rendimiento por activo**: una tenencia cargada en USD (por ejemplo `AO27D`) se muestra en **USD**, con la equivalencia en pesos como dato secundario, y cada fila indica cuánto aporta al **interés diario**.
 - **Histórico de movimientos por activo (`holding_detail/{holdingId}`)**: al presionar cualquier activo de la cartera se abre su ficha con valuación actual, costo, ganancia no realizada, cantidad, totales de ingresos/egresos/neto y el **histórico cronológico de movimientos** (inicializado automáticamente desde los movimientos importados del bróker o notas existentes). Desde ahí se puede **agregar manualmente un ingreso o un egreso** con monto, fecha y nota (o revertir un movimiento equivocado): la valuación, el costo neto, la cantidad y la línea de historial para intereses diarios se actualizan solos.
@@ -726,7 +726,7 @@ Instalación en un dispositivo/emulador conectado:
 ./gradlew :app:installDebug
 ```
 
-> **Verificado:** `:app:testDebugUnitTest` (**177 tests, 0 fallos, 25 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
+> **Verificado:** `:app:testDebugUnitTest` (**180 tests, 0 fallos, 25 suites**) con JDK 17 y Android SDK 35. Los APK de debug (~29,6 MB) y release (~8,6 MB, sin firmar) se generan en `app/build/outputs/apk/`. `local.properties` contiene la ruta al SDK local y está ignorado por git.
 
 ### Release
 

@@ -168,6 +168,12 @@ interface InstrumentQuoteDao {
     @Query("DELETE FROM instrument_quotes WHERE marketKey = :marketKey AND dateEpochDay > :epochDay")
     suspend fun deleteForMarketAfter(marketKey: String, epochDay: Long)
 
+    @Query("DELETE FROM instrument_quotes WHERE marketKey = :marketKey")
+    suspend fun deleteForMarket(marketKey: String)
+
+    @Query("DELETE FROM instrument_quotes WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("DELETE FROM instrument_quotes")
     suspend fun deleteAll()
 }

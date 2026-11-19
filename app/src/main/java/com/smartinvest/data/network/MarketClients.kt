@@ -209,10 +209,12 @@ class RavaClient @Inject constructor(
         internal const val BROWSER_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
         private val DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy")
-        private val META_PRICE = Regex("""\$\s*([\d.]+(?:,\d+)?)""")
+        /** Matches a peso/dollar quote in meta descriptions, excluding percentages like "$ 2,30% TEM". */
+        private val META_PRICE = Regex("""\$\s*([\d.]+(?:,\d+)?)(?!\s*%)""")
         private val QUOTE_TIME = Regex("""(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?""")
         private val JSON_OBJECT_REGEX = Regex("""\{[^{}]+\}""")
         private val JSON_PRICE_REGEX = Regex(""""precio"\s*:\s*([\d.]+)""")
+        private val JSON_VOL_REGEX = Regex(""""volumen"\s*:\s*([\d.]+)""")
         private val JSON_DATE_REGEX = Regex(""""fecha"\s*:\s*"(\d{4}-\d{2}-\d{2})""")
 
         fun parseHtml(
@@ -272,20 +274,42 @@ class RavaClient @Inject constructor(
                 .orEmpty()
             val metaPrice = META_PRICE.find(ogDesc)?.groupValues?.getOrNull(1)?.let(::parseArNumber)
 
-            // Current Rava pages render the quote in the hero instead of a history table.
-            // Read the price, its real date and the "Anterior" close so the app gets two
-            // points on the very first sync.
+            // Current Rava pages render the quote in the hero during market hours; outside
+            // trading hours `.p2-price` and `.p2-time` are omitted and `% Día` is `-%`.
             val heroPrice = doc.selectFirst(".p2-price")?.text()?.trim()?.let(::parseArNumber)
-            val quoteDate = parseQuoteDate(doc.selectFirst(".p2-time")?.text().orEmpty(), fallbackDate)
+                ?.takeIf { it > 0.0 }
+            val heroTimeText = doc.selectFirst(".p2-time")?.text().orEmpty()
+            val hasExplicitHeroDate = QUOTE_TIME.containsMatchIn(heroTimeText)
+            val dayReturnUnavailable = doc.select(".p2-ct-returns .p2-ret").any { ret ->
+                val label = ret.selectFirst(".p2-ret-label")?.text()?.trim()
+                val value = ret.selectFirst(".p2-ret-val")?.text()?.trim()
+                label.equals("% Día", ignoreCase = true) && value == "-%"
+            }
             val stats = doc.select("dl.p2-stats .p2-stat").mapNotNull { stat ->
                 val label = stat.selectFirst("dt")?.text()?.trim()?.lowercase() ?: return@mapNotNull null
                 val value = stat.selectFirst("dd")?.text()?.trim()?.let(::parseArNumber) ?: return@mapNotNull null
                 label to value
             }.toMap()
             val rawPreviousPrice = stats["anterior"]?.takeIf { it > 0.0 }
-            val rawLatestPrice = heroPrice?.takeIf { it > 0.0 }
-                ?: metaPrice?.takeIf { it > 0.0 }
-                ?: history.maxByOrNull { it.date }?.price
+
+            val lastHistorical = history.maxByOrNull { it.date }
+            val hasLiveHeroQuote = heroPrice != null &&
+                hasExplicitHeroDate &&
+                !dayReturnUnavailable &&
+                (lastHistorical == null || isPlausibleDailyPrice(heroPrice, lastHistorical.price))
+
+            val quoteDate = when {
+                hasLiveHeroQuote -> parseQuoteDate(heroTimeText, fallbackDate)
+                lastHistorical != null -> lastHistorical.date
+                hasExplicitHeroDate -> parseQuoteDate(heroTimeText, fallbackDate)
+                else -> fallbackDate
+            }
+
+            val rawLatestPrice = when {
+                hasLiveHeroQuote -> heroPrice
+                lastHistorical != null -> lastHistorical.price
+                else -> heroPrice ?: metaPrice?.takeIf { it > 0.0 }
+            }
             require(rawLatestPrice != null) { "No se encontró cotización en Rava para $symbol" }
 
             val jsonLatest = jsonPoints[quoteDate]?.price?.takeIf { it > 0.0 }
@@ -300,7 +324,7 @@ class RavaClient @Inject constructor(
             }
 
             val points = history.toMutableList()
-            if (previousPrice != null) {
+            if (previousPrice != null && (hasLiveHeroQuote || points.isEmpty())) {
                 val priorIdx = points
                     .mapIndexed { idx, pt -> idx to pt }
                     .filter { it.second.date.isBefore(quoteDate) }
@@ -313,16 +337,18 @@ class RavaClient @Inject constructor(
             val sameDateIdx = points.indexOfFirst { it.date == quoteDate }
             when {
                 sameDateIdx >= 0 -> points[sameDateIdx] = MarketQuotePoint(date = quoteDate, price = latestPrice)
-                points.isEmpty() || quoteDate >= points.maxOf { it.date } ->
+                points.isEmpty() || (hasLiveHeroQuote && quoteDate >= points.maxOf { it.date }) ->
                     points += MarketQuotePoint(date = quoteDate, price = latestPrice)
             }
             if (previousPrice != null && points.map { it.date }.distinct().size < 2) {
                 points += MarketQuotePoint(date = previousBusinessDay(quoteDate), price = previousPrice)
             }
 
-            val sortedHistory = points
-                .distinctBy { it.date }
-                .sortedBy { it.date }
+            val sortedHistory = sanitizeSeries(
+                points
+                    .distinctBy { it.date }
+                    .sortedBy { it.date },
+            )
             val latest = sortedHistory.last()
 
             return MarketFetch(
@@ -330,7 +356,7 @@ class RavaClient @Inject constructor(
                 symbol = symbol.uppercase(),
                 name = cleanName,
                 source = MarketSource.RAVA,
-                latestPrice = latestPrice,
+                latestPrice = latest.price,
                 latestDate = latest.date,
                 history = sortedHistory,
             )
@@ -344,11 +370,32 @@ class RavaClient @Inject constructor(
                 val price = JSON_PRICE_REGEX.find(block)?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: continue
                 val dateStr = JSON_DATE_REGEX.find(block)?.groupValues?.getOrNull(1) ?: continue
                 val date = runCatching { LocalDate.parse(dateStr) }.getOrNull() ?: continue
-                if (price > 0.0) {
+                val vol = JSON_VOL_REGEX.find(block)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+                if (price > 0.0 && (vol == null || vol > 0.0)) {
                     list += MarketQuotePoint(date = date, price = price)
                 }
             }
-            return list
+            return sanitizeSeries(list.sortedBy { it.date })
+        }
+
+        /** Rejects pre-market/off-hours scraping artifacts that drop >55% or jump >120% in one session. */
+        internal fun isPlausibleDailyPrice(candidate: Double, reference: Double): Boolean {
+            if (candidate <= 0.0 || reference <= 0.0) return false
+            val ratio = candidate / reference
+            return ratio in 0.45..2.20
+        }
+
+        internal fun sanitizeSeries(sortedPoints: List<MarketQuotePoint>): List<MarketQuotePoint> {
+            if (sortedPoints.size < 2) return sortedPoints.filter { it.price > 0.0 }
+            val result = mutableListOf<MarketQuotePoint>()
+            for (point in sortedPoints) {
+                if (point.price <= 0.0) continue
+                val prev = result.lastOrNull()
+                if (prev == null || isPlausibleDailyPrice(point.price, prev.price)) {
+                    result += point
+                }
+            }
+            return result
         }
 
         /**
@@ -428,7 +475,10 @@ class CafciClient @Inject constructor(
 
     companion object {
         private val DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy")
-        private val VALORES_AL_REGEX = Regex("""Valores\s+al\s+(\d{2}/\d{2}/\d{4})""", RegexOption.IGNORE_CASE)
+        private val VALORES_AL_REGEX = Regex(
+            """(?:Valores|información|—)\s+al\s+(\d{2}/\d{2}/\d{4})""",
+            RegexOption.IGNORE_CASE,
+        )
         private val VCP_UNIT_REGEX = Regex("""Valor\s+por\s+cada\s+cuotaparte:\s*([\d.,]+)""", RegexOption.IGNORE_CASE)
         private val VCP_THOUSAND_REGEX = Regex("""Valor\s+por\s+mil:\s*([\d.,]+)""", RegexOption.IGNORE_CASE)
 
@@ -455,6 +505,14 @@ class CafciClient @Inject constructor(
             var tableThousandVcp: Double? = null
             val returnWindows = mutableMapOf<Int, Double>()
 
+            // Money-market FCIs (e.g. Mercado Fondo 798/1982) publish `Rendimiento Histórico (TNA)`
+            // (annualized TNA over calendar days) instead of `Rendimiento Histórico (Directo)`.
+            val consultaText = doc.select("#consulta").text().ifBlank { html }
+            val isAnnualizedTna = consultaText.contains("(TNA)", ignoreCase = true) ||
+                consultaText.contains("Tasa Nominal Anual", ignoreCase = true)
+            fun toDirectWindowPercent(rawPct: Double, days: Int): Double =
+                if (isAnnualizedTna) rawPct * days.toDouble() / 365.0 else rawPct
+
             val perfTable = doc.selectFirst("table.tablaRendimientos")
             if (perfTable != null) {
                 val titleCells = perfTable.select("tr.titleTable td")
@@ -471,19 +529,29 @@ class CafciClient @Inject constructor(
                             tableThousandVcp = RavaClient.parseArNumber(valueText)?.let { it / 1000.0 }
                         }
                         label.contains("7 d") -> {
-                            RavaClient.parseArNumber(valueText)?.let { returnWindows[7] = it }
+                            RavaClient.parseArNumber(valueText)?.let {
+                                returnWindows[7] = toDirectWindowPercent(it, 7)
+                            }
                         }
                         label.contains("1 mes") -> {
-                            RavaClient.parseArNumber(valueText)?.let { returnWindows[30] = it }
+                            RavaClient.parseArNumber(valueText)?.let {
+                                returnWindows[30] = toDirectWindowPercent(it, 30)
+                            }
                         }
                         label.contains("90 d") -> {
-                            RavaClient.parseArNumber(valueText)?.let { returnWindows[90] = it }
+                            RavaClient.parseArNumber(valueText)?.let {
+                                returnWindows[90] = toDirectWindowPercent(it, 90)
+                            }
                         }
                         label.contains("180 d") -> {
-                            RavaClient.parseArNumber(valueText)?.let { returnWindows[180] = it }
+                            RavaClient.parseArNumber(valueText)?.let {
+                                returnWindows[180] = toDirectWindowPercent(it, 180)
+                            }
                         }
                         label.contains("12 mes") -> {
-                            RavaClient.parseArNumber(valueText)?.let { returnWindows[365] = it }
+                            RavaClient.parseArNumber(valueText)?.let {
+                                returnWindows[365] = toDirectWindowPercent(it, 365)
+                            }
                         }
                     }
                 }

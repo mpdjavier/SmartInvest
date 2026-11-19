@@ -442,6 +442,47 @@ class PortfolioValuationTest {
     }
 
     @Test
+    fun `discards corrupted off-hours cliff quote and heals holding valuation`() {
+        val s30 = Holding(
+            id = 20,
+            symbol = "S30N6",
+            name = "Letra del Tesoro S30N6",
+            assetType = AssetType.LECAP,
+            currency = CurrencyCode.ARS,
+            // Corrupted valuation left by an off-hours scrape at price 2.30 ($ 68.183,71)
+            currentValueCents = 68_183_71L,
+            costCents = 3_653_297_51L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "[ajuste manual: 16/11/2026]",
+            marketKey = "rava:S30N6",
+            source = MarketSource.RAVA,
+            quantity = 2_964_509.0,
+            quoteUnit = QuoteUnit.PER_100_NOMINAL,
+        )
+        val quotes = listOf(
+            quote("rava:S30N6", "S30N6", 128.962, LocalDate.of(2026, 11, 17)),
+            quote("rava:S30N6", "S30N6", 129.08, LocalDate.of(2026, 11, 18)),
+            // Bogus off-hours quote ($ 2,30% TEM mistaken for price 2.30 on 19/11)
+            quote("rava:S30N6", "S30N6", 2.30, LocalDate.of(2026, 11, 19)),
+        )
+
+        val valuation = PortfolioValuationEngine.calculate(
+            wallets = emptyList(),
+            holdings = listOf(s30),
+            fxRates = emptyList(),
+            fallbackMepRate = 1_628.8,
+            quotes = quotes,
+            today = LocalDate.of(2026, 11, 19),
+        )
+
+        // 2.964.509 VN @ 129.08 c/100 = $ 3.826.588,22 (382.658.822 cents), positive unrealized gain and daily interest.
+        assertEquals(382_658_822L, valuation.totalArsCents)
+        assertTrue("Unrealized gain must be positive", valuation.unrealizedGainCents > 0L)
+        assertTrue("Daily interest must be positive", valuation.dailyInterestCents > 0L)
+    }
+
+    @Test
     fun `alert push flag is only enabled for event day alerts and not advance or overdue`() {
         val advance = com.smartinvest.data.local.entity.AlertEntity(
             id = 1,
