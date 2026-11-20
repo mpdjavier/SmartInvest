@@ -142,4 +142,34 @@ class RemComparisonEngineTest {
         assertTrue(row.realReturnPercent > 0.2)
         assertTrue(row.realReturnPercent < 1.5)
     }
+
+    @Test
+    fun `computes break even dollar value and percentage against REM and crawling peg for T30A7`() {
+        val comparison = RemComparisonEngine.compare(
+            snapshot = com.smartinvest.domain.model.RemDefaults.snapshot,
+            instruments = listOf(
+                com.smartinvest.domain.model.RemDefaults.instruments.first { it.symbol == "T30A7" },
+            ),
+            horizonMonth = YearMonth.of(2027, 4),
+            crawlingPegMonthlyPercent = 1.0,
+            today = LocalDate.of(2026, 11, 20),
+        )
+
+        val t30 = comparison.rows.single()
+        assertEquals(LocalDate.of(2027, 4, 30), t30.effectiveDate)
+        assertTrue(t30.fxToday > 1_500.0)
+        // Break-even FX = fxToday * (1 + expectedArsReturnPercent / 100)
+        assertEquals(
+            t30.fxToday * (1.0 + t30.expectedArsReturnPercent / 100.0),
+            t30.breakEvenFx,
+            0.01,
+        )
+        assertEquals(t30.expectedArsReturnPercent, t30.breakEvenDevaluationPercent, 0.0001)
+        assertEquals(1_701.54, t30.remFxAtEffectiveDate, 0.01)
+        assertEquals(t30.breakEvenFx - t30.remFxAtEffectiveDate, t30.breakEvenVsRemFxDiff, 0.01)
+        assertEquals(t30.breakEvenFx - t30.pegFxAtEffectiveDate, t30.breakEvenVsPegFxDiff, 0.01)
+        // T30A7 at 29.87% TIR beats both the April 2027 REM dollar ($ 1.701,54) and the 1% peg dollar.
+        assertTrue(t30.breakEvenFx > t30.remFxAtEffectiveDate)
+        assertTrue(t30.breakEvenFx > t30.pegFxAtEffectiveDate)
+    }
 }

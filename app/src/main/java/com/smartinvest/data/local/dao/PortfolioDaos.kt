@@ -97,6 +97,7 @@ interface HoldingDao {
         """
         UPDATE holdings
         SET currentValueCents = :valueCents,
+            costCents = CASE WHEN isWallet = 1 THEN :valueCents ELSE costCents END,
             name = CASE WHEN name = '' THEN :name ELSE name END
         WHERE id = :id
         """,
@@ -117,6 +118,12 @@ interface HoldingMovementDao {
 
     @Query("SELECT * FROM holding_movements WHERE id = :id")
     suspend fun getById(id: Long): HoldingMovementEntity?
+
+    @Query("SELECT * FROM holding_movements WHERE expenseId = :expenseId ORDER BY id ASC LIMIT 1")
+    suspend fun getByExpenseId(expenseId: Long): HoldingMovementEntity?
+
+    @Query("DELETE FROM holding_movements WHERE expenseId = :expenseId")
+    suspend fun deleteByExpenseId(expenseId: Long)
 
     @Query("SELECT * FROM holding_movements ORDER BY id ASC")
     suspend fun getAll(): List<HoldingMovementEntity>

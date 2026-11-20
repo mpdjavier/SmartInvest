@@ -22,7 +22,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.EditCalendar
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -49,6 +51,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.smartinvest.core.money.MoneyFormatter
+import com.smartinvest.core.money.MoneyParser
 import com.smartinvest.core.time.DateUtils
 import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.domain.engine.HistoricalExpenseRecord
@@ -58,8 +62,14 @@ import com.smartinvest.domain.engine.PaymentAgendaRow
 import com.smartinvest.domain.engine.PaymentAgendaStatus
 import com.smartinvest.domain.engine.PaymentAgendaTemplate
 import com.smartinvest.domain.model.CreditCard
+import com.smartinvest.domain.model.ExpensePaymentMethod
 import com.smartinvest.domain.model.ExpenseRecurrence
+import com.smartinvest.domain.model.Holding
+import com.smartinvest.domain.model.HouseholdCategory
+import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.repository.HouseholdRepository
+import com.smartinvest.domain.repository.InvestmentRepository
+import com.smartinvest.domain.repository.NewExpense
 import com.smartinvest.domain.repository.SettingsRepository
 import com.smartinvest.ui.components.EmptyState
 import com.smartinvest.ui.components.HeroAmountText
@@ -85,37 +95,51 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneOffset
+import java.util.Locale
 import javax.inject.Inject
 
 data class PaymentCalendarUiState(
     val month: YearMonth = YearMonth.now(),
     val summary: PaymentAgendaMonthSummary? = null,
     val selectedDate: LocalDate = DateUtils.today(),
+    val walletHoldings: List<Holding> = emptyList(),
+    val payDraft: PayAgendaItemDraft? = null,
     val message: String? = null,
 )
 
 private data class CalendarSources(
     val expenses: List<HistoricalExpenseRecord>,
-    val agendaJson: String,
+    val categories: List<HouseholdCategory> = emptyList(),
+    val members: List<HouseholdMember> = emptyList(),
+    val walletHoldings: List<Holding> = emptyList(),
+    val agendaJson: String = "",
     val creditCards: List<CreditCard> = emptyList(),
 )
 
 @HiltViewModel
 class PaymentCalendarViewModel @Inject constructor(
     expenseDao: ExpenseDao,
-    householdRepository: HouseholdRepository,
+    private val householdRepository: HouseholdRepository,
+    investmentsRepository: InvestmentRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val month = MutableStateFlow(YearMonth.now())
     private val selectedDate = MutableStateFlow<LocalDate?>(null)
+    private val payDraft = MutableStateFlow<PayAgendaItemDraft?>(null)
     private val message = MutableStateFlow<String?>(null)
 
-    private val sourcesFlow = combine(
+    private var latestCategories: List<HouseholdCategory> = emptyList()
+    private var latestMembers: List<HouseholdMember> = emptyList()
+    private var latestWallets: List<Holding> = emptyList()
+
+    private val baseSourcesFlow = combine(
         expenseDao.observeAll(),
+        householdRepository.observeCategories(includeArchived = false),
+        householdRepository.observeMembers(),
+        investmentsRepository.observeWalletHoldings(),
         settingsRepository.settings,
-        householdRepository.observeCards(includeInactive = false),
-    ) { expenses, settings, cards ->
+    ) { expenses, categories, members, wallets, settings ->
         val records = expenses.map {
             HistoricalExpenseRecord(
                 id = it.id,
@@ -127,15 +151,32 @@ class PaymentCalendarViewModel @Inject constructor(
                 recurrenceMonths = it.recurrenceMonths,
             )
         }
-        CalendarSources(records, settings.paymentAgendaJson, cards)
+        CalendarSources(
+            expenses = records,
+            categories = categories,
+            members = members,
+            walletHoldings = wallets,
+            agendaJson = settings.paymentAgendaJson,
+        )
+    }
+
+    private val sourcesFlow = combine(
+        baseSourcesFlow,
+        householdRepository.observeCards(includeInactive = false),
+    ) { base, cards ->
+        base.copy(creditCards = cards)
     }
 
     val uiState = combine(
         month,
         selectedDate,
         sourcesFlow,
+        payDraft,
         message,
-    ) { selectedMonth, picked, sources, msg ->
+    ) { selectedMonth, picked, sources, currentPay, msg ->
+        latestCategories = sources.categories
+        latestMembers = sources.members
+        latestWallets = sources.walletHoldings
         val today = DateUtils.today()
         val templates = PaymentAgendaEngine.decodeTemplates(sources.agendaJson)
         val summary = PaymentAgendaEngine.buildForMonth(
@@ -158,6 +199,8 @@ class PaymentCalendarViewModel @Inject constructor(
             month = selectedMonth,
             summary = summary,
             selectedDate = effectiveSelected,
+            walletHoldings = sources.walletHoldings,
+            payDraft = currentPay,
             message = msg,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PaymentCalendarUiState())
@@ -272,6 +315,82 @@ class PaymentCalendarViewModel @Inject constructor(
             message.value = "${row.name}: la fecha de pago pasó al ${Fmt.longDate(newDate)}."
         }
     }
+
+    fun startPayItem(row: PaymentAgendaRow) {
+        val amountStr = if (row.amountCents > 0L) {
+            String.format(Locale.forLanguageTag("es-AR"), "%.2f", row.amountCents / 100.0)
+        } else {
+            ""
+        }
+        val today = DateUtils.today()
+        val defaultDate = if (YearMonth.from(today) == month.value) today else row.scheduledDate
+        payDraft.value = PayAgendaItemDraft(
+            row = row,
+            amountText = amountStr,
+            date = defaultDate,
+            useWalletFci = latestWallets.isNotEmpty(),
+        )
+    }
+
+    fun updatePayDraft(transform: (PayAgendaItemDraft) -> PayAgendaItemDraft) {
+        payDraft.value = payDraft.value?.let(transform)
+    }
+
+    fun dismissPayDraft() {
+        payDraft.value = null
+    }
+
+    fun confirmPayItem() {
+        val draft = payDraft.value ?: return
+        val amountCents = MoneyParser.parseToCents(draft.amountText)
+        if (amountCents == null || amountCents <= 0L) {
+            message.value = "Ingresá un monto válido para registrar el pago."
+            return
+        }
+        val serviceCategory = latestCategories.firstOrNull {
+            it.name.contains("servicio", ignoreCase = true)
+        } ?: latestCategories.firstOrNull()
+        val payer = latestMembers.firstOrNull { it.isCurrentUser } ?: latestMembers.firstOrNull()
+
+        if (serviceCategory == null || payer == null) {
+            message.value = "Verificá que exista al menos un integrante y la categoría Servicios."
+            return
+        }
+
+        val wallet = latestWallets.firstOrNull()
+        val method = if (draft.useWalletFci && wallet != null) {
+            ExpensePaymentMethod.WALLET_FCI
+        } else {
+            ExpensePaymentMethod.CASH
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                householdRepository.addExpense(
+                    NewExpense(
+                        description = PaymentAgendaEngine.cleanDisplayName(draft.row.name),
+                        totalCents = amountCents,
+                        date = draft.date,
+                        categoryId = serviceCategory.id,
+                        paidByMemberId = payer.id,
+                        paymentMethod = method,
+                        walletHoldingId = if (method == ExpensePaymentMethod.WALLET_FCI) wallet?.id else null,
+                        notes = draft.row.notes,
+                    ),
+                )
+            }.onSuccess {
+                payDraft.value = null
+                val originNote = if (method == ExpensePaymentMethod.WALLET_FCI && wallet != null) {
+                    " y descontado de ${wallet.symbol}"
+                } else {
+                    ""
+                }
+                message.value = "Pago de ${draft.row.name} (${MoneyFormatter.ars(amountCents)}) registrado$originNote."
+            }.onFailure { error ->
+                message.value = error.message ?: "No se pudo registrar el pago"
+            }
+        }
+    }
 }
 
 private val WEEKDAY_LABELS = listOf("L", "M", "M", "J", "V", "S", "D")
@@ -287,6 +406,36 @@ fun PaymentCalendarScreen(
     val rowsByDate = rows.groupBy { it.scheduledDate }
     val today = DateUtils.today()
     var reschedulingRow by remember { mutableStateOf<PaymentAgendaRow?>(null) }
+    var showDatePickerForPay by remember { mutableStateOf(false) }
+
+    if (showDatePickerForPay && state.payDraft != null) {
+        val draft = state.payDraft!!
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = draft.date
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePickerForPay = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { millis ->
+                            val picked = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                            viewModel.updatePayDraft { it.copy(date = picked) }
+                        }
+                        showDatePickerForPay = false
+                    },
+                ) { Text("Aceptar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePickerForPay = false }) { Text("Cancelar") }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
 
     reschedulingRow?.let { row ->
         val monthStartMillis = state.month.atDay(1)
@@ -461,6 +610,7 @@ fun PaymentCalendarScreen(
                 CalendarPaymentRow(
                     row = row,
                     onTogglePaid = { viewModel.togglePaid(row) },
+                    onPay = { viewModel.startPayItem(row) },
                     onMoveToAnotherDate = { reschedulingRow = row },
                 )
             }
@@ -468,13 +618,23 @@ fun PaymentCalendarScreen(
 
         item {
             Text(
-                "Los pagos registrados desde Hogar se tildan solos y no se pueden destildar acá. " +
-                    "Los demás se tildan a mano para marcar que ya los pagaste. " +
-                    "«Cambiar fecha de pago» mueve solo el mes que estás viendo, sin tocar la frecuencia.",
+                "Los pagos registrados desde Hogar o con el botón «Pagar» descuentan el saldo de tu billetera FCI " +
+                    "y quedan tildados automáticamente. «Cambiar fecha de pago» mueve solo el mes que estás viendo.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+
+    state.payDraft?.let { draft ->
+        AgendaPayDialog(
+            draft = draft,
+            walletHolding = state.walletHoldings.firstOrNull(),
+            onUpdate = viewModel::updatePayDraft,
+            onPickDate = { showDatePickerForPay = true },
+            onConfirm = viewModel::confirmPayItem,
+            onDismiss = viewModel::dismissPayDraft,
+        )
     }
 }
 
@@ -603,9 +763,15 @@ private fun CalendarDayCell(
 private fun CalendarPaymentRow(
     row: PaymentAgendaRow,
     onTogglePaid: () -> Unit,
+    onPay: (() -> Unit)? = null,
     onMoveToAnotherDate: (() -> Unit)? = null,
 ) {
     val isAutomatic = row.paidExpenseId != null
+    val isClosingEvent = row.key.startsWith("cierre ")
+    val isCardStatementDue = row.key.startsWith("resumen ")
+    // Hide the manual checkbox on closing events and on unpaid credit-card statements so the user
+    // uses "Pagar resumen" (which records the expense and debits the wallet FCI).
+    val showManualCheckbox = !isClosingEvent && (!isCardStatementDue || row.isPaid)
     val statusColor = when {
         row.isPaid -> Emerald
         row.status == PaymentAgendaStatus.OVERDUE -> Rose
@@ -614,7 +780,8 @@ private fun CalendarPaymentRow(
     }
     val detail = when {
         isAutomatic -> "Registrado en Hogar"
-        row.isPaid -> "Marcado como pagado a mano"
+        row.isPaid -> "Tildado a mano (sin gasto ni débito)"
+        isClosingEvent -> "Cierre de resumen"
         row.status == PaymentAgendaStatus.OVERDUE -> "Vencido"
         row.daysUntilDue == 0L -> "Vence hoy"
         row.status == PaymentAgendaStatus.DUE_SOON -> "Vence en ${row.daysUntilDue} d"
@@ -628,12 +795,14 @@ private fun CalendarPaymentRow(
     SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = row.isPaid,
-                    onCheckedChange = if (isAutomatic) null else { _ -> onTogglePaid() },
-                    enabled = !isAutomatic,
-                )
-                Spacer(Modifier.width(4.dp))
+                if (showManualCheckbox) {
+                    Checkbox(
+                        checked = row.isPaid,
+                        onCheckedChange = if (isAutomatic) null else { _ -> onTogglePaid() },
+                        enabled = !isAutomatic,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
                 Column(Modifier.weight(1f)) {
                     Text(row.name, style = MaterialTheme.typography.titleSmall)
                     Text(
@@ -654,28 +823,58 @@ private fun CalendarPaymentRow(
                         )
                         Spacer(Modifier.height(4.dp))
                     }
-                    TagPill(
-                        text = if (row.isPaid) "Pagado" else "Pendiente",
-                        color = statusColor,
-                    )
+                    if (!isClosingEvent) {
+                        TagPill(
+                            text = if (row.isPaid) "Pagado" else "Pendiente",
+                            color = statusColor,
+                        )
+                    } else {
+                        TagPill(
+                            text = "Cierre",
+                            color = Sky,
+                        )
+                    }
                 }
             }
-            if (!isAutomatic && onMoveToAnotherDate != null) {
+            if (!isAutomatic) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(
-                        onClick = onMoveToAnotherDate,
-                        contentPadding = PaddingValues(horizontal = 8.dp),
-                    ) {
-                        Icon(
-                            Icons.Rounded.EditCalendar,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (row.isPaid) "Cambiar fecha" else "Cambiar fecha de pago")
+                    if (onMoveToAnotherDate != null) {
+                        TextButton(
+                            onClick = onMoveToAnotherDate,
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.EditCalendar,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (row.isPaid) "Cambiar fecha" else "Cambiar fecha de pago")
+                        }
+                    }
+                    if (!isClosingEvent && onPay != null) {
+                        Spacer(Modifier.width(6.dp))
+                        Button(
+                            onClick = onPay,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            val payLabel = when {
+                                isCardStatementDue -> "Pagar resumen"
+                                row.isPaid -> "Registrar pago"
+                                else -> "Pagar"
+                            }
+                            Text(payLabel, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             }

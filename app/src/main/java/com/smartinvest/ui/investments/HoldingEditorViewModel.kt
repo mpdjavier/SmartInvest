@@ -330,7 +330,7 @@ class HoldingEditorViewModel @Inject constructor(
                 quoteUnit = preset.quoteUnit,
                 marketKey = preset.marketKey,
                 settlementDays = preset.settlementDays,
-                isWallet = false,
+                isWallet = preset.symbol.equals("MP-ARS", ignoreCase = true),
                 error = null,
             )
         }
@@ -371,6 +371,7 @@ class HoldingEditorViewModel @Inject constructor(
             date = DateUtils.today(),
         )
 
+        val isWallet = current.isWallet && current.assetType == AssetType.FCI
         val holding = Holding(
             id = current.id,
             symbol = current.symbol.trim().uppercase(),
@@ -378,7 +379,7 @@ class HoldingEditorViewModel @Inject constructor(
             assetType = current.assetType,
             currency = current.currency,
             currentValueCents = value,
-            costCents = cost,
+            costCents = if (isWallet) value else cost,
             tnaPercent = tna,
             maturityDate = current.maturity,
             notes = finalNotes,
@@ -386,7 +387,7 @@ class HoldingEditorViewModel @Inject constructor(
             source = MarketKeyParser.sourceFor(normalizedKey),
             quantity = quantity,
             quoteUnit = current.quoteUnit,
-            isWallet = current.isWallet && current.assetType == AssetType.FCI,
+            isWallet = isWallet,
             settlementDays = if (current.assetType == AssetType.FCI) current.settlementDays else 1,
         )
 

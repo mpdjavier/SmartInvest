@@ -385,14 +385,28 @@ class RavaClient @Inject constructor(
             return ratio in 0.45..2.20
         }
 
+        /**
+         * Filters out 1-day off-hours scraping glitches while resetting the series when a
+         * confirmed corporate action / CEDEAR ratio split occurs (e.g. SPY's 3:1 split on
+         * 29/05/2026 from $ 56.000 to $ 18.780, confirmed by $ 18.880 on 01/06/2026).
+         */
         internal fun sanitizeSeries(sortedPoints: List<MarketQuotePoint>): List<MarketQuotePoint> {
-            if (sortedPoints.size < 2) return sortedPoints.filter { it.price > 0.0 }
+            val valid = sortedPoints.filter { it.price > 0.0 }
+            if (valid.size < 2) return valid
             val result = mutableListOf<MarketQuotePoint>()
-            for (point in sortedPoints) {
-                if (point.price <= 0.0) continue
+            for (i in valid.indices) {
+                val point = valid[i]
                 val prev = result.lastOrNull()
                 if (prev == null || isPlausibleDailyPrice(point.price, prev.price)) {
                     result += point
+                } else {
+                    val next = valid.getOrNull(i + 1)
+                    if (next != null && isPlausibleDailyPrice(next.price, point.price)) {
+                        // Confirmed split / regime change: discard pre-split history so old
+                        // pre-split prices are never applied to current post-split quantities.
+                        result.clear()
+                        result += point
+                    }
                 }
             }
             return result

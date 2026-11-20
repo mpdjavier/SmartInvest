@@ -197,6 +197,16 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses ORDER BY id ASC")
     suspend fun getAll(): List<ExpenseEntity>
 
+    @Query(
+        """
+        SELECT * FROM expenses
+        WHERE walletHoldingId = :holdingId
+           OR (paymentMethod = 'WALLET_FCI' AND walletHoldingId IS NULL)
+        ORDER BY dateEpochDay ASC, id ASC
+        """,
+    )
+    suspend fun getForWalletHolding(holdingId: Long): List<ExpenseEntity>
+
     @Query("SELECT COUNT(*) FROM expenses")
     suspend fun count(): Int
 

@@ -8,12 +8,14 @@ import com.smartinvest.data.local.dao.CreditCardDao
 import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.data.local.dao.FundMovementDao
 import com.smartinvest.data.local.dao.HoldingDao
+import com.smartinvest.data.local.dao.HoldingMovementDao
 import com.smartinvest.data.local.dao.InstallmentDao
 import com.smartinvest.data.local.dao.MemberDao
 import com.smartinvest.data.local.dao.SettlementDao
 import com.smartinvest.data.local.entity.CategoryEntity
 import com.smartinvest.data.local.entity.ExpenseEntity
 import com.smartinvest.data.local.entity.FundMovementEntity
+import com.smartinvest.data.local.entity.HoldingMovementEntity
 import com.smartinvest.data.local.entity.InstallmentEntity
 import com.smartinvest.data.local.entity.MemberEntity
 import com.smartinvest.data.local.entity.SettlementEntity
@@ -23,12 +25,14 @@ import com.smartinvest.data.mapper.toMonthlyItem
 import com.smartinvest.data.widget.WidgetRefresher
 import com.smartinvest.di.IoDispatcher
 import com.smartinvest.domain.engine.CardCycleResolver
+import com.smartinvest.domain.engine.HoldingMovementEngine
 import com.smartinvest.domain.engine.InstallmentEngine
 import com.smartinvest.domain.model.CreditCard
 import com.smartinvest.domain.model.ExpensePaymentMethod
 import com.smartinvest.domain.model.ExpenseRecord
 import com.smartinvest.domain.model.FundMovement
 import com.smartinvest.domain.model.FundMovementType
+import com.smartinvest.domain.model.HoldingMovementType
 import com.smartinvest.domain.model.HouseholdCategory
 import com.smartinvest.domain.model.HouseholdMember
 import com.smartinvest.domain.model.MonthlyExpenseItem
@@ -59,6 +63,7 @@ class HouseholdRepositoryImpl @Inject constructor(
     private val installmentDao: InstallmentDao,
     private val fundDao: FundMovementDao,
     private val holdingDao: HoldingDao,
+    private val holdingMovementDao: HoldingMovementDao,
     private val settlementDao: SettlementDao,
     private val widgetRefresher: WidgetRefresher,
     @IoDispatcher private val io: CoroutineDispatcher,
@@ -319,14 +324,13 @@ class HouseholdRepositoryImpl @Inject constructor(
                     "El FCI billetera no alcanza. Disponible: " +
                         com.smartinvest.core.money.MoneyFormatter.ars(holding.currentValueCents)
                 }
-                val newQuantity = if (holding.quantity > 0.0) {
-                    val keepFraction = 1.0 - input.totalCents.toDouble() / holding.currentValueCents.toDouble()
-                    (holding.quantity * keepFraction.coerceIn(0.0, 1.0)).coerceAtLeast(0.0)
-                } else {
-                    0.0
-                }
-                val quantityDelta = (holding.quantity - newQuantity).coerceAtLeast(0.0)
-                val newValue = (holding.currentValueCents - input.totalCents).coerceAtLeast(0L)
+                HoldingMovementSeeder.ensureSeeded(holding.id, holdingDao, holdingMovementDao, expenseDao)
+                val effect = HoldingMovementEngine.apply(
+                    holding = holding.toDomain(),
+                    type = HoldingMovementType.EGRESO,
+                    amountCents = input.totalCents,
+                )
+                val quantityDelta = (holding.quantity - effect.quantity).coerceAtLeast(0.0)
                 val dateLabel = input.date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                 val rescueAmountText = if (holding.currency == com.smartinvest.domain.model.CurrencyCode.USD) {
                     com.smartinvest.core.money.MoneyFormatter.usd(input.totalCents)
@@ -339,15 +343,9 @@ class HouseholdRepositoryImpl @Inject constructor(
                 } else {
                     "${holding.notes.trim()}\n$rescueLogLine"
                 }
-                holdingDao.upsert(
-                    holding.copy(
-                        currentValueCents = newValue,
-                        quantity = newQuantity,
-                        notes = updatedHoldingNotes,
-                    ),
-                )
+                val now = System.currentTimeMillis()
                 val month = YearMonth.from(input.date)
-                expenseDao.insert(
+                val expenseId = expenseDao.insert(
                     ExpenseEntity(
                         description = input.description.trim(),
                         totalAmountCents = input.totalCents,
@@ -363,9 +361,30 @@ class HouseholdRepositoryImpl @Inject constructor(
                         walletValueDeltaCents = input.totalCents,
                         isRecurring = input.isRecurring,
                         recurrenceMonths = recurrenceMonths,
-                        createdAt = System.currentTimeMillis(),
+                        createdAt = now,
                     ),
                 )
+                holdingMovementDao.insert(
+                    HoldingMovementEntity(
+                        holdingId = holding.id,
+                        type = HoldingMovementType.EGRESO,
+                        amountCents = input.totalCents,
+                        currency = holding.currency,
+                        dateEpochDay = input.date.toEpochDay(),
+                        note = "Pago: ${input.description.trim()}",
+                        createdAt = now,
+                        expenseId = expenseId,
+                    ),
+                )
+                holdingDao.upsert(
+                    holding.copy(
+                        currentValueCents = effect.valueCents,
+                        costCents = effect.costCents,
+                        quantity = effect.quantity,
+                        notes = updatedHoldingNotes,
+                    ),
+                )
+                expenseId
             }
 
             else -> {
@@ -419,15 +438,30 @@ class HouseholdRepositoryImpl @Inject constructor(
                     .filterNot { it.trim() == rescueLogLine }
                     .joinToString("\n")
                     .trim()
+                val restoredValue = holding.currentValueCents + expense.walletValueDeltaCents
+                val restoredCost = if (holding.isWallet) {
+                    restoredValue
+                } else if (expense.walletValueDeltaCents > 0L) {
+                    HoldingMovementEngine.apply(
+                        holding = holding.toDomain(),
+                        type = HoldingMovementType.EGRESO,
+                        amountCents = expense.walletValueDeltaCents,
+                        reverse = true,
+                    ).costCents
+                } else {
+                    holding.costCents
+                }
                 holdingDao.upsert(
                     holding.copy(
                         quantity = holding.quantity + expense.walletQuantityDelta,
-                        currentValueCents = holding.currentValueCents + expense.walletValueDeltaCents,
+                        currentValueCents = restoredValue,
+                        costCents = restoredCost,
                         notes = restoredNotes,
                     ),
                 )
             }
         }
+        holdingMovementDao.deleteByExpenseId(expenseId)
         fundDao.deleteForExpense(expenseId)
         installmentDao.deleteForExpense(expenseId)
         expenseDao.deleteById(expenseId)

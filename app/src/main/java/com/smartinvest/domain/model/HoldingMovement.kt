@@ -22,6 +22,8 @@ data class HoldingMovement(
     val date: LocalDate,
     val note: String,
     val createdAt: Long,
+    /** Expense that produced this movement (wallet FCI payments), when applicable. */
+    val expenseId: Long? = null,
 ) {
     /** Positive for income, negative for withdrawals. */
     val signedCents: Long

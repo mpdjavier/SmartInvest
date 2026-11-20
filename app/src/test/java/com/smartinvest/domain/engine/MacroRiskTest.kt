@@ -782,4 +782,38 @@ class MacroRiskTest {
         assertTrue(plan.legs.isEmpty())
         assertEquals("Ingresá el próximo sueldo para calcular la distribución.", plan.headline)
     }
+
+    @Test
+    fun `wallet fci holding is excluded from investable carry valuation even without name match`() {
+        val mpWalletFci = Holding(
+            id = 10,
+            symbol = "MP-ARS",
+            name = "Mercado Fondo Ahorro Pesos",
+            assetType = AssetType.FCI,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 6_000_000L,
+            costCents = 6_000_000L,
+            tnaPercent = 30.0,
+            maturityDate = null,
+            notes = "",
+            isWallet = true,
+            settlementDays = 0,
+        )
+        val lecap = holding(1, AssetType.LECAP, CurrencyCode.ARS, 4_000_000L)
+        val usd = holding(2, AssetType.DOLAR_MEP, CurrencyCode.USD, 10_000L)
+        val portfolio = PortfolioValuationEngine.calculate(
+            wallets = emptyList(),
+            holdings = listOf(mpWalletFci, lecap, usd),
+            fxRates = fx(1_000.0),
+            fallbackMepRate = 1_000.0,
+        )
+
+        val scoped = MacroRiskEngine.investableValuation(
+            valuation = portfolio,
+            settings = AppSettings(carryExcludedPatterns = "Mercado Pago, viaje"),
+        )
+
+        assertEquals(4_000_000L, scoped.arsAssetsCents)
+        assertEquals(28.57, scoped.pesoSharePercent, 0.01)
+    }
 }

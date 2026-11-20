@@ -36,7 +36,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "smartinvest.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             .build()
 
     @Provides fun memberDao(db: AppDatabase): MemberDao = db.memberDao()
@@ -164,6 +164,12 @@ object DatabaseModule {
                 "CREATE INDEX IF NOT EXISTS `index_holding_movements_dateEpochDay` " +
                     "ON `holding_movements` (`dateEpochDay`)",
             )
+        }
+    }
+
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `holding_movements` ADD COLUMN `expenseId` INTEGER")
         }
     }
 }

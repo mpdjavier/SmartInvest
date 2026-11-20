@@ -245,4 +245,48 @@ class MarketClientsTest {
             assertTrue("Daily return must be < 0.2% ($dailyPct%)", dailyPct < 0.20)
         }
     }
+
+    @Test
+    fun `rava parser resets on confirmed cedear split and keeps post split SPY quotes instead of pre split 56000`() {
+        val html = """
+            <html>
+              <head>
+                <meta property="og:title" content="SPY SPDR S&amp;P 500 | Cotizaciones | Rava Bursátil" />
+              </head>
+              <body>
+                <div class="p2-quote">
+                  <div class="p2-price">20.800,00</div>
+                  <div class="p2-time"><span>20/11 10:45</span></div>
+                </div>
+                <div class="p2-ct-returns">
+                  <div class="p2-ret"><span class="p2-ret-label">% Día</span><span class="p2-ret-val">-%</span></div>
+                </div>
+                <table>
+                  <thead>
+                    <tr><th>Fecha</th><th>Apertura</th><th>Máximo</th><th>Mínimo</th><th>Cierre</th><th>Volumen</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>19/11/2026</td><td>21.060,00</td><td>21.200,00</td><td>20.720,00</td><td>20.890,00</td><td>549.985</td></tr>
+                    <tr><td>18/11/2026</td><td>20.670,00</td><td>21.060,00</td><td>20.670,00</td><td>20.930,00</td><td>385.616</td></tr>
+                    <tr><td>01/06/2026</td><td>20.000,00</td><td>20.000,00</td><td>18.700,00</td><td>18.880,00</td><td>412.655</td></tr>
+                    <tr><td>29/05/2026</td><td>19.550,00</td><td>19.550,00</td><td>18.670,00</td><td>18.780,00</td><td>326.434</td></tr>
+                    <tr><td>28/05/2026</td><td>55.800,00</td><td>56.075,00</td><td>55.525,00</td><td>56.000,00</td><td>101.156</td></tr>
+                    <tr><td>27/05/2026</td><td>55.900,00</td><td>55.925,00</td><td>55.450,00</td><td>55.900,00</td><td>76.541</td></tr>
+                  </tbody>
+                </table>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = RavaClient.parseHtml(
+            symbol = "SPY",
+            html = html,
+            fallbackDate = LocalDate.of(2026, 11, 20),
+        )
+
+        assertEquals(20_890.0, result.latestPrice, 0.001)
+        assertEquals(LocalDate.of(2026, 11, 19), result.latestDate)
+        assertTrue("Pre-split 56.000 quotes must be discarded", result.history.none { it.price > 30_000.0 })
+        assertEquals(LocalDate.of(2026, 5, 29), result.history.first().date)
+    }
 }

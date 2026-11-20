@@ -562,6 +562,90 @@ class PortfolioValuationTest {
         assertEquals(holding.valueCentsFor(130.0), nextDay.holdings.first().valueArsCents)
     }
 
+    @Test
+    fun `wallet fci is excluded from portfolio unrealized gain even if stored cost is stale`() {
+        val walletFci = Holding(
+            id = 30,
+            symbol = "MP-ARS",
+            name = "Mercado Fondo Ahorro Pesos",
+            assetType = AssetType.FCI,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 359_921_06L,
+            // Stale cost from before a payment debit
+            costCents = 615_166_58L,
+            tnaPercent = 30.0,
+            maturityDate = null,
+            notes = "",
+            isWallet = true,
+            settlementDays = 0,
+        )
+        val lecap = Holding(
+            id = 31,
+            symbol = "S30N6",
+            name = "Letra S30N6",
+            assetType = AssetType.LECAP,
+            currency = CurrencyCode.ARS,
+            currentValueCents = 1_100_000_00L,
+            costCents = 1_000_000_00L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "",
+        )
+
+        val valuation = PortfolioValuationEngine.calculate(
+            wallets = emptyList(),
+            holdings = listOf(walletFci, lecap),
+            fxRates = emptyList(),
+            fallbackMepRate = 1_000.0,
+            today = LocalDate.of(2026, 11, 20),
+        )
+
+        // Unrealized gain comes only from the LECAP (+$ 100.000), never from the wallet FCI.
+        assertEquals(100_000_00L, valuation.unrealizedGainCents)
+    }
+
+    @Test
+    fun `heals SPY cedear corrupted by pre split 56000 quote back to post split valuation`() {
+        val spy = Holding(
+            id = 40,
+            symbol = "SPY",
+            name = "SPDR S&P 500 CEDEAR",
+            assetType = AssetType.CEDEAR,
+            currency = CurrencyCode.ARS,
+            // Corrupted valuation from 672 * $ 56.000,00 (pre-split 28/05/2026 close)
+            currentValueCents = 37_632_000_00L,
+            costCents = 13_263_659_67L,
+            tnaPercent = null,
+            maturityDate = null,
+            notes = "IEB\n[ajuste manual: 16/11/2026]",
+            marketKey = "rava:SPY",
+            source = MarketSource.RAVA,
+            quantity = 672.0,
+            quoteUnit = QuoteUnit.PER_UNIT,
+        )
+        val quotes = listOf(
+            InstrumentQuote("rava:SPY", "SPY", MarketSource.RAVA, 55_900.0, CurrencyCode.ARS, QuoteUnit.PER_UNIT, LocalDate.of(2026, 5, 27), 0),
+            InstrumentQuote("rava:SPY", "SPY", MarketSource.RAVA, 56_000.0, CurrencyCode.ARS, QuoteUnit.PER_UNIT, LocalDate.of(2026, 5, 28), 0),
+            InstrumentQuote("rava:SPY", "SPY", MarketSource.RAVA, 18_780.0, CurrencyCode.ARS, QuoteUnit.PER_UNIT, LocalDate.of(2026, 5, 29), 0),
+            InstrumentQuote("rava:SPY", "SPY", MarketSource.RAVA, 18_880.0, CurrencyCode.ARS, QuoteUnit.PER_UNIT, LocalDate.of(2026, 6, 1), 0),
+            InstrumentQuote("rava:SPY", "SPY", MarketSource.RAVA, 20_930.0, CurrencyCode.ARS, QuoteUnit.PER_UNIT, LocalDate.of(2026, 11, 18), 0),
+            InstrumentQuote("rava:SPY", "SPY", MarketSource.RAVA, 20_890.0, CurrencyCode.ARS, QuoteUnit.PER_UNIT, LocalDate.of(2026, 11, 19), 0),
+        )
+
+        val valuation = PortfolioValuationEngine.calculate(
+            wallets = emptyList(),
+            holdings = listOf(spy),
+            fxRates = emptyList(),
+            fallbackMepRate = 1_500.0,
+            quotes = quotes,
+            today = LocalDate.of(2026, 11, 20),
+        )
+
+        // 672 * $ 20.890,00 = $ 14.038.080,00 (1.403.808.000 cents).
+        assertEquals(14_038_080_00L, valuation.totalArsCents)
+        assertEquals(774_420_33L, valuation.unrealizedGainCents)
+    }
+
     private fun quote(
         marketKey: String,
         symbol: String,

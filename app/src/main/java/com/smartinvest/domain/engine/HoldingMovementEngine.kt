@@ -45,6 +45,9 @@ object HoldingMovementEngine {
         val ratio = if (oldValue > 0L) newValue.toDouble() / oldValue.toDouble() else 1.0
 
         val newCost = when {
+            // Transactional wallet FCIs do not track an investment cost basis: their cost
+            // follows the available balance so payments never create a fake unrealized loss.
+            holding.isWallet -> newValue
             holding.costCents <= 0L -> 0L
             // Income adds to the cost basis; reverting that income subtracts it.
             isIncome && !reverse -> holding.costCents + amountCents

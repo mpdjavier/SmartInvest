@@ -102,6 +102,7 @@ fun HoldingMovementEntity.toDomain(): HoldingMovement = HoldingMovement(
     date = DateUtils.epochDayToDate(dateEpochDay),
     note = note,
     createdAt = createdAt,
+    expenseId = expenseId,
 )
 
 fun HoldingMovement.toEntity(): HoldingMovementEntity = HoldingMovementEntity(
@@ -113,6 +114,7 @@ fun HoldingMovement.toEntity(): HoldingMovementEntity = HoldingMovementEntity(
     dateEpochDay = date.toEpochDay(),
     note = note,
     createdAt = createdAt,
+    expenseId = expenseId,
 )
 
 fun InstrumentQuoteEntity.toDomain(): InstrumentQuote = InstrumentQuote(

@@ -83,8 +83,12 @@ object PortfolioValuationEngine {
         }
 
         val sanitizedHoldings = holdings.map { holding ->
+            val manualDate = PortfolioReconciliationEngine.manualValuationDate(holding)
             val series = quotesFor(holding, quotes).filter { !it.date.isAfter(today) }
-            val latestQuote = series.lastOrNull()
+            val latestQuote = series.lastOrNull()?.takeIf {
+                ChronoUnit.DAYS.between(it.date, effectiveToday) <= 45L &&
+                    (manualDate == null || !it.date.isBefore(manualDate.minusDays(7)))
+            }
             if (holding.quantity > 0.0 && latestQuote != null && latestQuote.price > 0.0) {
                 val expectedCents = holding.valueCentsFor(latestQuote.price)
                 if (isCorruptedValuation(holding.currentValueCents, expectedCents)) {
@@ -139,7 +143,9 @@ object PortfolioValuationEngine {
             // Only closes up to today are valid for the current valuation. A quote dated in
             // the future must never override the balance loaded for today.
             val series = quotesFor(holding, quotes).filter { !it.date.isAfter(today) }
-            val latestQuote = series.lastOrNull()
+            val latestQuote = series.lastOrNull()?.takeIf {
+                ChronoUnit.DAYS.between(it.date, effectiveToday) <= 45L
+            }
             val effectiveNativeCents = if (
                 holding.quantity > 0.0 &&
                 latestQuote != null &&
@@ -182,9 +188,17 @@ object PortfolioValuationEngine {
             ?: (walletValuations.sumOf { it.dailyInterestCents } + holdingDailyInterest)
         val monthlyInterest = InterestCalculator.monthlyProjectionCents(breakdown.averageDailyArsCents)
 
+        // Wallet FCIs (the Mercado Pago style daily-expense account) are transactional
+        // accounts, not investments: their cost follows the available balance so they
+        // never add a fake unrealized gain/loss to the portfolio.
+        val valueArsByHoldingId = holdingValuations.associate { it.holding.id to it.valueArsCents }
         val cost = sanitizedHoldings.sumOf { holding ->
-            val costNative = if (holding.costCents > 0L) holding.costCents else holding.currentValueCents
-            if (holding.currency == CurrencyCode.ARS) costNative else (costNative * mep).roundToLong()
+            if (holding.isWallet) {
+                valueArsByHoldingId[holding.id] ?: toArs(holding.currentValueCents, holding.currency, mep)
+            } else {
+                val costNative = if (holding.costCents > 0L) holding.costCents else holding.currentValueCents
+                toArs(costNative, holding.currency, mep)
+            }
         } + activeWallets.sumOf { it.balanceCents * if (it.currency == CurrencyCode.ARS) 1L else mep.roundToLong() }
 
         return PortfolioValuation(
@@ -270,20 +284,23 @@ object PortfolioValuationEngine {
     /**
      * Filters out off-hours scraping glitches (such as `$ 2,30% TEM` mistaken for a price of
      * `2.30` on `S30N6` when the previous close was `129.08`) that drop >55% or spike >120%
-     * within a short window.
+     * on a single point, while resetting the series when a confirmed CEDEAR split / regime
+     * change occurs across consecutive trading sessions (such as SPY's 3:1 split from
+     * `$ 56.000` on 28/05/2026 to `$ 18.780` on 29/05/2026 and `$ 18.880` on 01/06/2026).
      */
     internal fun sanitizeQuoteSeries(sorted: List<InstrumentQuote>): List<InstrumentQuote> {
-        if (sorted.size < 2) return sorted
+        val valid = sorted.filter { it.price > 0.0 }
+        if (valid.size < 2) return valid
         val result = mutableListOf<InstrumentQuote>()
-        for (quote in sorted) {
-            if (quote.price <= 0.0) continue
+        for (i in valid.indices) {
+            val quote = valid[i]
             val prev = result.lastOrNull()
-            if (prev == null) {
+            if (prev == null || (quote.price / prev.price) in 0.45..2.20) {
                 result += quote
             } else {
-                val spanDays = ChronoUnit.DAYS.between(prev.date, quote.date)
-                val ratio = quote.price / prev.price
-                if (spanDays > 60L || ratio in 0.45..2.20) {
+                val next = valid.getOrNull(i + 1)
+                if (next != null && (next.price / quote.price) in 0.45..2.20) {
+                    result.clear()
                     result += quote
                 }
             }

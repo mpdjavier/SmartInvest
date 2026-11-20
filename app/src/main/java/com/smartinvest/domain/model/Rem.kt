@@ -220,6 +220,26 @@ data class RemInstrumentComparison(
     val vsCrawlingPegPp: Double,
     /** Constant monthly devaluation at which holding USD would tie this instrument. */
     val breakEvenMonthlyDevaluationPercent: Double,
+    /** Starting exchange rate at [today] ($/USD) used as the base for break-even FX. */
+    val fxToday: Double = 0.0,
+    /** Break-even dollar value ($/USD) at [effectiveDate] where holding USD ties this instrument. */
+    val breakEvenFx: Double = 0.0,
+    /** Total cumulative FX increase (%) from [today] to [effectiveDate] that ties this instrument. */
+    val breakEvenDevaluationPercent: Double = expectedArsReturnPercent,
+    /** REM-projected official FX ($/USD) at [effectiveDate]. */
+    val remFxAtEffectiveDate: Double = 0.0,
+    /** REM cumulative FX increase (%) from [today] to [effectiveDate]. */
+    val remDevaluationPercent: Double = 0.0,
+    /** REM monthly equivalent FX increase (%) from [today] to [effectiveDate]. */
+    val remMonthlyDevaluationPercent: Double = 0.0,
+    /** Crawling-peg projected FX ($/USD) at [effectiveDate] starting from [fxToday]. */
+    val pegFxAtEffectiveDate: Double = 0.0,
+    /** Crawling-peg cumulative FX increase (%) from [today] to [effectiveDate]. */
+    val pegDevaluationPercent: Double = 0.0,
+    /** Difference in $/USD between [breakEvenFx] and [remFxAtEffectiveDate] (>0 = beats REM). */
+    val breakEvenVsRemFxDiff: Double = 0.0,
+    /** Difference in $/USD between [breakEvenFx] and [pegFxAtEffectiveDate] (>0 = beats peg). */
+    val breakEvenVsPegFxDiff: Double = 0.0,
     val verdict: RemVerdict,
     val detail: String,
 )

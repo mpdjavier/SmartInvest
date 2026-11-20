@@ -144,7 +144,8 @@ object MacroRiskEngine {
             .split(',')
             .map { it.trim().lowercase(localeAr) }
             .filter { it.isNotBlank() }
-        if (patterns.isEmpty()) return valuation
+        val hasWalletHolding = valuation.holdings.any { it.holding.isWallet }
+        if (patterns.isEmpty() && !hasWalletHolding) return valuation
 
         fun excluded(vararg values: String?): Boolean = values.any { value ->
             value != null && patterns.any { pattern -> value.lowercase(localeAr).contains(pattern) }
@@ -154,7 +155,9 @@ object MacroRiskEngine {
             excluded(it.wallet.name, it.wallet.institution)
         }
         val holdings = valuation.holdings.filterNot {
-            excluded(it.holding.name, it.holding.symbol)
+            // The wallet FCI is the transactional account that funds everyday spending,
+            // so it never takes part in the carry ratio.
+            it.holding.isWallet || excluded(it.holding.name, it.holding.symbol)
         }
         if (wallets.size == valuation.wallets.size && holdings.size == valuation.holdings.size) {
             return valuation

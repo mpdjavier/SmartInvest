@@ -432,12 +432,14 @@ fun HoldingEditorScreen(
             }
         }
 
-        AmountInput(
-            value = state.costText,
-            onValueChange = viewModel::setCost,
-            label = "Costo de compra (opcional)",
-            prefix = if (state.currency == CurrencyCode.USD) "US$" else "$",
-        )
+        if (!(state.isWallet && state.assetType == AssetType.FCI)) {
+            AmountInput(
+                value = state.costText,
+                onValueChange = viewModel::setCost,
+                label = "Costo de compra (opcional)",
+                prefix = if (state.currency == CurrencyCode.USD) "US$" else "$",
+            )
+        }
 
         OutlinedTextField(
             value = state.tnaText,

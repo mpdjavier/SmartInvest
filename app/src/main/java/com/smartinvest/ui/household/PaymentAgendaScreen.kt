@@ -656,7 +656,8 @@ private fun PaymentAgendaRowCard(
         PaymentAgendaStatus.UPCOMING -> Sky
     }
     val statusText = when {
-        row.isPaid && row.paidDate != null -> "Pagado ${Fmt.shortDate(row.paidDate)}"
+        row.paidExpenseId != null -> "Pagado ${Fmt.shortDate(row.paidDate ?: row.scheduledDate)} · Registrado en Hogar"
+        row.isPaid -> "Tildado a mano (sin gasto ni débito)"
         row.status == PaymentAgendaStatus.OVERDUE -> "Vencido (${Fmt.shortDate(row.scheduledDate)})"
         row.daysUntilDue == 0L -> "Vence hoy"
         row.status == PaymentAgendaStatus.DUE_SOON -> "Vence en ${row.daysUntilDue} d"
@@ -740,12 +741,17 @@ private fun PaymentAgendaRowCard(
                 Spacer(Modifier.width(4.dp))
                 Text("Modificar", maxLines = 1, softWrap = false)
             }
-            if (!row.isPaid) {
+            val isClosingEvent = row.key.startsWith("cierre ")
+            if (row.paidExpenseId == null && !isClosingEvent) {
                 Spacer(Modifier.width(4.dp))
                 Button(onClick = onPay) {
                     Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Pagar", maxLines = 1, softWrap = false)
+                    Text(
+                        if (row.isPaid) "Registrar pago" else "Pagar",
+                        maxLines = 1,
+                        softWrap = false,
+                    )
                 }
             }
         }
@@ -875,7 +881,7 @@ private fun AgendaEditDialog(
 }
 
 @Composable
-private fun AgendaPayDialog(
+internal fun AgendaPayDialog(
     draft: PayAgendaItemDraft,
     walletHolding: Holding?,
     onUpdate: ((PayAgendaItemDraft) -> PayAgendaItemDraft) -> Unit,
@@ -904,6 +910,9 @@ private fun AgendaPayDialog(
                     onClick = onPickDate,
                 )
                 if (walletHolding != null) {
+                    val parsedAmountCents = MoneyParser.parseToCents(draft.amountText) ?: 0L
+                    val insufficientBalance = draft.useWalletFci &&
+                        parsedAmountCents > walletHolding.currentValueCents
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -913,12 +922,20 @@ private fun AgendaPayDialog(
                             Text(
                                 "Disponible: ${Fmt.ars(walletHolding.currentValueCents)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (insufficientBalance) Rose else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
                             checked = draft.useWalletFci,
                             onCheckedChange = { use -> onUpdate { it.copy(useWalletFci = use) } },
+                        )
+                    }
+                    if (insufficientBalance) {
+                        val missingCents = parsedAmountCents - walletHolding.currentValueCents
+                        InfoBanner(
+                            "El saldo en ${walletHolding.symbol} no alcanza (faltan ${Fmt.ars(missingCents)}). " +
+                                "Registrá primero el ingreso en ${walletHolding.symbol} para poder descontar este pago.",
+                            color = Rose,
                         )
                     }
                 }

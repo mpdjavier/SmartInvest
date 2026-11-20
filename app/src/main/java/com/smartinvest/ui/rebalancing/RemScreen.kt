@@ -533,6 +533,66 @@ private fun RemInstrumentRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (row.fxToday > 0.0 && row.breakEvenFx > 0.0) {
+            Spacer(Modifier.height(8.dp))
+            SmartCard(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)) {
+                val endDateLabel = Fmt.shortDate(row.effectiveDate)
+                val beatsRem = row.breakEvenVsRemFxDiff >= 0.0
+                val beatsPeg = row.breakEvenVsPegFxDiff >= 0.0
+                val remDiffPp = row.breakEvenDevaluationPercent - row.remDevaluationPercent
+                val pegDiffPp = row.breakEvenDevaluationPercent - row.pegDevaluationPercent
+
+                Text(
+                    "DÓLAR AL VENCIMIENTO ($endDateLabel) · BASE HOY ${formatFx(row.fxToday)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+                KeyValueRow(
+                    label = "Dólar techo / equilibrio (${row.instrument.symbol})",
+                    value = "${formatFx(row.breakEvenFx)} (+${Fmt.percent(row.breakEvenDevaluationPercent, 2)} · ${Fmt.percent(row.breakEvenMonthlyDevaluationPercent, 2)}/mes)",
+                    valueColor = Emerald,
+                    strong = true,
+                )
+                KeyValueRow(
+                    label = "Dólar REM al $endDateLabel",
+                    value = "${formatFx(row.remFxAtEffectiveDate)} (+${Fmt.percent(row.remDevaluationPercent, 2)} · ${Fmt.percent(row.remMonthlyDevaluationPercent, 2)}/mes)",
+                    valueColor = Sky,
+                )
+                KeyValueRow(
+                    label = "Margen vs REM",
+                    value = "${formatSignedFx(row.breakEvenVsRemFxDiff)} (${Fmt.signedPercent(row.expectedUsdReturnPercent, 2)} USD · ${signedPp(remDiffPp)})",
+                    valueColor = if (beatsRem) Emerald else Rose,
+                )
+                KeyValueRow(
+                    label = "Dólar Peg ${Fmt.percent(peg, 1)}/mes al $endDateLabel",
+                    value = "${formatFx(row.pegFxAtEffectiveDate)} (+${Fmt.percent(row.pegDevaluationPercent, 2)} · ${Fmt.percent(peg, 2)}/mes)",
+                    valueColor = Sky,
+                )
+                KeyValueRow(
+                    label = "Margen vs Peg ${Fmt.percent(peg, 1)}",
+                    value = "${formatSignedFx(row.breakEvenVsPegFxDiff)} (${Fmt.signedPercent(row.vsCrawlingPegPp, 2)} · ${signedPp(pegDiffPp)})",
+                    valueColor = if (beatsPeg) Emerald else Rose,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    buildString {
+                        append("Conviene ${row.instrument.symbol} en pesos si al $endDateLabel el dólar vale menos de ")
+                        append("${formatFx(row.breakEvenFx)} (suba < ${Fmt.percent(row.breakEvenDevaluationPercent, 2)}). ")
+                        append(
+                            if (beatsRem) {
+                                "Supera al REM por ${formatFx(abs(row.breakEvenVsRemFxDiff))} (${Fmt.signedPercent(row.expectedUsdReturnPercent, 2)})."
+                            } else {
+                                "Queda ${formatFx(abs(row.breakEvenVsRemFxDiff))} debajo del REM (${Fmt.signedPercent(row.expectedUsdReturnPercent, 2)})."
+                            },
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
         Text(
             "Vence ${Fmt.shortDate(row.effectiveDate)} · break-even " +
                 "${Fmt.percent(row.breakEvenMonthlyDevaluationPercent, 2)} mensual · " +
@@ -720,6 +780,11 @@ private fun shortMonth(month: YearMonth): String =
 
 private fun formatFx(value: Double): String =
     String.format(Locale.forLanguageTag("es-AR"), "\$ %,.2f", value)
+
+private fun formatSignedFx(value: Double): String {
+    val sign = if (value >= 0.0) "+" else "−"
+    return "$sign${formatFx(abs(value))}"
+}
 
 private fun formatNumber(value: Double): String =
     String.format(Locale.forLanguageTag("es-AR"), "%.2f", value)

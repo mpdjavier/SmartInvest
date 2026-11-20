@@ -65,6 +65,8 @@ data class HoldingMovementEntity(
     val dateEpochDay: Long,
     val note: String = "",
     val createdAt: Long,
+    /** Expense that produced this movement (wallet FCI payments), when applicable. */
+    val expenseId: Long? = null,
 )
 
 @Entity(

@@ -840,6 +840,9 @@ private fun ExpenseCard(
                 if (expense.paymentMethod == ExpensePaymentMethod.COMMON_FUND) {
                     add("Fondo común" to Sky)
                 }
+                if (expense.paymentMethod == ExpensePaymentMethod.WALLET_FCI) {
+                    add("FCI billetera" to Emerald)
+                }
                 if (cardName != null) {
                     add(cardName to Amber)
                 }

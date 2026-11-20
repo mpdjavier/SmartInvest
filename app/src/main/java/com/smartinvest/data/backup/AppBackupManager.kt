@@ -229,6 +229,7 @@ data class BackupHoldingMovementDto(
     val dateEpochDay: Long,
     val note: String = "",
     val createdAt: Long,
+    val expenseId: Long? = null,
 )
 
 @Serializable
@@ -489,6 +490,7 @@ class AppBackupManager @Inject constructor(
                     dateEpochDay = it.dateEpochDay,
                     note = it.note,
                     createdAt = it.createdAt,
+                    expenseId = it.expenseId,
                 )
             },
             instrumentQuotes = instrumentQuoteDao.getAll().map {
@@ -647,6 +649,7 @@ class AppBackupManager @Inject constructor(
                             dateEpochDay = it.dateEpochDay,
                             note = it.note,
                             createdAt = it.createdAt,
+                            expenseId = it.expenseId,
                         )
                     },
                 )

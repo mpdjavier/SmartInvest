@@ -248,6 +248,10 @@ fun HoldingDetailScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             TagPill(holding.assetType.label, assetColor(holding.assetType))
+                            if (holding.isWallet) {
+                                Spacer(Modifier.width(6.dp))
+                                TagPill("Billetera T+0", Emerald)
+                            }
                         }
                         Text(
                             holding.name.ifBlank { holding.assetType.label },
@@ -263,7 +267,7 @@ fun HoldingDetailScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "VALUACIÓN ACTUAL",
+                    if (holding.isWallet) "SALDO DISPONIBLE" else "VALUACIÓN ACTUAL",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -274,20 +278,29 @@ fun HoldingDetailScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatTile(
-                        label = "Costo",
-                        value = money(holding.costCents),
-                        accent = Sky,
-                        modifier = Modifier.weight(1f),
+                if (holding.isWallet) {
+                    Text(
+                        "Cuenta transaccional de liquidez diaria. Los pagos y egresos descuentan el saldo " +
+                            "sin generar costo de inversión ni ganancia/pérdida no realizada.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    val gain = holding.currentValueCents - holding.costCents
-                    StatTile(
-                        label = "Ganancia no realizada",
-                        value = signedMoney(gain),
-                        accent = if (gain >= 0) Emerald else Rose,
-                        modifier = Modifier.weight(1f),
-                    )
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatTile(
+                            label = "Costo",
+                            value = money(holding.costCents),
+                            accent = Sky,
+                            modifier = Modifier.weight(1f),
+                        )
+                        val gain = holding.currentValueCents - holding.costCents
+                        StatTile(
+                            label = "Ganancia no realizada",
+                            value = signedMoney(gain),
+                            accent = if (gain >= 0) Emerald else Rose,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
                 if (holding.quantity > 0.0) {
                     ThinDivider()
@@ -561,6 +574,10 @@ private fun MovementRow(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TagPill(movement.type.label, color)
+                if (movement.expenseId != null) {
+                    Spacer(Modifier.width(6.dp))
+                    TagPill("Hogar", Sky)
+                }
                 Spacer(Modifier.width(8.dp))
                 Text(
                     Fmt.longDate(movement.date),
@@ -585,13 +602,15 @@ private fun MovementRow(
             maxLines = 1,
             softWrap = false,
         )
-        IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
-            Icon(
-                Icons.Rounded.DeleteOutline,
-                contentDescription = "Revertir movimiento",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
+        if (movement.expenseId == null) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+                Icon(
+                    Icons.Rounded.DeleteOutline,
+                    contentDescription = "Revertir movimiento",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

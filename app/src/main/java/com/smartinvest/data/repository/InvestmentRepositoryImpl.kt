@@ -1,6 +1,7 @@
 package com.smartinvest.data.repository
 
 import com.smartinvest.core.time.DateUtils
+import com.smartinvest.data.local.dao.ExpenseDao
 import com.smartinvest.data.local.dao.FxRateDao
 import com.smartinvest.data.local.dao.HoldingDao
 import com.smartinvest.data.local.dao.HoldingMovementDao
@@ -69,6 +70,7 @@ class InvestmentRepositoryImpl @Inject constructor(
     private val walletDao: WalletDao,
     private val holdingDao: HoldingDao,
     private val holdingMovementDao: HoldingMovementDao,
+    private val expenseDao: ExpenseDao,
     private val instrumentQuoteDao: InstrumentQuoteDao,
     private val snapshotDao: SnapshotDao,
     private val fxRateDao: FxRateDao,
@@ -201,6 +203,7 @@ class InvestmentRepositoryImpl @Inject constructor(
                 }
             }
             if (adjusted.isWallet) {
+                adjusted = adjusted.copy(costCents = adjusted.currentValueCents)
                 holdingDao.clearWalletFlags(adjusted.id)
             }
             holdingDao.upsert(adjusted.toEntity())
@@ -325,51 +328,7 @@ class InvestmentRepositoryImpl @Inject constructor(
      * when `notes` has no movement lines yet).
      */
     private suspend fun ensureHoldingMovementsSeeded(holdingId: Long) {
-        if (holdingId <= 0L) return
-        val existing = holdingMovementDao.getAllForHolding(holdingId)
-        if (existing.isNotEmpty()) return
-        val holding = holdingDao.getById(holdingId)?.toDomain() ?: return
-
-        val fromNotes = BrokerMovementImporter.parseMovementNotes(holding.notes)
-        val sourceMovements = if (fromNotes.isNotEmpty()) {
-            fromNotes
-        } else {
-            val preset = BrokerMovementImporter.presetMovementsFor(holding.symbol, holding.marketKey)
-            if (!preset.isNullOrEmpty() && holding.currentValueCents > 0L) {
-                BrokerMovementImporter.summarize(preset).movements
-            } else {
-                emptyList()
-            }
-        }
-        if (sourceMovements.isEmpty()) return
-
-        val baseTime = System.currentTimeMillis()
-        sourceMovements.sortedBy { it.date }.forEachIndexed { index, mov ->
-            val isIncome = mov.signedAmountCents >= 0L
-            val qtySuffix = mov.quantity?.takeIf { abs(it) > 1e-6 }?.let { q ->
-                val sign = if (q >= 0.0) "+" else ""
-                val formatted = if (abs(q) % 1.0 == 0.0) {
-                    String.format(java.util.Locale.US, "%.0f", q)
-                } else {
-                    String.format(java.util.Locale.US, "%.2f", q)
-                }
-                "cant: $sign$formatted"
-            }.orEmpty()
-            val noteText = listOf(mov.operationCode, qtySuffix)
-                .filter { it.isNotBlank() }
-                .joinToString(" · ")
-            holdingMovementDao.insert(
-                HoldingMovementEntity(
-                    holdingId = holdingId,
-                    type = if (isIncome) HoldingMovementType.INGRESO else HoldingMovementType.EGRESO,
-                    amountCents = abs(mov.signedAmountCents),
-                    currency = holding.currency,
-                    dateEpochDay = mov.date.toEpochDay(),
-                    note = noteText,
-                    createdAt = baseTime + index,
-                ),
-            )
-        }
+        HoldingMovementSeeder.ensureSeeded(holdingId, holdingDao, holdingMovementDao, expenseDao)
     }
 
     override suspend fun syncRates(): SyncOutcome {
@@ -430,18 +389,17 @@ class InvestmentRepositoryImpl @Inject constructor(
                         fetchedAt = now,
                     )
                 }
-                if (result.source == MarketSource.CAFCI) {
-                    instrumentQuoteDao.deleteForMarket(effectiveKey)
-                }
+                instrumentQuoteDao.deleteForMarket(effectiveKey)
                 instrumentQuoteDao.upsertAll(entities)
                 instrumentQuoteDao.deleteForMarketAfter(effectiveKey, result.latestDate.toEpochDay())
                 storedQuotes += entities.size
                 val isLocked = PortfolioReconciliationEngine.isManualValuationLocked(holding)
                 val manualDate = PortfolioReconciliationEngine.manualValuationDate(holding)
                 val isLockedForDate = isLocked && (manualDate == null || !result.latestDate.isAfter(manualDate))
+                val isRecentEnoughToHeal = manualDate == null || !result.latestDate.isBefore(manualDate.minusDays(7))
                 if (holding.quantity > 0.0 && result.latestPrice > 0.0) {
                     val newValue = holding.valueCentsFor(result.latestPrice)
-                    val isCorrupted = PortfolioValuationEngine.isCorruptedValuation(
+                    val isCorrupted = isRecentEnoughToHeal && PortfolioValuationEngine.isCorruptedValuation(
                         holding.currentValueCents,
                         newValue,
                     )
@@ -510,9 +468,7 @@ class InvestmentRepositoryImpl @Inject constructor(
                     fetchedAt = now,
                 )
             }
-            if (fetched.source == MarketSource.CAFCI) {
-                instrumentQuoteDao.deleteForMarket(normalized)
-            }
+            instrumentQuoteDao.deleteForMarket(normalized)
             instrumentQuoteDao.upsertAll(entities)
             instrumentQuoteDao.deleteForMarketAfter(normalized, fetched.latestDate.toEpochDay())
             // Also update any matching holdings in portfolio.
@@ -742,6 +698,20 @@ class InvestmentRepositoryImpl @Inject constructor(
      * restores any holding valuation that was overwritten by a corrupted quote.
      */
     private suspend fun healOffHoursMarketData(today: LocalDate) {
+        // Keep wallet FCI cost aligned with its available balance so old records never show
+        // a fake unrealized gain/loss.
+        holdingDao.getWallets().forEach { walletEntity ->
+            if (walletEntity.costCents != walletEntity.currentValueCents) {
+                holdingDao.upsert(walletEntity.copy(costCents = walletEntity.currentValueCents))
+            }
+            HoldingMovementSeeder.ensureSeeded(
+                holdingId = walletEntity.id,
+                holdingDao = holdingDao,
+                holdingMovementDao = holdingMovementDao,
+                expenseDao = expenseDao,
+            )
+        }
+
         val maxMarketEpochDay = DateUtils.latestMarketSessionDate().toEpochDay()
         val allEntities = instrumentQuoteDao.getAll()
         if (allEntities.isEmpty()) return
@@ -762,15 +732,43 @@ class InvestmentRepositoryImpl @Inject constructor(
             }
         }
 
-        val cleanedQuotes = instrumentQuoteDao.getAll().map { it.toDomain() }
+        var cleanedQuotes = instrumentQuoteDao.getAll().map { it.toDomain() }
+        val now = System.currentTimeMillis()
         holdingDao.getAll().map { it.toDomain() }.forEach { holding ->
             if (holding.quantity <= 0.0) return@forEach
-            val latest = PortfolioValuationEngine.quotesFor(holding, cleanedQuotes)
+            var latest = PortfolioValuationEngine.quotesFor(holding, cleanedQuotes)
                 .filter { !it.date.isAfter(today) }
                 .lastOrNull()
-                ?: return@forEach
-            if (latest.price <= 0.0) return@forEach
-            val expectedValue = holding.valueCentsFor(latest.price)
+            val isStaleOrTruncated = latest == null ||
+                java.time.temporal.ChronoUnit.DAYS.between(latest.date, today) > 20L
+            if (isStaleOrTruncated && (holding.marketKey.isNotBlank() || holding.source != MarketSource.MANUAL)) {
+                val refreshed = runCatching { marketDataService.fetchForHolding(holding, today) }.getOrNull()
+                if (refreshed != null && refreshed.history.isNotEmpty()) {
+                    val effectiveKey = holding.marketKey.ifBlank { refreshed.marketKey }
+                    val entities = refreshed.history.map { point ->
+                        InstrumentQuoteEntity(
+                            marketKey = effectiveKey,
+                            symbol = holding.symbol.ifBlank { refreshed.symbol },
+                            source = refreshed.source,
+                            price = point.price,
+                            currency = holding.currency,
+                            quoteUnit = holding.quoteUnit,
+                            dateEpochDay = point.date.toEpochDay(),
+                            fetchedAt = now,
+                        )
+                    }
+                    instrumentQuoteDao.deleteForMarket(effectiveKey)
+                    instrumentQuoteDao.upsertAll(entities)
+                    cleanedQuotes = instrumentQuoteDao.getAll().map { it.toDomain() }
+                    latest = PortfolioValuationEngine.quotesFor(holding, cleanedQuotes)
+                        .filter { !it.date.isAfter(today) }
+                        .lastOrNull()
+                }
+            }
+            val validLatest = latest?.takeIf {
+                it.price > 0.0 && java.time.temporal.ChronoUnit.DAYS.between(it.date, today) <= 45L
+            } ?: return@forEach
+            val expectedValue = holding.valueCentsFor(validLatest.price)
             if (PortfolioValuationEngine.isCorruptedValuation(holding.currentValueCents, expectedValue)) {
                 holdingDao.updateValuation(holding.id, expectedValue, holding.name)
             }
@@ -798,3 +796,162 @@ class InvestmentRepositoryImpl @Inject constructor(
 
 /** Reuse a persisted macro snapshot for 12 hours unless the user forces a refresh. */
 private const val MACRO_SNAPSHOT_TTL_MILLIS = 12L * 60L * 60L * 1000L
+
+internal object HoldingMovementSeeder {
+    /**
+     * Populates `holding_movements` on first access from the movement lines
+     * already stored in `Holding.notes` (or from the broker preset movements
+     * when `notes` has no movement lines yet), and backfills any wallet FCI
+     * expenses or note lines added after the initial seed.
+     */
+    suspend fun ensureSeeded(
+        holdingId: Long,
+        holdingDao: HoldingDao,
+        holdingMovementDao: HoldingMovementDao,
+        expenseDao: ExpenseDao? = null,
+    ) {
+        if (holdingId <= 0L) return
+        val holding = holdingDao.getById(holdingId)?.toDomain() ?: return
+        val existing = holdingMovementDao.getAllForHolding(holdingId)
+
+        if (existing.isEmpty()) {
+            val fromNotes = BrokerMovementImporter.parseMovementNotes(holding.notes)
+            val sourceMovements = if (fromNotes.isNotEmpty()) {
+                fromNotes
+            } else {
+                val preset = BrokerMovementImporter.presetMovementsFor(holding.symbol, holding.marketKey)
+                if (!preset.isNullOrEmpty() && holding.currentValueCents > 0L) {
+                    BrokerMovementImporter.summarize(preset).movements
+                } else {
+                    emptyList()
+                }
+            }
+            if (sourceMovements.isNotEmpty()) {
+                val baseTime = System.currentTimeMillis()
+                sourceMovements.sortedBy { it.date }.forEachIndexed { index, mov ->
+                    val isIncome = mov.signedAmountCents >= 0L
+                    val noteText = formatSeededNote(mov)
+                    holdingMovementDao.insert(
+                        HoldingMovementEntity(
+                            holdingId = holdingId,
+                            type = if (isIncome) HoldingMovementType.INGRESO else HoldingMovementType.EGRESO,
+                            amountCents = abs(mov.signedAmountCents),
+                            currency = holding.currency,
+                            dateEpochDay = mov.date.toEpochDay(),
+                            note = noteText,
+                            createdAt = baseTime + index,
+                        ),
+                    )
+                }
+            }
+        }
+
+        // Backfill or link any WALLET_FCI expenses from `expenses` that were recorded before
+        // `holding_movements` tracked expenseId (e.g. card statement or service payments).
+        if (holding.isWallet && expenseDao != null) {
+            val walletExpenses = expenseDao.getForWalletHolding(holdingId)
+            if (walletExpenses.isNotEmpty()) {
+                val current = holdingMovementDao.getAllForHolding(holdingId).toMutableList()
+                for (exp in walletExpenses) {
+                    val expAmount = exp.walletValueDeltaCents.takeIf { it > 0L } ?: exp.totalAmountCents
+                    if (expAmount <= 0L) continue
+                    val cleanDesc = exp.description.trim()
+                    val expectedNote = "Pago: $cleanDesc"
+                    val byExpenseId = current.firstOrNull { it.expenseId == exp.id }
+                    if (byExpenseId != null) {
+                        if (byExpenseId.dateEpochDay != exp.dateEpochDay ||
+                            byExpenseId.amountCents != expAmount
+                        ) {
+                            val updated = byExpenseId.copy(
+                                dateEpochDay = exp.dateEpochDay,
+                                amountCents = expAmount,
+                                note = expectedNote,
+                            )
+                            holdingMovementDao.upsertAll(listOf(updated))
+                            current[current.indexOf(byExpenseId)] = updated
+                        }
+                        continue
+                    }
+
+                    val unlinkedMatch = current.firstOrNull { row ->
+                        row.expenseId == null &&
+                            row.type == HoldingMovementType.EGRESO &&
+                            abs(row.amountCents - expAmount) <= 1L &&
+                            (row.dateEpochDay == exp.dateEpochDay ||
+                                (cleanDesc.isNotBlank() && row.note.contains(cleanDesc, ignoreCase = true)))
+                    }
+                    if (unlinkedMatch != null) {
+                        val linked = unlinkedMatch.copy(
+                            expenseId = exp.id,
+                            dateEpochDay = exp.dateEpochDay,
+                            note = expectedNote,
+                        )
+                        holdingMovementDao.upsertAll(listOf(linked))
+                        current[current.indexOf(unlinkedMatch)] = linked
+                    } else {
+                        val entity = HoldingMovementEntity(
+                            holdingId = holdingId,
+                            type = HoldingMovementType.EGRESO,
+                            amountCents = expAmount,
+                            currency = holding.currency,
+                            dateEpochDay = exp.dateEpochDay,
+                            note = expectedNote,
+                            createdAt = exp.createdAt,
+                            expenseId = exp.id,
+                        )
+                        val newId = holdingMovementDao.insert(entity)
+                        current += entity.copy(id = newId)
+                    }
+                }
+            }
+        }
+
+        // Also backfill any movement lines appended to `holding.notes` after the initial seed.
+        val notesMovements = BrokerMovementImporter.parseMovementNotes(holding.notes)
+        if (notesMovements.isNotEmpty()) {
+            val current = holdingMovementDao.getAllForHolding(holdingId).toMutableList()
+            val baseTime = System.currentTimeMillis()
+            notesMovements.sortedBy { it.date }.forEachIndexed { index, mov ->
+                val isIncome = mov.signedAmountCents >= 0L
+                val type = if (isIncome) HoldingMovementType.INGRESO else HoldingMovementType.EGRESO
+                val amount = abs(mov.signedAmountCents)
+                val epochDay = mov.date.toEpochDay()
+                val alreadyExists = current.any { row ->
+                    row.type == type &&
+                        abs(row.amountCents - amount) <= 1L &&
+                        (row.dateEpochDay == epochDay ||
+                            (mov.operationCode.isNotBlank() &&
+                                row.note.contains(mov.operationCode.removePrefix("RESCATE:").trim(), ignoreCase = true)))
+                }
+                if (!alreadyExists) {
+                    val entity = HoldingMovementEntity(
+                        holdingId = holdingId,
+                        type = type,
+                        amountCents = amount,
+                        currency = holding.currency,
+                        dateEpochDay = epochDay,
+                        note = formatSeededNote(mov),
+                        createdAt = baseTime + index,
+                    )
+                    val newId = holdingMovementDao.insert(entity)
+                    current += entity.copy(id = newId)
+                }
+            }
+        }
+    }
+
+    private fun formatSeededNote(mov: com.smartinvest.domain.engine.HoldingMovement): String {
+        val qtySuffix = mov.quantity?.takeIf { abs(it) > 1e-6 }?.let { q ->
+            val sign = if (q >= 0.0) "+" else ""
+            val formatted = if (abs(q) % 1.0 == 0.0) {
+                String.format(java.util.Locale.US, "%.0f", q)
+            } else {
+                String.format(java.util.Locale.US, "%.2f", q)
+            }
+            "cant: $sign$formatted"
+        }.orEmpty()
+        return listOf(mov.operationCode, qtySuffix)
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
+    }
+}

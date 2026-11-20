@@ -251,6 +251,34 @@ fun InvestmentsScreen(
 
         item { RebalanceCard(overview, onOpenRebalancing) }
 
+        val valuations = overview?.valuation?.holdings.orEmpty()
+        val mepRate = overview?.valuation?.mepRate ?: 1_000.0
+        val walletHoldings = state.holdings.filter { it.isWallet }
+        val investableHoldings = state.holdings.filterNot { it.isWallet }
+
+        if (walletHoldings.isNotEmpty()) {
+            item {
+                SectionHeader(
+                    title = "Billetera / FCI T+0",
+                    subtitle = "Cuenta transaccional de liquidez diaria (excluida de costo/ganancia y carry)",
+                )
+            }
+            items(walletHoldings.size) { index ->
+                val rawHolding = walletHoldings[index]
+                val valuation = valuations.firstOrNull { it.holding.id == rawHolding.id }
+                val holding = valuation?.holding ?: rawHolding
+                HoldingRow(
+                    holding = holding,
+                    valueArsCents = valuation?.valueArsCents ?: holding.currentValueCents,
+                    mepRate = mepRate,
+                    dailyInterestCents = valuation?.dailyInterestCents ?: 0L,
+                    onOpenDetail = { onOpenHoldingDetail(holding.id) },
+                    onOpenEvolution = { onOpenInstrumentDetail(holding.id) },
+                    onEdit = { onEditHolding(holding.id) },
+                )
+            }
+        }
+
         item {
             SectionHeader(
                 title = "Letras y activos",
@@ -260,7 +288,7 @@ fun InvestmentsScreen(
             )
         }
 
-        if (state.holdings.isEmpty()) {
+        if (investableHoldings.isEmpty()) {
             item {
                 EmptyState(
                     icon = Icons.AutoMirrored.Rounded.ShowChart,
@@ -269,10 +297,8 @@ fun InvestmentsScreen(
                 )
             }
         } else {
-            val valuations = overview?.valuation?.holdings.orEmpty()
-            val mepRate = overview?.valuation?.mepRate ?: 1_000.0
-            items(state.holdings.size) { index ->
-                val rawHolding = state.holdings[index]
+            items(investableHoldings.size) { index ->
+                val rawHolding = investableHoldings[index]
                 val valuation = valuations.firstOrNull { it.holding.id == rawHolding.id }
                 val holding = valuation?.holding ?: rawHolding
                 HoldingRow(
@@ -556,6 +582,9 @@ private fun HoldingRow(
                     style = MaterialTheme.typography.titleSmall.copy(fontFamily = PlexMono),
                 )
                 TagPill(holding.assetType.label, color)
+                if (holding.isWallet) {
+                    TagPill("Billetera T+0", Emerald)
+                }
                 if (holding.isTracked) {
                     TagPill(holding.source.label, Sky)
                 }

@@ -121,4 +121,38 @@ class HoldingMovementEngineTest {
         assertEquals(0L, effect.costCents)
         assertEquals(0.0, effect.quantity, 0.0001)
     }
+
+    @Test
+    fun `wallet fci withdrawal keeps cost equal to available balance so payment creates zero unrealized loss`() {
+        val walletFci = holding(
+            valueCents = 615_166_58L,
+            costCents = 615_166_58L,
+            quantity = 13_603.56,
+        ).copy(isWallet = true)
+
+        val afterCardPayment = HoldingMovementEngine.apply(
+            holding = walletFci,
+            type = HoldingMovementType.EGRESO,
+            amountCents = 255_245_52L,
+        )
+
+        assertEquals(359_921_06L, afterCardPayment.valueCents)
+        assertEquals(359_921_06L, afterCardPayment.costCents)
+        assertEquals(0L, afterCardPayment.valueCents - afterCardPayment.costCents)
+
+        val reverted = HoldingMovementEngine.apply(
+            holding = walletFci.copy(
+                currentValueCents = afterCardPayment.valueCents,
+                costCents = afterCardPayment.costCents,
+                quantity = afterCardPayment.quantity,
+            ),
+            type = HoldingMovementType.EGRESO,
+            amountCents = 255_245_52L,
+            reverse = true,
+        )
+
+        assertEquals(615_166_58L, reverted.valueCents)
+        assertEquals(615_166_58L, reverted.costCents)
+        assertEquals(13_603.56, reverted.quantity, 0.01)
+    }
 }

@@ -186,8 +186,13 @@ object RemComparisonEngine {
         val kind = instrument.kindType
         val yieldPercent = instrument.annualYieldPercent.coerceAtLeast(0.0)
 
+        val remFxAtEnd = if (fxToday > 0.0) {
+            snapshot.fxAt(effectiveDate) ?: fxToday
+        } else {
+            0.0
+        }
         val fxFactor = if (fxToday > 0.0) {
-            (snapshot.fxAt(effectiveDate) ?: fxToday) / fxToday
+            remFxAtEnd / fxToday
         } else {
             1.0
         }
@@ -216,6 +221,17 @@ object RemComparisonEngine {
         val realReturn = if (inflationFactor > 0.0) (arsFactor / inflationFactor - 1.0) * 100.0 else 0.0
         val vsPeg = if (pegFactor > 0.0) (arsFactor / pegFactor - 1.0) * 100.0 else 0.0
         val breakEven = if (months > 0.0) (arsFactor.pow(1.0 / months) - 1.0) * 100.0 else 0.0
+        val breakEvenFx = if (fxToday > 0.0) fxToday * arsFactor else 0.0
+        val pegFxAtEnd = if (fxToday > 0.0) fxToday * pegFactor else 0.0
+        val remDevalPercent = (fxFactor - 1.0) * 100.0
+        val remMonthlyDevalPercent = if (months > 0.0 && fxFactor > 0.0) {
+            (fxFactor.pow(1.0 / months) - 1.0) * 100.0
+        } else {
+            0.0
+        }
+        val pegDevalPercent = (pegFactor - 1.0) * 100.0
+        val breakEvenVsRemFxDiff = if (fxToday > 0.0) breakEvenFx - remFxAtEnd else 0.0
+        val breakEvenVsPegFxDiff = if (fxToday > 0.0) breakEvenFx - pegFxAtEnd else 0.0
         val verdict = when {
             vsPeg >= VERDICT_BAND_PP -> RemVerdict.CONVIENE
             vsPeg <= -VERDICT_BAND_PP -> RemVerdict.NO_CONVIENE
@@ -234,6 +250,16 @@ object RemComparisonEngine {
             realReturnPercent = realReturn,
             vsCrawlingPegPp = vsPeg,
             breakEvenMonthlyDevaluationPercent = breakEven,
+            fxToday = fxToday,
+            breakEvenFx = breakEvenFx,
+            breakEvenDevaluationPercent = arsReturn,
+            remFxAtEffectiveDate = remFxAtEnd,
+            remDevaluationPercent = remDevalPercent,
+            remMonthlyDevaluationPercent = remMonthlyDevalPercent,
+            pegFxAtEffectiveDate = pegFxAtEnd,
+            pegDevaluationPercent = pegDevalPercent,
+            breakEvenVsRemFxDiff = breakEvenVsRemFxDiff,
+            breakEvenVsPegFxDiff = breakEvenVsPegFxDiff,
             verdict = verdict,
             detail = detail(
                 kind = kind,
@@ -242,7 +268,7 @@ object RemComparisonEngine {
                 months = months,
                 arsReturn = arsReturn,
                 inflation = (inflationFactor - 1.0) * 100.0,
-                fxReturn = (fxFactor - 1.0) * 100.0,
+                fxReturn = remDevalPercent,
                 breakEven = breakEven,
             ),
         )
